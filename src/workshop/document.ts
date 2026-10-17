@@ -244,6 +244,11 @@ function interpolate(m:Model,time:number):Interpolated{
     if(i<=0||chain[i].plant[s]||!chain[i-1].plant[s])continue;
     const ch=FOOT_CH[s],foot=s==='L'?'footL':'footR',mid=t0+dt/2,half=dt/2;
     const stored=m.keys[chain[i].real].pose[foot].target;
+    // The two-piece swing is defined on [t0, t0+dt] only. Tail evaluations
+    // (time after the last key) still land in this governing interval, so
+    // clamp: an unclamped uu>1 turns the Hermite into cubic extrapolation
+    // and the foot target diverges instead of holding the next key's value.
+    const tc=Math.max(t0,Math.min(t0+dt,time));
     for(let c=0;c<3;c++){
       const ax=(['x','y','z']as const)[c];
       const a=chain[i].interp[ch+c],cc=chain[i+1].interp[ch+c],b=stored[ax];
@@ -251,7 +256,7 @@ function interpolate(m:Model,time:number):Interpolated{
       const end=i+1>=len-1||restAt(i+1,ch+c)?0:(val(i+2,ch+c)-val(i,ch+c))/(chain[i+2].time-t0);
       const h=(uu:number,v0:number,v1:number,m0:number,m1:number)=>
         (2*uu**3-3*uu*uu+1)*v0+(uu**3-2*uu*uu+uu)*half*m0+(-2*uu**3+3*uu*uu)*v1+(uu**3-uu*uu)*half*m1;
-      out[ch+c]=time<=mid?h((time-t0)/half,a,b,0,chord):h((time-mid)/half,b,cc,chord,end);
+      out[ch+c]=tc<=mid?h((tc-t0)/half,a,b,0,chord):h((tc-mid)/half,b,cc,chord,end);
     }
   }
   const pose=unflattenPose(out);
