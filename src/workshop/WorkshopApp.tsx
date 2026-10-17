@@ -164,6 +164,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <p><i style={{background:'#2469ee'}}/>髋部 / 根骨</p>
      <p><i style={{background:'#ec8c39'}}/>手腕（IK 末端）</p>
      <p><i style={{background:'#e2543a'}}/>脚踝（支撑贴地 · 离地可三维拖动）</p>
+     <p><i style={{background:'#0891b2'}}/>摆动路径点（离地帧存储的脚位，摆动中点）</p>
      <p><i style={{background:'#4a9e6b'}}/>肘 / 膝极点</p>
      <p><i style={{background:'#d23c3c'}}/>拍头 · <em style={{color:'#f0b429'}}>触球点</em></p>
      <p className="ws-note">直接拖动末端，IK 自动解算整条链；在空白处拖动仍是旋转视角。</p>
@@ -184,6 +185,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <div className="ws-sub"><h3>约束 <small>随关键帧保存，约束补间</small></h3>
        <Row label="左脚支撑锁定" detail="离地帧的脚位会作为摆动路径点" checked={sel.constraints.plantL} onChange={v=>editSelected(k=>{k.constraints.plantL=v;})}/>
        <Row label="右脚支撑锁定" detail="离地帧的脚位会作为摆动路径点" checked={sel.constraints.plantR} onChange={v=>editSelected(k=>{k.constraints.plantR=v;})}/>
+       {(()=>{const ks=sortedKeys(d),si=ks.findIndex(k=>k.id===sel.id);
+        return si===ks.length-1&&si>0&&((ks[si-1].constraints.plantL&&!sel.constraints.plantL)||(ks[si-1].constraints.plantR&&!sel.constraints.plantR))
+          ?<p className="ws-note" style={{color:'#c0392b'}}>此离地帧位于动作末尾：没有后续区间，脚始终停在接触点 —— 请在其后添加关键帧，抬升高度才会形成摆动轨迹。</p>:null;})()}
        <Row label="右手握拍" checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>
        <Row label="触球 / 接触事件" detail="记录拍头位置为接触点" checked={sel.constraints.contact} onChange={v=>editSelected(k=>{k.constraints.contact=v;})}/>
       </div>

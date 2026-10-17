@@ -5,13 +5,15 @@ import {HumanRig} from '../core/rig';
 import {attachRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
 import type {EffectiveFrame,KeyConstraints,PoseParams,WorkshopDoc,WorkshopKey} from './document';
-import {frameAt,sortedKeys,toV} from './document';
+import {constraintsAt,frameAt,sortedKeys,toV} from './document';
 import {analyzePose,solvePose,type Analysis} from './solver';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
 export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean}
-type DragKind='root'|'hand'|'foot'|'poleArm'|'poleLeg'|'tip'|'contact';
-interface Handle{kind:DragKind;side?:'L'|'R';mesh:Mesh;keyId?:string}
+type DragKind='root'|'hand'|'foot'|'swing'|'poleArm'|'poleLeg'|'tip'|'contact';
+/** `passive` handles render but never start a drag — used for the actual foot
+ * during a release interval, where the editable control is the swing point. */
+interface Handle{kind:DragKind;side?:'L'|'R';mesh:Mesh;keyId?:string;passive?:boolean}
 
 /** Pose-editor scene: same rig and view language as the lab viewer, but every
  * effector is a draggable task-space handle resolved by the kinematic solver. */
@@ -72,6 +74,7 @@ export class WorkshopEngine{
     mk('root',undefined,0x2469ee,.034);
     mk('hand','L',0xec8c39,.026);mk('hand','R',0xec8c39,.026);
     mk('foot','L',0xe2543a,.026);mk('foot','R',0xe2543a,.026);
+    mk('swing','L',0x0891b2,.02);mk('swing','R',0x0891b2,.02);
     mk('poleArm','L',0x4a9e6b,.018);mk('poleArm','R',0x4a9e6b,.018);
     mk('poleLeg','L',0x4a9e6b,.018);mk('poleLeg','R',0x4a9e6b,.018);
     mk('tip',undefined,0xd23c3c,.024);
@@ -91,7 +94,7 @@ export class WorkshopEngine{
     this.pointer.set(((ev.clientX-rect.left)/rect.width)*2-1,-((ev.clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.pointer,this.camera);
     const hits=this.raycaster.intersectObjects([...this.handleGroup.children,...this.contactMarkers].filter(o=>o.visible),false);
-    const o=hits[0]?.object;return o?o.userData.ref as Handle|undefined:undefined;
+    const o=hits.find(x=>!x.object.userData.ref?.passive)?.object;return o?o.userData.ref as Handle|undefined:undefined;
   }
   private onPointerDown=(ev:PointerEvent)=>{
     if(ev.button!==0||!this.ready)return;
@@ -127,6 +130,7 @@ export class WorkshopEngine{
       case 'foot':{const f=this.drag.h.side==='L'?k.footL:k.footR;
         const lock=this.drag.key.constraints[this.drag.h.side==='L'?'plantL':'plantR'];
         f.target={x:pos.x,y:lock?f.target.y:Math.max(0,pos.y),z:pos.z};break;}
+      case 'swing':{const f=this.drag.h.side==='L'?k.footL:k.footR;f.target={x:pos.x,y:Math.max(0,pos.y),z:pos.z};break;}
       case 'poleArm':{(this.drag.h.side==='L'?k.handL:k.handR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'poleLeg':{(this.drag.h.side==='L'?k.footL:k.footR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'tip':case 'contact':{
@@ -164,6 +168,19 @@ export class WorkshopEngine{
     put('poleArm','L',toV(p.handL.pole));put('poleArm','R',toV(p.handR.pole));
     put('poleLeg','L',toV(p.footL.pole));put('poleLeg','R',toV(p.footR.pole));
     put('tip',undefined,this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3(),c.grip);
+    // Swing waypoint split: during a release interval the visible foot sits ON
+    // the path contact→waypoint→landing, so the bone handle becomes display
+    // only and the editable control is a separate handle bound to the release
+    // key's stored target — the mid-swing waypoint the foot passes through.
+    // Without it a drag would write the stored target while the handle stayed
+    // glued to the inherited contact (no visual feedback).
+    const keys=sortedKeys(this.getDoc()),i=constraintsAt(keys,this.time).keyIndex;
+    for(const [flag,foot,side]of [['plantL','footL','L'],['plantR','footR','R']]as const){
+      const release=i>0&&i<keys.length-1&&!keys[i].constraints[flag]&&keys[i-1].constraints[flag];
+      const bone=this.handles.find(x=>x.kind==='foot'&&x.side===side),sw=this.handles.find(x=>x.kind==='swing'&&x.side===side);
+      if(bone)bone.passive=release;
+      if(sw){sw.mesh.visible=release&&this.options.handles;if(release){sw.keyId=keys[i].id;sw.mesh.position.copy(toV(keys[i].pose[foot].target));}}
+    }
   }
   private rebuildAux(){
     if(!this.rig)return;

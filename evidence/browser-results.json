@@ -416,7 +416,8 @@
     "mobileOverflow": false,
     "liveVideo": true,
     "workshopDragPersist": true,
-    "workshopFootHeight": true
+    "workshopFootHeight": true,
+    "workshopWaypointDrag": true
   },
   "samples": {
     "idle": [

@@ -102,6 +102,34 @@ assert.equal(lift.planted,false,'plantL did not toggle off via the UI');
 assert(Math.abs(lift.target-.35)<1e-3,`UI slider did not write footL.target.y (got ${lift.target})`);
 assert(lift.footY>.15,`solved foot did not leave the ground mid-swing (y=${lift.footY})`);
 result.checks.workshopFootHeight=true;
+// Waypoint 3D drag: during a release interval the actual-foot handle becomes
+// passive and a separate swing-point handle carries the stored target —
+// dragging it must move stored target, handle and the solved mid-swing foot
+// together (the previous behaviour wrote the target but the handle never
+// followed the mouse).
+const wpBefore=await page.evaluate(()=>{
+ const e=window.__WS__,ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);
+ e.seek((ks[1].time+ks[2].time)/2);e.solveCurrent();
+ const sw=e.handles.find(x=>x.kind==='swing'&&x.side==='L'),foot=e.handles.find(x=>x.kind==='foot'&&x.side==='L');
+ const p=sw.mesh.position.clone().project(e.camera),r=e.renderer.domElement.getBoundingClientRect();
+ return {swVisible:sw.mesh.visible,footPassive:foot.passive===true,target:{...ks[1].pose.footL.target},footY:e.rig.point('foot_L').y,
+   x:r.left+(p.x+1)/2*r.width,y:r.top+(1-p.y)/2*r.height};
+});
+assert(wpBefore.swVisible,'swing waypoint handle not visible during a release interval');
+assert(wpBefore.footPassive,'foot handle should be passive during a release interval');
+await page.mouse.move(wpBefore.x,wpBefore.y);await page.mouse.down();
+await page.mouse.move(wpBefore.x+40,wpBefore.y-70,{steps:8});await page.mouse.up();
+await page.waitForTimeout(150);
+const wpAfter=await page.evaluate(()=>{
+ const e=window.__WS__,ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);
+ e.seek((ks[1].time+ks[2].time)/2);e.solveCurrent();
+ const sw=e.handles.find(x=>x.kind==='swing'&&x.side==='L');
+ return {target:{...ks[1].pose.footL.target},handleY:sw.mesh.position.y,footY:e.rig.point('foot_L').y};
+});
+assert(wpAfter.target.y>wpBefore.target.y+.02,`waypoint drag did not raise stored target (${wpBefore.target.y}→${wpAfter.target.y})`);
+assert(Math.abs(wpAfter.handleY-wpAfter.target.y)<1e-3,'swing handle did not track the stored target');
+assert(wpAfter.footY>wpBefore.footY,'solved mid-swing foot did not move with the waypoint');
+result.checks.workshopWaypointDrag=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 
