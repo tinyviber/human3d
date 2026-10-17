@@ -83,13 +83,21 @@ export type RigManifest=ReturnType<typeof rigManifestBody>&{manifestSHA256:strin
 export interface WorkshopMetaArgs{
  motionId:string;manifestSHA256:string;bones:number;
  actionId:string;revision:string;definitionSHA256:string;
+ /** Ad-hoc workshop-doc packages name the client document; bundled
+  * descriptors leave it undefined and ship `parameters: {}`. */
  documentName?:string;
+ /** Ad-hoc presentation hints: prop flags the racket (any key carries a grip
+  * constraint), loop mirrors doc.loop. `parameters` is an open object in the
+  * schema and never enters the artifact hash. */
+ prop?:boolean;loop?:boolean;
  source:string;license:string;requestFingerprint:string;
  fps:number;duration:number;keys:number;notes?:string[];
 }
 export function workshopMeta(a:WorkshopMetaArgs){
+ const parameters=a.documentName===undefined?{}:
+  {documentName:a.documentName,presentation:{...(a.prop?{prop:'racket' as const}:{}),loop:a.loop===true}};
  return {motionId:a.motionId,manifestSHA256:a.manifestSHA256,bones:a.bones,
-  action:{id:a.actionId,revision:a.revision,parameters:a.documentName!==undefined?{documentName:a.documentName}:{},definitionSHA256:a.definitionSHA256},
+  action:{id:a.actionId,revision:a.revision,parameters,definitionSHA256:a.definitionSHA256},
   provenance:{solver:SOLVER_NAME,solverRevision:SERVICE_VERSION,source:a.source,requestFingerprint:a.requestFingerprint,
    license:{motion:a.license,rig:'CC0'},
    parametersResolved:{fps:a.fps,duration:a.duration,keys:a.keys}},

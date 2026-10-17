@@ -193,6 +193,7 @@ function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,strin
  const motionId=artifactId(fp,definitionSHA256,ctx,SOLVER_NAME);
  const meta=(id:string)=>workshopMeta({motionId:id,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,
   actionId,revision,definitionSHA256,documentName:requestDoc?.name,
+  prop:doc.keys.some(k=>k.constraints?.grip),loop:doc.loop,
   source:descriptor.provenance.source,license:descriptor.provenance.license,requestFingerprint:fp,
   fps,duration:doc.duration,keys:doc.keys.length,notes:descriptor.notes});
  const pkg=solveWorkshop(ctx.rig,doc,fps,meta(motionId),descriptor.phases);
