@@ -1,7 +1,7 @@
 import {ArrowHelper,AxesHelper,BufferGeometry,Color,DoubleSide,Euler,Float32BufferAttribute,Group,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import type {DebugOptions} from './types';
-import type {MuscleActionFile} from './motions';
+import type {DynamicsRecords,MuscleActionFile} from './muscle-action';
 import {mapMyoSimThumbToSkin,type HandJointPose,type HumanRig} from './rig';
 import {handFrame} from './hand-frame';
 export type DynamicsId=string;
@@ -76,9 +76,13 @@ export class DynamicsReplay {
  }
  get ready(){return !!this.record;}
  get duration(){return this.record?.meta.duration??0;}
- async load(id:DynamicsId,profile:DynamicsCase,actionSpec?:MuscleActionFile){
+ async load(id:DynamicsId,profile:DynamicsCase,actionSpec?:MuscleActionFile,records?:DynamicsRecords){
   const revision=++this.loadRevision;const key=`${id}-${profile}`;let record=this.cache.get(key);
-  if(!record){const [meta,response]=await Promise.all([json<RecordData>(`/dynamics/${key}.json`),fetch(`/dynamics/${key}.bin`)]);if(!response.ok)throw new Error('仿真记录未找到');const values=new Float32Array(await response.arrayBuffer());const end=meta.frames.at(-1)!;if(end.offset+meta.headLength+end.segments*7!==values.length)throw new Error('仿真记录长度校验失败');record={meta,values};this.cache.set(key,record);}
+  if(!record){
+   // Envelope record URLs are authoritative when the spec carries them; a
+   // bare spec falls back to the legacy flat `/dynamics/<id>-<case>` files.
+   const ref=records?.[profile],metaUrl=ref?.meta??`/dynamics/${key}.json`,dataUrl=ref?.data??`/dynamics/${key}.bin`;
+   const [meta,response]=await Promise.all([json<RecordData>(metaUrl),fetch(dataUrl)]);if(!response.ok)throw new Error('仿真记录未找到');const values=new Float32Array(await response.arrayBuffer());const end=meta.frames.at(-1)!;if(end.offset+meta.headLength+end.segments*7!==values.length)throw new Error('仿真记录长度校验失败');record={meta,values};this.cache.set(key,record);}
   if(revision!==this.loadRevision)return false;
   this.model=await json<ModelData>(record.meta.modelMeta??'/dynamics/model.json');this.byName.clear();this.jointByName.clear();for(const b of this.model.bodies)this.byName.set(b.name,b.id);for(const j of this.model.joints)this.jointByName.set(j.name,j);
   this.referencePose.clear();const first=record.meta.frames[0],base=first.offset+record.meta.layout.qpos+record.meta.layout.qvel;

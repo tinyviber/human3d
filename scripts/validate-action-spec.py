@@ -9,7 +9,8 @@ import numpy as np
 from scipy.spatial.transform import Rotation
 
 ROOT = Path(__file__).resolve().parents[1]
-ACTION_DIR = ROOT / 'assets/actions'
+MOTION_DIR = ROOT / 'assets/motions'
+PUBLIC = ROOT / 'public'
 
 
 def require(condition, message):
@@ -42,8 +43,15 @@ def validate_archive():
 
 
 def validate_action(path):
-    spec = json.loads(path.read_text())
+    envelope = json.loads(path.read_text())
+    require(envelope.get('kind') == 'dynamics-motion', f'{path}: not a dynamics-motion envelope')
+    records = envelope['dynamics']['records']
+    for case, ref in records.items():
+        for key in ('meta', 'data'):
+            require((PUBLIC / ref[key].lstrip('/')).is_file(), f"{envelope['id']}: records.{case}.{key} target missing: {ref[key]}")
+    spec = envelope['dynamics']['action']
     action_id = spec['id']
+    require(action_id == envelope['id'], f'{path}: envelope id and action id differ')
     require(path.stem == action_id, f'{path}: file name and action id differ')
     require(spec['schemaVersion'] == 1, f'{action_id}: unsupported schema version')
     require(re.fullmatch(r'[a-z][a-z0-9-]*', action_id), f'{action_id}: invalid action id')
@@ -238,7 +246,9 @@ def validate_action(path):
 
 if __name__ == '__main__':
     validate_archive()
-    results = [validate_action(path) for path in sorted(ACTION_DIR.glob('*.json')) if path.name != 'action.schema.json']
+    results = [validate_action(path) for path in sorted(MOTION_DIR.glob('*.json'))
+               if not path.name.endswith('.schema.json')
+               and json.loads(path.read_text()).get('kind') == 'dynamics-motion']
     for action_id, count, keyframes in results:
         print(f'{action_id}: valid; {count}/416 controlled actuators; {keyframes} task keyframes')
     print('MyoSim archive: 416 actuators, 424 tendon routes, 51 source joint couplings, 104 body inertias')

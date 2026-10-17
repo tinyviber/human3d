@@ -10,14 +10,16 @@ from scipy.optimize import least_squares,lsq_linear
 from scipy.spatial.transform import Rotation,RotationSpline
 import mujoco
 
-OUT=Path('assets/dynamics');OUT.mkdir(exist_ok=True,parents=True);MODEL=Path('public/dynamics');ACTION_DIR=Path('assets/actions')
+OUT=Path('assets/dynamics');OUT.mkdir(exist_ok=True,parents=True);MOTION_DIR=Path('assets/motions')
 captures=json.loads(Path('assets/source/dynamics/capture-reference.json').read_text())['captures']
 meta={};m=None;q0=np.array([]);ind=[];jmap={};current_spec={};MODEL_XML='';MODEL_META='';CONTROLLED=np.array([],dtype=int);DT=.002;CONTROL_STEP=2
 def configure_action(action_id):
  global meta,m,q0,ind,jmap,current_spec,MODEL_XML,MODEL_META,CONTROLLED,DT,CONTROL_STEP
- path=ACTION_DIR/f'{action_id}.json'
- if not path.exists():raise FileNotFoundError(f'Missing action parameter file: {path}')
- current_spec=json.loads(path.read_text())
+ path=MOTION_DIR/f'{action_id}.json'
+ if not path.exists():raise FileNotFoundError(f'Missing motion envelope: {path}')
+ envelope=json.loads(path.read_text())
+ if envelope.get('kind')!='dynamics-motion':raise ValueError(f'{path}: not a dynamics-motion envelope')
+ current_spec=envelope['dynamics']['action']
  if current_spec.get('id')!=action_id:raise ValueError(f'Action id mismatch in {path}')
  MODEL_XML=current_spec['model']['xml'];MODEL_META=current_spec['model']['metadata']
  meta=json.loads(Path(MODEL_META).read_text());m=mujoco.MjModel.from_xml_path(MODEL_XML)
@@ -337,15 +339,17 @@ def simulate(id,ref,case='baseline'):
     peaks['force']=max(peaks['force'],float(force.max()));peaks['error']=max(peaks['error'],float(np.max(abs(err[[dadr(n)for n in ind]]))));peaks['residual']=max(peaks['residual'],residual);peaks['maxSpeed']=max(peaks['maxSpeed'],float(speed))
    samples.append({'time':float(d.time),'qpos':d.qpos.tolist(),'qvel':d.qvel.tolist(),'force':force.tolist(),'act':d.act.tolist(),'support':support,'trackingError':float(np.linalg.norm(err[[dadr(n)for n in ind]])),'allocationResidual':residual,'energy':d.energy.tolist()})
   if step%500==0:print(id,step,'sim',round(t,2),'elapsed',round(time.time()-start,1),flush=True)
- control=np.array(ctrls,dtype=np.float32);control.tofile(OUT/f'{id}-{case}-excitation.bin')
+ out_dir=OUT/id;out_dir.mkdir(exist_ok=True,parents=True)
+control=np.array(ctrls,dtype=np.float32);control.tofile(out_dir/f'{case}-excitation.bin')
  result={'id':id,'case':case,'engine':mujoco.__version__,'modelSHA256':meta['xmlSHA256'],'modelXml':MODEL_XML,'modelMeta':MODEL_META,'source':ref['source'],'sourceUrl':ref['sourceUrl'],'sourceStart':ref['sourceStart'],'sourceEnd':ref['sourceEnd'],'referenceSpeedRatio':ref['referenceSpeedRatio'],'maxArmTargetErrorM':ref.get('maxArmTargetErrorM'),'maxElbowTargetErrorM':ref.get('maxElbowTargetErrorM'),'maxHandTargetErrorM':ref.get('maxHandTargetErrorM'),'minArmClearanceM':ref.get('minArmClearanceM'),'capacityPerturbation':perturb,'capacityScaleApplied':strength_scale,'duration':float(len(control)*DT),'dt':DT,'frames':len(control),'nu':m.nu,'initial':initial,'peaks':peaks,'samples':samples,'method':'Constrained computed-muscle-control tracking; only bounded muscle excitations applied; zero reserve torques; bilateral fixed-foot support; state trajectory is a recorded forward simulation.'}
- (OUT/f'{id}-{case}.json').write_text(json.dumps(result,separators=(',',':')))
+ (out_dir/f'{case}.json').write_text(json.dumps(result,separators=(',',':')))
  # Keep the desired trajectory separate for reproducible tracking / error audits.
- np.savez_compressed(OUT/f'{id}-reference.npz',qref=ref['qref'],vref=ref['vref'],aref=ref['aref'],rate=ref['rate'])
+ np.savez_compressed(out_dir/'reference.npz',qref=ref['qref'],vref=ref['vref'],aref=ref['aref'],rate=ref['rate'])
  print(id,'DONE',peaks,'elapsed',time.time()-start,flush=True)
  return result
 
 if __name__=='__main__':
- for id in sys.argv[1:]or['punch','baseball-throw']:
+ ids=sys.argv[1:]or sorted(p.stem for p in MOTION_DIR.glob('*.json')if json.loads(p.read_text()).get('kind')=='dynamics-motion')
+ for id in ids:
   configure_action(id);ref=references(id);print('reference',id,ref['duration'],'max arm target error',ref.get('maxArmTargetErrorM'),flush=True);simulate(id,ref,'baseline')
   configure_action(id);simulate(id,ref,'weak')

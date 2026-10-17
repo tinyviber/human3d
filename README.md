@@ -23,20 +23,20 @@ npm run preview
 
 ## 肌肉驱动动作
 
-动作定义放在 `assets/actions/*.json`。同一降阶模型支持的新增动作无需改 TypeScript：
+动力学动作定义放在 `assets/motions/*.json` 的 `dynamics-motion` 信封（肌肉参数在 `dynamics.action`，记录 URL 在 `dynamics.records`）。同一降阶模型支持的新增动作，除在 `src/core/motion-files.ts` 加一行静态导入外无需改 TypeScript：
 
 ```sh
 python3 -m venv .venv-dynamics
 source .venv-dynamics/bin/activate
 pip install -r scripts/requirements-dynamics.txt
 npm run dynamics:new -- --id medicine-ball-push --title "药球推送"
-# 编辑 assets/actions/medicine-ball-push.json 中的阶段、关节角和任务点
+# 编辑 assets/motions/medicine-ball-push.json 中 dynamics.action 的阶段、关节角和任务点
 npm run dynamics:build -- medicine-ball-push
 npm run dynamics:test -- medicine-ball-push
 npm run build
 ```
 
-构建时动作库自动扫描 JSON，网页显示动作名称、说明、阶段标记和物体负载提示。`dynamics:build` 会验证模型参数、计算有界肌肉激励、用 MuJoCo 积分肌骨状态、导出 416 通道记录，并生成 90% 右臂肌力的重新求解对照。模板适用范围、坐标单位和模型限制见 [docs/ACTION-TEMPLATE.md](docs/ACTION-TEMPLATE.md) 与 [docs/DYNAMICS.md](docs/DYNAMICS.md)。
+动作库信封统一由静态注册表加载，网页显示动作名称、说明、阶段标记和物体负载提示。`dynamics:build` 会验证模型参数、计算有界肌肉激励、用 MuJoCo 积分肌骨状态、导出 416 通道记录，并生成 90% 右臂肌力的重新求解对照。模板适用范围、坐标单位和模型限制见 [docs/ACTION-TEMPLATE.md](docs/ACTION-TEMPLATE.md) 与 [docs/DYNAMICS.md](docs/DYNAMICS.md)。
 
 ## 已实现
 
@@ -75,10 +75,10 @@ npm run qa:dynamics       # 肌骨投掷阶段截图、握拳特写与实时投�
 |---|---|
 | `src/core/rig.ts` / `kinematics.ts` | 连续人体骨架、解析 IK、关节活动范围 |
 | `src/core/dynamics.ts` / `engine.ts` | 物理记录解析、蒙皮重定向、相机与播放状态 |
-| `src/core/motions.ts` / `motion-files.ts` / `motion-file.ts` | 动作目录与 motion-file 信封（`assets/motions/*.json`）的校验 / 规范化：`workshop-motion` 内嵌文档，`clip-motion` 指向外部片段 |
+| `src/core/motions.ts` / `motion-files.ts` / `motion-file.ts` | 动作目录与 motion-file 信封（`assets/motions/*.json`）的校验 / 规范化：`workshop-motion` 内嵌文档，`clip-motion` 指向外部片段，`dynamics-motion` 携带肌肉动作参数与记录 URL |
 | `src/core/motion-source.ts` | 统一播放源：clip / 文档 / 动力学记录 / 姿态包共用一个 playhead |
 | `src/workshop/` | 动作工作台与求解管线：任务空间姿态编辑、带约束关键帧、补间与合理性检查（`random-document.ts` 为种子化随机文档生成器，供属性测试） |
-| `assets/actions/` | 可编辑肌肉动作参数和 JSON Schema |
+| `assets/motions/` | 动作信封注册表（含 `dynamics-motion` 肌肉动作参数）与 JSON Schema |
 | `assets/source/dynamics/` | 完整 MyoSim XML、416 执行器 / 424 路径 / 惯性清单与许可 |
 | `assets/dynamics/` | 可复现肌肉激励、参考轨迹与正向仿真源记录 |
 | `public/dynamics/` | 网页用模型、解剖资源、刚体状态和肌腱记录 |

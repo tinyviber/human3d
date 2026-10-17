@@ -1,6 +1,6 @@
 # 新增肌肉驱动动作：参数模板
 
-本工作流面向已经有模型的动作：沿用现有 MyoSim 降阶骨架、支撑约束、右臂目标和肌肉控制器时，只需复制 / 修改 JSON，模型目录会自动将它显示为一个动作。无需为每个动作添加 TypeScript 注册分支。
+本工作流面向已经有模型的动作：沿用现有 MyoSim 降阶骨架、支撑约束、右臂目标和肌肉控制器时，只需复制 / 修改 JSON 信封，动作目录随即将它显示为一个动作。动力学动作与普通动作共用 `assets/motions/` 的 motion-file 信封注册表：`kind:'dynamics-motion'`，肌肉参数在 `dynamics.action`，记录 URL 在 `dynamics.records`。无需为每个动作添加 TypeScript 注册分支以外的逻辑——只需在 `src/core/motion-files.ts` 的静态导入清单中加一行。
 
 ## 创建与运行
 
@@ -18,7 +18,7 @@ pip install -r scripts/requirements-dynamics.txt
 npm run dynamics:new -- --id medicine-ball-push --title "药球推送"
 ```
 
-编辑 `assets/actions/medicine-ball-push.json` 中的 `display`、`reference.keyframes` 和来源说明。每个关键帧给出秒数、阶段名、骨盆偏航、需要控制的标量关节角（度），以及 MyoSim 骨盆相对坐标系中的右肘 / 右腕位置（米，源模型 Z 向上）。角度 / 位置是任务目标，不是会被直接播放的最终姿态。使用真实数据时填好原始动作文件、区间、出处和许可；如果姿态是工程估计，将来源明确标为 `engineering-approximation`。
+编辑 `assets/motions/medicine-ball-push.json` 中 `dynamics.action` 的 `display`、`reference.keyframes` 和来源说明。每个关键帧给出秒数、阶段名、骨盆偏航、需要控制的标量关节角（度），以及 MyoSim 骨盆相对坐标系中的右肘 / 右腕位置（米，源模型 Z 向上）。角度 / 位置是任务目标，不是会被直接播放的最终姿态。使用真实数据时填好原始动作文件、区间、出处和许可；如果姿态是工程估计，将来源明确标为 `engineering-approximation`。
 
 验证、进行两组肌肉正向积分并导出浏览器记录：
 
@@ -30,9 +30,9 @@ npm run build
 npm run dev
 ```
 
-Vite 在构建时从 `assets/actions/*.json` 自动生成动作库。新的数据文件提供名称、说明、目标阶段、是否单次播放、物体负载文字和肌力对照参数；动作面板、阶段标记、播放时间轴和力学面板随之出现。动作记录、源模型路径、运行版本和审核指标存放在 `assets/dynamics/` 与 `public/dynamics/`。只编辑关键帧和 metadata 不需要更改 `motions.ts`、`App.tsx` 或 `engine.ts`。
+动作库由 `src/core/motion-files.ts` 的静态导入清单注册 `assets/motions/*.json` 信封。新信封要加进该清单，显示名、说明、阶段标记等则由信封规范化从 `dynamics.action` 派生，不需要在磁盘信封上手写。动作记录、源模型路径、运行版本和审核指标存放在 `assets/dynamics/<id>/` 与 `public/dynamics/<id>/`；公共记录 URL 写在信封的 `dynamics.records` 里。只编辑关键帧和 metadata 不需要更改 `motions.ts`、`App.tsx` 或 `engine.ts`。
 
-项目中的可复制例子是 `assets/actions/baseball-throw.json` 与 `assets/actions/punch.json`；字段解释和来源见 [DYNAMICS.md](DYNAMICS.md)。JSON Schema 在 `assets/actions/action.schema.json`。
+项目中的可复制例子是 `assets/motions/baseball-throw.json` 与 `assets/motions/punch.json`；字段解释和来源见 [DYNAMICS.md](DYNAMICS.md)。动作参数（`dynamics.action`）的 JSON Schema 在 `assets/motions/dynamics-action.schema.json`，信封本身遵守 `assets/motions/motion.schema.json`。
 
 ## 当前模板能表达什么
 

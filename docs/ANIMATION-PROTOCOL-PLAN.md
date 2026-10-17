@@ -139,7 +139,7 @@ RenderRequest 独立引用一个已完成的 motion，可包含命名相机预�
 | GLB 导出 | ⚠️ 部分实现——派生导出已落地（工作台「导出 GLB」+ `npm run package-to-glb`，共享 `src/core/glb-export.ts`；包时间轴原样入 clip，逐骨四元数 + root 位移轨）；服务端 `outputs.format:'glb'` 有意未做——GLB 是派生品不是交付格式，渲染分层属后置阶段 |
 | `POST .../renders`、VRMA 导出、MCP adapter | ❌ 未实现——按分阶段验收顺序后置 |
 
-目录诚实的边界：五个内置动作（idle/reach/squat/ready/forehand——`assets/motions/*.json` 的 `workshop-motion` 信封，内嵌规范化 WorkshopDoc，与服务端同一条求解管线）+ `workshop-doc`（提交校验过的 WorkshopDoc，≤10s/120 keys，参数即模板原语——对应第二优先的声明式模板雏形）。`walk`（CMU 动捕转换，`clip-motion` 信封指向外部片段，轨迹不进姿态管线，许可边界）、动力学动作（`punch`/`baseball-throw`，离线分钟级求解、需要记录回放→姿态包转换）均不在目录中；`shotput`/`throw` 记录无动作 spec，属陈旧资产。forehand 的「上臂与躯干穿插」在目录 notes 与 quality.warnings 中显式标注。
+目录诚实的边界：五个内置动作（idle/reach/squat/ready/forehand——`assets/motions/*.json` 的 `workshop-motion` 信封，内嵌规范化 WorkshopDoc，与服务端同一条求解管线）+ `workshop-doc`（提交校验过的 WorkshopDoc，≤10s/120 keys，参数即模板原语——对应第二优先的声明式模板雏形）。`walk`（CMU 动捕转换，`clip-motion` 信封指向外部片段，轨迹不进姿态管线，许可边界）、动力学动作（`punch`/`baseball-throw`，`dynamics-motion` 信封进文件注册表即网页动作库，但离线分钟级求解、需要记录回放→姿态包转换，按 `service.ts` 的 kind 过滤不进服务目录）均不在目录中；`shotput`/`throw` 无对应资产。forehand 的「上臂与躯干穿插」在目录 notes 与 quality.warnings 中显式标注。
 
 姿态包约定：仅输出非恒等旋转轨道 + root 平移（共享时间戳网格）、四元数半球连续化、事件（phase/keyframe/contact + 支撑区间事件 support-start/support-end，仅在 false↔true 转换处各发一次）、quality（膝/肘/肩限位与足底高度逐帧聚合 + workshop 逐关键帧约束检查 + warnings）。`action.definitionSHA256` 哈希的是解析后的真实动作定义（内置动作为 `motionDefinitionPayload`：规范化 document + phases + notes + license；`workshop-doc` 为规范化文档），不是动作名。`src/server/validate.ts` 是独立校验器（不共用求解代码），重算 FK 复查段长、范数、半球连续、时间戳；`spec/examples/idle.pose.json` 是黄金 fixture（`npm run protocol:example` 重新生成）。
 

@@ -463,3 +463,16 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 - **动力链非完全 proximal→distal**:相对峰时刻上臂 .875s → 骨盆/躯干同帧 .971s → 手 .988s → 前臂 1.212s——近端次序在 240fps 帧粒度未拉开(骨盆/躯干同帧),手部峰夹在前臂之前;门只钉「近端先于前臂」,全序留待后续。
 - **D/E 待办**:D 按裁决推迟、E 判出本 WP,若重启需新工单;选项原文见 WP-C 工单记录。
 - **study 晋升 bundled**:夹具目前是 spec 示例 + 探针门,未进 `assets/motions/` 信封与主页动作库;晋升(文档→motion-file 信封、进内置动作)留后续 WP。
+
+# WP-D — 动力学动作目录化(D2)
+
+## 目标与裁定
+
+- **范围**:把两条肌肉驱动动作(`baseball-throw`/`punch`)从 `motions.ts` 的 Vite-only `import.meta.glob` 注册迁入 `assets/motions/*.json` 信封注册表,与 authored/clip 动作共用同一条 `MOTION_FILES` 静态注册链路。
+- **信封形态**:`kind:'dynamics-motion'`;`dynamics.action` 承载原 action JSON 全部字段(schemaVersion/title/model/simulation/controller/reference/display/notes),`dynamics.records` 按 case 给出 `{meta,data}` URL;原始信封不写任何显示字段(name/english/duration/description/method/focus/phases 及 oneShot/capabilities/notes/license),全部由 `normalizeMotionFile` 从 `dynamics.action` 用旧 `actionMotions` 同一套公式派生(duration 保留仿真网格取整、phases 默认取关键帧时刻并经 lead/scale 换算、clamp 到 duration)。
+- **不引入 `dynamics.model`**:记录 meta 已携带 `modelMeta`/`modelXml` 与哈希,信封再加模型字段只会产生第二份可漂移的模型身份。
+- **记录文件迁入 per-action 目录**:`public/dynamics/<id>/<case>.{json,bin}`;信封 `dynamics.records` URL 是运行期抓取契约,`DynamicsReplay.load` 优先用信封 URL,裸 `{kind:'dynamics'}` spec 回退旧扁平 `/dynamics/<id>-<case>` 约定。中间产物(原始逐帧 run JSON、激励 bin、参考 npz)同样按动作分目录到 `assets/dynamics/<id>/`——它们是 export 管线的输入而非 web 资产,不进 public/。
+- **互斥与派生边界**(schema `allOf` + `validateMotionFileShape` 双轨):dynamics-motion 必须有 `dynamics`、不得有 `document`/`clip`、不得写显示字段;`unwrapMotionFile`/`motionDefinitionPayload` 对 dynamics-motion 显式抛错(不进姿态管线哈希)。
+- **服务目录不变**:`service.ts` 仍按 `f.kind==='workshop-motion'` 过滤,dynamics-motion 进文件注册表/网页动作库但不进 `/v1/actions`;`service.test.ts` 的「不预告不可服务动作」断言原样覆盖 `punch`/`baseball-throw`。
+- **类型解环**:`MuscleActionFile`/`DynamicsRecords` 抽到 `src/core/muscle-action.ts`,`dynamics.ts`/`motion-source.ts`/`motion-file.ts`/`types.ts` 都从这里取型,不再经 `motions.ts`。
+- **副产物**:`assets/actions/` 目录整体删除;`assets/source/dynamics/full-activation-model.xml` 是早期实验中间产物,随本次迁移删除(完整模型快照仍由 `myofullbody-complete.xml` + `myofullbody-parameters.json` 承载)。

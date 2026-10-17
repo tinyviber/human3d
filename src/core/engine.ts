@@ -101,7 +101,10 @@ export class HumanEngine{
  }
  private loadDynamics(source:DynamicsSource,profile:DynamicsCase){
   const spec=this.specOf(this.activeId);
-  void source.load(this.activeId,profile,muscleActionById(this.activeId)).then(result=>{
+  // The spec's dynamics source is authoritative: it carries the envelope's
+  // action parameters and record URLs straight into the replay.
+  const ds=spec.source?.kind==='dynamics'?spec.source:undefined;
+  void source.load(this.activeId,profile,ds?.action??muscleActionById(this.activeId),ds?.records).then(result=>{
    if(this._source!==source)return;
    const replay=source.physics;
    if(result==='applied'&&replay){

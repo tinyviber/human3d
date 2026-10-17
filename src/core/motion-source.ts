@@ -11,7 +11,7 @@ import {motionFileById} from './motion-files';
 import {frameAt,type WorkshopDoc} from '../workshop/document';
 import {solveEffectiveFrame} from '../workshop/solver';
 import type {DynamicsCase,DynamicsReplay} from './dynamics';
-import type {MuscleActionFile} from './motions';
+import type {DynamicsRecords,MuscleActionFile} from './muscle-action';
 import type {DebugOptions,MotionId,MotionSpec} from './types';
 
 /** Per-frame measurements for the inspector/QA: joint angles from FK points,
@@ -251,8 +251,10 @@ export class DynamicsSource implements MotionSource{
   get duration(){return this.session.replay?.duration??0;}
   /** Load the record for `id`. 'applied' → the engine finishes activation;
    * 'superseded' → a newer load or a source switch owns the replay now;
-   * 'error' → status/error already carry the message. */
-  async load(id:string,profile:DynamicsCase,muscleAction?:MuscleActionFile):Promise<'applied'|'superseded'|'error'>{
+   * 'error' → status/error already carry the message. The envelope's
+   * `records` URLs take precedence inside the replay; a bare spec falls back
+   * to the legacy flat path convention. */
+  async load(id:string,profile:DynamicsCase,muscleAction?:MuscleActionFile,records?:DynamicsRecords):Promise<'applied'|'superseded'|'error'>{
     this.motionId=id;this.profile=profile;this.status='loading';this.error=undefined;
     const s=this.session;
     try{
@@ -260,7 +262,7 @@ export class DynamicsSource implements MotionSource{
       const replay=await s.promise;
       if(s.retired){if(s.replay!==replay)replay.dispose();return 'superseded';}
       if(!s.replay){s.replay=replay;s.parent.add(replay.root);}
-      const accepted=await replay.load(id,profile,muscleAction);
+      const accepted=await replay.load(id,profile,muscleAction,records);
       if(!accepted||this.motionId!==id)return 'superseded';
       this.status='ready';replay.root.visible=true;if(this.debug)replay.setOptions(this.debug);
       return 'applied';

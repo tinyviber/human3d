@@ -3,13 +3,16 @@ from pathlib import Path
 import json,hashlib,sys
 import numpy as np
 import mujoco
-OUT=Path('public/dynamics');RAW=Path('assets/dynamics')
+OUT=Path('public/dynamics');RAW=Path('assets/dynamics');MOTION_DIR=Path('assets/motions')
+
+def dynamics_ids():
+ return sorted(p.stem for p in MOTION_DIR.glob('*.json')if json.loads(p.read_text()).get('kind')=='dynamics-motion')
 
 def export(id,case='baseline'):
  if isinstance(case,bool):case='weak'if case else'baseline'
  if case not in ('baseline','weak'):raise ValueError(f'{id}: unknown capacity case {case}')
- run=json.loads((RAW/f'{id}-{case}.json').read_text());model_meta=run.get('modelMeta','public/dynamics/model.json').removeprefix('/');model_xml=run.get('modelXml','public/dynamics/musculoskeletal.xml').removeprefix('/')
- meta=json.loads(Path(model_meta).read_text());xml=Path(model_xml).read_text();controls=np.fromfile(RAW/f'{id}-{case}-excitation.bin',dtype='<f4').reshape(-1,run['nu']);m=mujoco.MjModel.from_xml_string(xml);d=mujoco.MjData(m)
+ run=json.loads((RAW/id/f'{case}.json').read_text());model_meta=run.get('modelMeta','public/dynamics/model.json').removeprefix('/');model_xml=run.get('modelXml','public/dynamics/musculoskeletal.xml').removeprefix('/')
+ meta=json.loads(Path(model_meta).read_text());xml=Path(model_xml).read_text();controls=np.fromfile(RAW/id/f'{case}-excitation.bin',dtype='<f4').reshape(-1,run['nu']);m=mujoco.MjModel.from_xml_string(xml);d=mujoco.MjData(m)
  perturb=run.get('capacityPerturbation') or {'actuatorRange':[210,273],'strengthScale':.9}
  start,end=map(int,perturb['actuatorRange']);scale=float(run.get('capacityScaleApplied',1.))
  if scale<1:m.actuator_gainprm[start:end,2]*=scale;m.actuator_biasprm[start:end,2]*=scale
@@ -18,7 +21,7 @@ def export(id,case='baseline'):
  pick=lambda ids,n:sorted(sorted(ids,key=lambda i:score[i],reverse=True)[:n])
  selected=pick(range(210),12)+list(range(210,273))+pick(range(336,376),12)+pick(range(376,416),12)
  offsets=[];blocks=[];zero=np.zeros(m.nv);idByName={b['name']:b['id']for b in meta['bodies']};qByName={j['name']:j['qpos']for j in meta['joints']};offset=0;metrics=[];identity=0.;minimumClearance=1.;maxAngleViolation=0.;referenceHandErrorMax=0.;referenceHandErrorSum=0.;referenceSamples=0
- referenceData=np.load(RAW/f'{id}-reference.npz');qref=referenceData['qref'];referenceRate=float(referenceData['rate']);dref=mujoco.MjData(m)
+ referenceData=np.load(RAW/id/'reference.npz');qref=referenceData['qref'];referenceRate=float(referenceData['rate']);dref=mujoco.MjData(m)
  supportIds=[m.equality('foot_support_'+s).id for s in ['r','l']]
  def capture():
   nonlocal offset,identity,minimumClearance,maxAngleViolation,referenceHandErrorMax,referenceHandErrorSum,referenceSamples
@@ -49,12 +52,12 @@ def export(id,case='baseline'):
   if (i+1)%5==0 or i==len(controls)-1:capture()
   assert np.isfinite(d.qpos).all()
   assert np.max(abs(d.qfrc_applied))==0 and np.max(abs(d.xfrc_applied))==0
- name=f'{id}-{case}';binary=np.concatenate(blocks).tobytes();(OUT/f'{name}.bin').write_bytes(binary)
+ name=f'{id}/{case}';out_dir=OUT/id;out_dir.mkdir(exist_ok=True,parents=True);binary=np.concatenate(blocks).tobytes();(out_dir/f'{case}.bin').write_bytes(binary)
  layout={'qpos':m.nq,'qvel':m.nv,'bodies':m.nbody,'muscles':m.nu,'support':6,'powers':3,'speed':1};headLength=m.nq+m.nv+m.nbody*7+m.nu*2+10
  data={'id':id,'case':case,'duration':float(d.time),'fps':100,'engine':'MuJoCo '+mujoco.__version__,'source':run['source'],'modelMeta':'/'+model_meta.removeprefix('public/'),'modelXml':'/'+model_xml.removeprefix('public/'),'modelSHA256':meta['xmlSHA256'],'binarySHA256':hashlib.sha256(binary).hexdigest(),'layout':layout,'headLength':headLength,'frames':offsets,'selectedMuscles':selected,'metrics':metrics,'audit':{'externalAppliedForceMax':0,'virtualWorkErrorW':identity,'minimumForearmClearanceM':minimumClearance,'maxScalarJointLimitViolationRad':maxAngleViolation,'maxReferenceHandErrorM':referenceHandErrorMax,'meanReferenceHandErrorM':referenceHandErrorSum/max(1,referenceSamples),'maxControllerCoordinateError':float(run['peaks']['error']),'maxSupportDriftM':float(run['peaks']['supportDrift'])},'method':'Offline forward-simulation record; physical poses are integrated from neural excitation, not prescribed. Rendering interpolates recorded rigid-body states.','parameterScale':scale,'intervention':f"Right-arm active/passive Fmax scaled to {scale:.0%}; muscle control re-solved to the same task target"if case=='weak' else'Unmodified source muscle capacity'}
- (OUT/f'{name}.json').write_text(json.dumps(data,separators=(',',':')))
+ (out_dir/f'{case}.json').write_text(json.dumps(data,separators=(',',':')))
  print(name,len(offsets),'frames',round(len(binary)/1e6,2),'MB',data['audit'],flush=True)
  return data
 if __name__=='__main__':
- for id in sys.argv[1:]or['punch','baseball-throw']:
+ for id in sys.argv[1:]or dynamics_ids():
   export(id,'baseline');export(id,'weak')
