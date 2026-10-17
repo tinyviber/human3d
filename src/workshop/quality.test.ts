@@ -180,3 +180,78 @@ describe('quality probe',()=>{
   expect(d.tip!.kicks).toBeLessThanOrEqual(191); // floor-bound: no regression
  });
 });
+
+describe('forehand-study fixture — WP-C acceptance quality gates',()=>{
+ /* The UI-authored five-key forehand study in
+  * spec/examples/forehand-study.request.json (ledger: forehand-study.md).
+  * Gates below are hard assertions on the shared probe; threshold comments
+  * record the value measured on THIS fixture @240fps and the ×1.25 ceiling /
+  * ÷1.25 floor rule the ticket requires (measured values in
+  * evidence/forehand-study/rounds.jsonl tag `final-240`, 60fps corroboration
+  * in tag `final-60`). */
+ const study=()=>JSON.parse(fs.readFileSync('spec/examples/forehand-study.request.json','utf8'))
+  .action.parameters.document as WorkshopDoc;
+ it('holds every hard physical invariant at 240fps',()=>{
+  const r=probeDocument(rig,study(),{fps:240,tip:racket,name:'forehand-study'});
+  expectFinite(r);
+  // Structure: 5 keys, one contact flag, both feet planted the whole time.
+  expect(r.keyCount).toBe(5);
+  expect(r.supportIntervals).toEqual([{side:'L',from:0,to:2},{side:'R',from:0,to:2}]);
+  expect(r.contact.time).toBe(1.15);
+  // Wrist clamp: demand stays inside the 59.8° limit and the clamp never
+  // fires. Measured 48.2° @0.787s → gate 55° keeps ~14% margin below limit.
+  expect(r.wristClamp.clampedFrames).toBe(0);
+  expect(r.wristClamp.maxBend).toBeLessThan(55);
+  // IK/ground exactness — all measured residuals are ~1e-16 (solver exact);
+  // the 1 mm gate only absorbs float noise.
+  expect(r.ik.armResidualR.v).toBeLessThan(0.003);   // budget <3mm, measured 0
+  expect(r.ik.legResidual.v).toBeLessThan(0.003);    // measured 0
+  expect(r.ik.reachMax.r).toBeLessThan(1);           // measured 94.3% — never saturated
+  for(const s of r.footSlip)expect(s.maxResidual).toBeLessThan(1e-3); // measured ~4e-16
+  expect(r.sole.penetration.L).toBeLessThan(1e-6);
+  expect(r.sole.penetration.R).toBeLessThan(1e-6);
+  // Ankle dorsiflexion is the binding constraint the pelvis-shift correction
+  // enforces at the 20° limit — it may sit ON the limit, never over.
+  expect(r.solverChecks['ankle-dorsiflexion-L'].v).toBeLessThanOrEqual(20.1); // measured 19.6
+  expect(r.solverChecks['ankle-dorsiflexion-R'].v).toBeLessThanOrEqual(20.1); // measured 20.0
+  expect(r.pelvis.saturatedFrames).toBe(0);
+  // Root stays quiet: measured maxA 12.56 m/s² → ceiling 16 (×1.25 → 15.7 → 16);
+  // measured maxStep 1.27 mm → 1.6 mm.
+  expect(r.root.maxA).toBeLessThan(16);
+  expect(r.root.maxStep).toBeLessThan(1.6e-3);
+ });
+ it('shows a fast contact-zone racket tip — the forehand actually whips',()=>{
+  const r=probeDocument(rig,study(),{fps:240,tip:racket,name:'forehand-study'});
+  // Speed floors (÷1.25 of measured, rounded): tip at the contact key
+  // measured 3.79 m/s → floor 3.0; overall peak measured 8.94 m/s → floor 7.0.
+  // The idle package's ~1 m/s at contact is the anti-example this rules out.
+  expect(r.contact.tipSpeed!).toBeGreaterThan(3.0);
+  expect(r.tip!.vmax).toBeGreaterThan(7.0);
+  // The peak belongs to the swing, not a stray frame: measured vpeakT 0.983 s
+  // vs contact key 1.15 s (peak leads contact 0.17 s — the racket decelerates
+  // into the hit, as a real forehand does). Gate |Δt| ≤ 0.25 s.
+  expect(Math.abs(r.tip!.vpeakT-r.contact.time!)).toBeLessThanOrEqual(0.25);
+  // Kick ceilings: measured tip 136 → 170, wrist 7 → 9 (×1.25, rounded up).
+  // tip kicks are the documented residual of a genuine 9 m/s whip — see the
+  // ledger; the gate exists to catch regressions, not to claim kicks are zero.
+  expect(r.tip!.kicks).toBeLessThanOrEqual(170);
+  expect(r.wrist.kicks).toBeLessThanOrEqual(9);
+  // Kinetic chain: proximal segments peak before the distal forearm
+  // (pelvis 0.971 s · trunk 0.971 s → forearm 1.212 s; the hand's 0.988 s
+  // interleave is recorded in the ledger, not gated).
+  const peak=(seg:string)=>r.chain.find(c=>c.seg===seg)!.relT;
+  expect(peak('pelvis')).toBeLessThanOrEqual(peak('forearm')+0.05);
+  expect(peak('trunk')).toBeLessThanOrEqual(peak('forearm')+0.05);
+ });
+ it('agrees with itself at 60fps — gates are not sampling-rate artifacts',()=>{
+  const r=probeDocument(rig,study(),{fps:60,tip:racket,name:'forehand-study'});
+  expectFinite(r);
+  expect(r.frameCount).toBe(121); // 2 s × 60 + 1
+  expect(r.wristClamp.clampedFrames).toBe(0);
+  expect(r.wristClamp.maxBend).toBeLessThan(55);
+  expect(r.ik.armResidualR.v).toBeLessThan(0.003);
+  for(const s of r.footSlip)expect(s.maxResidual).toBeLessThan(1e-3);
+  expect(r.contact.tipSpeed!).toBeGreaterThan(3.0); // measured 4.04 @60fps
+  expect(r.tip!.vmax).toBeGreaterThan(7.0);         // measured 8.91 @60fps
+ });
+});

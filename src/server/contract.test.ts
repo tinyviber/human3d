@@ -62,6 +62,32 @@ describe('golden examples',()=>{
  });
 });
 
+describe('forehand-study example (WP-C acceptance fixture)',()=>{
+ /* Authored through the live workshop UI (see spec/examples/forehand-study.md
+  * for the editing ledger): five keys covering preparation → backswing →
+  * contact → follow-through → recovery over 2 s, both feet planted
+  * throughout, pelvis hand frames, exactly one contact key. */
+ const req=read('examples/forehand-study.request.json');
+ const doc=req.action.parameters.document;
+ it('is a schema-valid workshop-doc request the service accepts',()=>{
+  expect(contract.request(req),JSON.stringify(contract.request.errors)).toBe(true);
+  const r=handleRequest(ctx,'POST','/v1/motions',req,{});
+  expect(r.status,JSON.stringify(r.body)).toBe(200);
+  expect(contract.posePackage(r.body),JSON.stringify(contract.posePackage.errors)).toBe(true);
+  expect(validatePosePackage(r.body as PosePackage,ctx.manifest)).toEqual([]);
+ });
+ it('carries the study structure: ≤5 keys, one contact, double plant, pelvis frames',()=>{
+  expect(req.action.id).toBe('workshop-doc');
+  expect(doc.keys.length).toBeLessThanOrEqual(5);
+  expect(doc.keys.filter((k:{constraints:{contact:boolean}})=>k.constraints.contact)).toHaveLength(1);
+  for(const k of doc.keys){
+   expect(k.constraints.plantL,`${k.id} plantL`).toBe(true);
+   expect(k.constraints.plantR,`${k.id} plantR`).toBe(true);
+  }
+  expect(doc.handFrames).toEqual({L:'pelvis',R:'pelvis'});
+ });
+});
+
 describe('motion file envelopes',()=>{
  it('every assets/motions/*.json satisfies its published schema and normalizes',()=>{
   const dir=path.resolve('assets/motions');
