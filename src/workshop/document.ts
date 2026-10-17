@@ -55,6 +55,19 @@ export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIn
 
 /** Grip closes and opens over this window after the key that toggles it. */
 export const GRIP_TRANSITION_S=.25;
+/** κ of the Hermite tangent clamp: every interior tangent's magnitude is
+ * capped at κ× the SMALLER adjacent secant rate (see the tan() comment for
+ * why the larger secant can never bind). κ=3 is the classic monotone-cubic
+ * bound (Fritsch–Carlson |m/s|≤3); κ=2 halves it.
+ * Probe sweep @240fps (scripts/measure-quality-probe.mts, WP-C):
+ *   defaultDocument channel overshoot sum over all intervals:
+ *     ∞→12620mm · 1.2→7205 · 1.5→7865 · 2→8527 · 3→9814  (worst ch 97.7→76.8mm @κ2)
+ *   forehand (dense 49-key) sampled-curve disturbance vs unclamped:
+ *     1.2→1.91mm/0.137° · 1.5→1.27mm/0.128° · 2→1.12mm/0.112° · 3→1.04mm/0.081°
+ * κ=2 removes ~⅓ of the sparse-doc overshoot while moving the dense baked
+ * curve ≤1.12mm — inside the migration budgets; κ≥3 under-delivers on the
+ * defect, κ≤1.5 flattens genuine acceleration into fast intervals. */
+export const TANGENT_SECANT_CAP=2;
 const ZERO_V3=new Vector3();
 
 /** Deterministic flatten/unflatten so Hermite runs over every numeric field. */
@@ -229,7 +242,26 @@ function interpolate(m:Model,time:number):Interpolated{
   const u=dt>1e-9?Math.max(0,Math.min(1,(time-t0)/dt)):0;
   const val=(j:number,c:number)=>chain[Math.max(0,Math.min(len-1,j))].interp[c];
   const restAt=(j:number,c:number)=>{const s=LOCK_SIDE.get(c);return s!==undefined&&chain[j].rest[s];};
-  const tan=(j:number,c:number)=>j<=0||j>=len-1||restAt(j,c)?0:(val(j+1,c)-val(j-1,c))/(chain[j+1].time-chain[j-1].time);
+  /* Nonuniform-Catmull-Rom centre difference, magnitude-capped at κ× the
+   * smaller adjacent secant rate (TANGENT_SECANT_CAP). The centre
+   * difference is a dt-weighted mean of the two secants, so it always lies
+   * inside their magnitude range — capping at the LARGER secant could never
+   * bind. What whips the segment is a tangent inflated by the fast
+   * neighbour being applied inside the SLOW interval (|m·dt| ≫ |Δv|): the
+   * cap therefore reads the smaller secant, the only per-key bound that
+   * limits overshoot into both intervals while keeping one tangent value
+   * per key (C¹ preserved). Symmetric in sign and direction, so loop ghost
+   * copies get the identical tangent from either side and the seam stays
+   * continuous. κ = TANGENT_SECANT_CAP, chosen by probe sweep (see the
+   * const's comment). */
+  const tan=(j:number,c:number)=>{
+   if(j<=0||j>=len-1||restAt(j,c))return 0;
+   const m=(val(j+1,c)-val(j-1,c))/(chain[j+1].time-chain[j-1].time);
+   const sL=Math.abs((val(j,c)-val(j-1,c))/(chain[j].time-chain[j-1].time));
+   const sR=Math.abs((val(j+1,c)-val(j,c))/(chain[j+1].time-chain[j].time));
+   const cap=TANGENT_SECANT_CAP*Math.min(sL,sR);
+   return m>cap?cap:m<-cap?-cap:m;
+  };
   const width=chain[0].interp.length,out=new Array<number>(width);
   for(let c=0;c<width;c++){
     const m0=tan(i,c),m1=tan(i+1,c);

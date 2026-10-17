@@ -8,26 +8,29 @@
 // segment changes, wrist bend clamp), ground penetration, kinetic-chain
 // sequencing and wrist/tip trajectory smoothness.
 //
-// Usage: npx tsx scripts/measure-quality-probe.mts [fps=240] [motion=forehand|all]
-// Writes evidence/quality-probe-<motion>.json next to the console report.
+// Usage: npx tsx scripts/measure-quality-probe.mts [fps=240] [motion=forehand|default|all]
+// `default` is the workbench's five-key seed document — the sparse-key case
+// where Hermite tangent overshoot is worst (dense bundled docs interpolate
+// near the secants already). Writes evidence/quality-probe-<motion>.json
+// next to the console report.
 import fs from 'node:fs';
 import path from 'node:path';
 import {createService} from '../src/server/service';
 import {motionFileById} from '../src/core/motion-files';
 import {attachRacket} from '../src/core/racket';
+import {defaultDocument} from '../src/workshop/document';
 import {formatProbeReport,probeDocument,probeFrames,stepAngles,type ProbeFrame} from '../src/workshop/quality-probe';
 
 const fps=Number(process.argv[2]??240);
 const which=process.argv[3]??'forehand';
 const ctx=await createService(path.resolve('public'));
 const racket=attachRacket(ctx.rig);
-const ids=which==='all'?['forehand','squat','reach','ready','idle']:[which];
+const ids=which==='all'?['default','forehand','squat','reach','ready','idle']:[which];
 fs.mkdirSync('evidence',{recursive:true});
 const summary:Record<string,unknown>={};
 for(const id of ids){
- const mf=motionFileById(id);
- if(!mf?.document){console.log(`${id}: no workshop document`);continue;}
- const doc=mf.document;
+ const doc=id==='default'?defaultDocument(ctx.rig.rest):motionFileById(id)?.document;
+ if(!doc){console.log(`${id}: no workshop document`);continue;}
  const r=probeDocument(ctx.rig,doc,{fps,tip:racket,name:id,
   // The forehand's kinetic-chain "active" window is the swing phase.
   activeWindow:id==='forehand'?[1.3,3.5]:undefined});

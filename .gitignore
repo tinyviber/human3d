@@ -5,3 +5,7 @@ dist/
 
 .venv-dynamics/
 __pycache__/
+
+# Regeneratable reference data: authored-pipeline captures that
+# migrate-authored-motions.mts diffs the current solver against.
+evidence/migration-authored/

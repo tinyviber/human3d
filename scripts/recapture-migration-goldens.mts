@@ -1,0 +1,46 @@
+// Recapture spec/migration/*.golden.json from the CURRENT solver output.
+//
+// The goldens used to pin the retired authoring pipeline (frozen poseAt in
+// migrate-authored-motions.mts); since the tangent-clamp solver change the
+// pipeline's curves deliberately diverge from the authored ones, so the
+// files are re-captured through the production replay path — the same
+// frameAt → solveEffectiveFrame calls migration.test.ts makes. They are now
+// a change-detector baseline: any future solve-semantics drift shows up as
+// a golden diff instead of silently shipping.
+//
+// Rerunnable: npx tsx scripts/recapture-migration-goldens.mts
+import fs from 'node:fs';
+import path from 'node:path';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {HumanRig} from '../src/core/rig';
+import {motionFileById} from '../src/core/motion-files';
+import {frameAt} from '../src/workshop/document';
+import {solveEffectiveFrame} from '../src/workshop/solver';
+import type {RigInfo} from '../src/core/types';
+
+const IDS=['idle','reach','squat','ready','forehand'];
+const assetDir=path.resolve('public');
+const glb=fs.readFileSync(path.join(assetDir,'models/human.glb'));
+const rigJson=fs.readFileSync(path.join(assetDir,'models/rig.json'));
+const gltf=await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset,glb.byteOffset+glb.byteLength),'');
+const rig=new HumanRig(gltf.scene,JSON.parse(rigJson.toString('utf8')) as RigInfo);
+const bones=[...rig.bones.keys()];
+const origin=rig.rest.get('root')!;
+const goldenDir=path.resolve('spec/migration');
+
+interface GoldenFile{schema:string;id:string;times:number[];root:number[][];bones:string[];quats:number[][][]}
+for(const id of IDS){
+ const file=path.join(goldenDir,`${id}.golden.json`);
+ // Keep the golden's own instant grid so pre/post files stay comparable.
+ const old=JSON.parse(fs.readFileSync(file,'utf8')) as GoldenFile;
+ const doc=motionFileById(id)!.document!;
+ const root:number[][]=[],quats:number[][][]=[];
+ for(const t of old.times){
+  solveEffectiveFrame(rig,frameAt(doc,t,origin));
+  root.push(rig.bone('root').position.toArray());
+  quats.push(bones.map(n=>rig.bone(n).quaternion.toArray() as number[]));
+ }
+ const next:GoldenFile={schema:old.schema,id,times:old.times,root,bones,quats};
+ fs.writeFileSync(file,JSON.stringify(next,null,2)+'\n');
+ console.log(`${id}: recaptured ${old.times.length} instants × ${bones.length} bones from the current solver`);
+}

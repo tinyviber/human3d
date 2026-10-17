@@ -7,29 +7,30 @@ over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 ## reach (抬手与转身) — 53 keys · 49 instants × 163 bones
 quat angle diff (deg):  max 0.711 · p95 0.000 · mean 0.001
-world pos diff (mm):    max 0.50 · p95 0.03 · mean 0.01
+world pos diff (mm):    max 1.16 · p95 0.06 · mean 0.02
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 ## squat (下蹲) — 55 keys · 51 instants × 163 bones
-quat angle diff (deg):  max 0.405 · p95 0.001 · mean 0.002
-world pos diff (mm):    max 1.80 · p95 0.40 · mean 0.07
+quat angle diff (deg):  max 1.012 · p95 0.002 · mean 0.003
+world pos diff (mm):    max 2.57 · p95 0.65 · mean 0.10
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 ## ready (持拍准备) — 37 keys · 41 instants × 163 bones
-quat angle diff (deg):  max 0.001 · p95 0.000 · mean 0.000
-world pos diff (mm):    max 0.00 · p95 0.00 · mean 0.00
+quat angle diff (deg):  max 0.005 · p95 0.000 · mean 0.000
+world pos diff (mm):    max 0.02 · p95 0.01 · mean 0.00
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 ## forehand (正手挥拍) — 49 keys · 57 instants × 163 bones
-quat angle diff (deg):  max 4.028 · p95 0.002 · mean 0.008
-world pos diff (mm):    max 2.44 · p95 0.40 · mean 0.08
+quat angle diff (deg):  max 4.028 · p95 0.003 · mean 0.009
+world pos diff (mm):    max 2.47 · p95 0.62 · mean 0.11
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 Tolerances chosen to cover the measured maxima: quat 5°, world position 5mm.
-Graded for the migration test: idle/reach/squat/ready keep a 1° quat budget (measured ≤0.5°);
-forehand gets 5° — its only spikes are isolated wrist_R/lowerarm02_R twist-split samples in
-the fastest palm-rotation stretch (bend-clamp + roll extraction is ill-conditioned there),
-not trajectory error: forehand position stays ≤3mm and p95 quat ≤0.01°.
 Residual sources: second-order Hermite error on the baked hand targets/poles, hand-frame
-quaternion slerp vs authored component-wise Hermite, and the poseAt root-y clamp, which is
-reproduced by extra keys straddling every clamp crossing (the plateau goes flat).
+quaternion slerp vs authored component-wise Hermite, the poseAt root-y clamp (reproduced by
+extra keys straddling every clamp crossing — the plateau goes flat), and the WP-C tangent
+clamp: the workshop spline now caps interior tangent magnitude at 2× the smaller adjacent
+secant while the frozen authored capture keeps raw centre differences — a deliberate
+semantics change recorded in docs/investigate.md. The regression goldens this report is
+measured against live in spec/migration/ and are solver captures (recapture-migration-
+goldens.mts), NOT the authored captures written under evidence/migration-authored/.

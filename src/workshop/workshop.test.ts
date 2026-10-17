@@ -5,7 +5,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '../core/rig';
 import {attachRacket,gripFrame} from '../core/racket';
 import {angleAt} from '../core/kinematics';
-import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,toV,unflattenPose,validateDocShape,type WorkshopKey} from './document';
+import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,TANGENT_SECANT_CAP,toV,unflattenPose,validateDocShape,type WorkshopKey} from './document';
 import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from './limits';
@@ -198,6 +198,72 @@ describe('workshop document',()=>{
   expect(validateDocShape(doc)).toEqual([]);
   // Reusing an existing key still works at the limit.
   expect(ensureKey(doc,doc.keys[3].time)!.id).toBe(doc.keys[3].id);
+ });
+});
+describe('Catmull-Rom tangent clamp (WP-C)',()=>{
+ /* Sparse keys let the nonuniform centre difference scale the slow side of
+  * an asymmetric neighbourhood, whipping the spline past the keyed range —
+  * defaultDocument wrist_R peaked ≈22 rad/s before the fix vs ≈6 for the
+  * bundled forehand. tan() now caps |m| at TANGENT_SECANT_CAP=2 × the
+  * smaller adjacent secant, sign-symmetric, shared by the loop ghost chain.
+  * The cases below pin the observable contract through the real sample
+  * path: excursion bound, bitwise key reproduction, C¹, seam-smooth loop.
+  * footR.target.y is a plain world channel and all keys are unplanted, so
+  * no contact override or release-swing path touches the channel. */
+ const sparse=(times:number[],ys:number[],duration:number,loop=false)=>{
+  const doc=blankDocument(rig.rest,'clamp','clamp');
+  const template=JSON.parse(JSON.stringify(doc.keys[0])) as WorkshopKey;
+  doc.keys=times.map((time,i)=>{
+   const k=JSON.parse(JSON.stringify(template)) as WorkshopKey;
+   k.id=`c${i}`;k.time=time;k.constraints={plantL:false,plantR:false,grip:false,contact:false};
+   k.pose.footR.target.y=ys[i];return k;
+  });
+  doc.duration=duration;doc.loop=loop;
+  return doc;
+ };
+ it('bounds sparse-key overshoot while leaving the keyed values bitwise intact',()=>{
+  // y = .1 → .5 → .45 over t = 0/.05/1: secants +8 and −.0526 m/s while the
+  // raw centre difference at the middle key is +.35 m/s — 6.7× the weak
+  // side. κ=2 caps it at .105; measured peak excursion past the .5 ceiling
+  // drops ~5× (0.0079m vs 0.0390m for the uncapped Hermite reference).
+  const doc=sparse([0,.05,1],[.1,.5,.45],1);
+  const at=(t:number)=>samplePose(doc,t,origin()).footR.target.y;
+  for(const k of sortedKeys(doc))expect(at(k.time)).toBe(k.pose.footR.target.y);
+  let peak=0;for(let s=0;s<=20000;s++)peak=Math.max(peak,at(s/20000));
+  // Analytic cap: excursion ≤ κ·|weak secant|·Δt·max h10(u) = cap·.95·4/27.
+  const cap=TANGENT_SECANT_CAP*Math.abs((.45-.5)/.95);
+  expect(peak-.5).toBeLessThanOrEqual(cap*.95*(4/27)+1e-9);
+  // The PRE-fix curve: same keys, raw centre-difference tangents, evaluated
+  // on the same Hermite basis — this pins that the clamp truly reduces the
+  // overshoot, not just stays under a theoretical bound.
+  const h=(u:number,v0:number,m0:number,v1:number,m1:number,dt:number)=>
+   (2*u**3-3*u*u+1)*v0+(u**3-2*u*u+u)*dt*m0+(-2*u**3+3*u*u)*v1+(u**3-u*u)*dt*m1;
+  const rawTan=(.45-.1)/(1-0); // uncapped centre difference at the middle key
+  let raw=0;for(let s=0;s<=20000;s++){const u=s/20000;
+   raw=Math.max(raw,h(u,.1,0,.5,rawTan,.05),h(u,.5,rawTan,.45,0,.95));}
+  expect(peak-.5).toBeLessThan((raw-.5)*.6); // excursions: .0079 vs .0390
+ });
+ it('keeps C¹ velocity through a key whose tangent the clamp reduced',()=>{
+  // keys 0/.5/1 with y = 0/.4/.45: secants .8 and .1 m/s, raw centre
+  // difference .45 m/s → capped to .2. One clamped tangent serves both
+  // adjoining cubics, so one-sided velocities converge to it from either
+  // side (measured: 0.200040 / 0.199998 at ε=1e-5).
+  const doc=sparse([0,.5,1],[0,.4,.45],1);
+  const at=(t:number)=>samplePose(doc,t,origin()).footR.target.y,e=1e-4;
+  const vL=(at(.5)-at(.5-e))/e,vR=(at(.5+e)-at(.5))/e;
+  expect(vL).toBeCloseTo(.2,2);expect(vR).toBeCloseTo(.2,2);
+  expect(Math.abs(vL-vR)).toBeLessThan(.005); // |Δ| ≈ 4.2e-4
+ });
+ it('stays velocity-continuous across the loop seam when the clamp binds on wrapped tangents',()=>{
+  // loop t=1.5, keys 0/.5/1.2 with y = 0/.4/.05. Across the ghost chain the
+  // wrap tangent at key 0 sees secants |0−.05|/.3 = .167 and |.4−0|/.5 = .8
+  // → raw .4375 capped to .333; the same value closes interval [1.2,1.5]
+  // and opens [0,.5], so the foot keeps rising smoothly through the wrap.
+  const doc=sparse([0,.5,1.2],[0,.4,.05],1.5,true);
+  const at=(t:number)=>samplePose(doc,t,origin()).footR.target.y,e=1e-4;
+  expect(at(doc.duration)).toBe(at(0)); // seam value, bitwise
+  const vIn=(at(doc.duration)-at(doc.duration-e))/e,vOut=(at(e)-at(0))/e;
+  expect(Math.abs(vIn-vOut)).toBeLessThan(.01); // measured |Δ| ≈ 6e-4, both ≈ .333
  });
 });
 describe('workshop solver',()=>{

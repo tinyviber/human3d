@@ -15,37 +15,44 @@ import {formatProbeReport,probeDocument,stepAngles,PROBE_POINTS,PROBE_QUAT_BONES
  * asserts only structural facts — the report exists, every field is finite,
  * the sampling grid honours the endpoint contract, and the probe measures the
  * REAL solve path (frame parity with solveWorkshop's package). Hard quality
- * gates land in a later commit once thresholds are calibrated; the measured
- * baselines below are the before-fix record and are also frozen into
+ * gates land in a later commit once thresholds are calibrated; the baselines
+ * below are measured through the probe and frozen into
  * evidence/quality-probe-*.json.
  *
- * Baseline @240fps (this commit's solver, measured through the probe):
+ * Baseline @240fps (post-WP-C solver — tangent clamp κ=2 active; the pre-fix
+ * record and the κ sweep are in docs/investigate.md WP-C). Note the solved-
+ * bone peaks did NOT drop: the clamp bounds channel-level spline overshoot
+ * (document-side excursions −32% sum, worst channel 97.7→76.8mm), while the
+ * per-bone rad/s rows couple IK resolving the same targets — energy moves,
+ * it is not deleted. The trajectory-shape fix is regression-locked in
+ * workshop.test.ts ('Catmull-Rom tangent clamp').
  *
  * defaultDocument (5-key forehand seed, 0.8s, 193 frames):
- *   bones       wrist_R 22.07 rad/s @0.600 · lowerarm02_R peak 24.50 rad/s
+ *   bones       wrist_R 22.60 rad/s @0.600 · lowerarm02_R peak 25.51 rad/s
  *   wristClamp  bend demand max 87.7° @0.600 · clamped 48/193f (25%)
- *               deficit max 27.9° med 14.1° · transitions @0.558/0.763
- *   wrist/tip   vmax 5.90 m/s @0.733 (191 kicks) · tip 18.60 m/s @0.596 (191 kicks, 2 reversals)
- *   root        maxStep 1.10mm @0.383 · maxV 0.264 m/s · maxA 4.02 m/s² @0.008
- *   ik          reachMax 94.0% @0.475 · arm/leg residuals ~0 (<1e-15)
- *   ground      sole minY 19.21mm both feet · penetration ~0
+ *               deficit max ~28° med ~14° · transitions @0.563/0.762
+ *   wrist/tip   vmax 6.02 m/s @0.579 (191 kicks) · tip 18.96 m/s @0.596 (191 kicks, 1 reversal 130°@0.5)
+ *   root        maxStep 1.17mm @0.367 · maxV 0.282 m/s · maxA 4.46 m/s² @0.221
+ *   ik          reachMax 92.7% @0.496 · arm/leg residuals ~0
+ *   ground      sole minY 19.2mm both feet · penetration ~0
  *   wristStep   atKey med 1.38° (n=5) vs interior 1.50° (n=187) — no key kink
- *   contact     @0.5s · tip speed 4.45 m/s
- *   spikes      root-accel-peak 4.02 m/s² (always-reported row)
+ *   contact     @0.5s · tip speed 4.41 m/s
+ *   spikes      root-accel-peak 4.46 m/s² (always-reported row)
  *
  * forehand envelope (49 keys, 5.2s, 1249 frames — evidence/quality-probe-forehand.json):
- *   bones       lowerarm01_R 10.5 rad/s @2.421 · wrist_R 5.4 rad/s @3.004
- *               kinks: upperarm01_R/02_R 2.2° ×4 @2.421 (keyΔ29ms)
- *   wristClamp  bend demand max 105.3° @1.817 · clamped 590/1249f (47%)
- *               deficit max ~45° med ~17° · 4 transitions @1.342/2.371/2.904/4.338
- *   wrist/tip   wrist vmax 1.60 m/s (2 kicks) · tip 4.23 m/s @3.004 (62 kicks, 1 reversal 31°@2.55)
+ *   bones       upperarm01_R/02_R 11.4 rad/s @2.163 · lowerarm01_R/02_R 10.5 @2.421
+ *               wrist_R 5.8 rad/s @2.163
+ *               kinks: upperarm01_R/02_R 2.7° ×4 @2.421 (keyΔ29ms)
+ *   wristClamp  bend demand max 105.4° @1.813 · clamped 590/1249f (47%)
+ *               deficit max ~46° med ~17° · 4 transitions @1.342/2.371/2.904/4.338
+ *   wrist/tip   wrist vmax 1.60 m/s @2.104 (2 kicks) · tip 4.23 m/s @3.004 (62 kicks, 2 reversals)
  *   ik          arm_R residual 0.91cm @2.288 · reachMax 101.7% @2.288 · leg residual 0.00cm
- *   root        maxStep 0.52mm @2.100 · maxV 0.124 m/s · maxA 0.667 m/s² @1.958
+ *   root        maxStep 0.52mm @2.100 · maxV 0.124 m/s · maxA 0.67 m/s² @1.958
  *   pelvis      shift 0–0 · saturated 0f      ground  sole minY 19.2mm · foot-depth 0
- *   wristStep   atKey med 0.21° (n=55) vs interior 0.21° (n=1193)
- *   chain(1.3–3.5s)  upperArm 9.0@2.163 → forearm 10.5@2.421 → hand 5.4@3.004
+ *   wristStep   atKey med 0.21° (n=55) vs interior 0.20° (n=1193)
+ *   chain(1.3–3.5s)  upperArm 11.4@2.163 → forearm 10.5@2.421 → hand 5.8@2.163
  *   contact     @2.55s · tip speed 0.98 m/s
- *   spikes      arm-reach-residual-R 0.91cm · root-accel-peak 0.667 m/s² */
+ *   spikes      arm-reach-residual-R 0.91cm · root-accel-peak 0.67 m/s² */
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
 beforeAll(async()=>{

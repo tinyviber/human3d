@@ -157,8 +157,11 @@ function checkDocument(doc:WorkshopDoc){
   if(doc.inbetweens&&prevPts){
    const dt=t-prevT;
    /* Bound provenance: `vel·dt` is the worst key-to-key travel the document
-    * channels can inject (maxKeyVel); ×4 is slack for Catmull-Rom interior
-    * tangents overshooting the secant rate between keys. `+.8·dt` covers
+    * channels can inject (maxKeyVel); ×4 is slack for Hermite interior
+    * tangents exceeding the secant rate between keys — since WP-C they are
+    * capped at 2× the smaller adjacent secant (TANGENT_SECANT_CAP), so the
+    * factor now carries double headroom rather than an unbounded curve.
+    * `+.8·dt` covers
     * solver-added displacement the channels don't express: the posterior
     * pelvis shift (≤.15 m, solver maxShift) fades in/out with the support
     * weights across a transition interval — up to ~0.75 m/s of root motion

@@ -18,7 +18,7 @@ import type {WorkshopDoc} from '../workshop/document';
  * cannot alter a single solved frame (comments, renaming, extraction) do not
  * require a bump — but when in doubt, bump: a stale id is worse than a
  * gratuitous one. */
-export const SERVICE_VERSION='0.1.0';
+export const SERVICE_VERSION='0.2.0';
 export const RIG_ID='makehuman-body';
 /** Format revision of the ad-hoc workshop document contract. Bumped with the
  * schema, not per document; bundled actions get a content-derived revision. */
