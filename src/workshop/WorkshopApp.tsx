@@ -4,7 +4,7 @@ import {Activity,ArrowLeft,Camera,Check,Download,Film,Pause,Play,Plus,Redo2,Rota
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
-import {contactStartKey,defaultDocument,ensureKey,keyAt,loopBlockers,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
+import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
 import {MotionLibrary} from './library';
 import {HistoryBook,RecordGate} from './history';
 import {clampDuration,WORKSHOP_LIMITS} from './limits';
@@ -91,7 +91,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     // Snapshot before any key is inserted, so one drag is one undo step.
     books.current.of(d.id).record(d);gate.current.touch(d.id,performance.now());
     if(prefer){const k=keyAt(d,prefer);if(k)return k;}
-    const k=ensureKey(d,time);
+    const k=ensureKey(d,time,e.restRoot());
     if(!k){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限：先删除不需要的帧，或在时间轴上选中既有帧再编辑。`);return null;}
     lib.current!.save();bump(v=>v+1);return k;
    };
@@ -142,7 +142,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const removeDoc=(id:string)=>{const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const addKey=()=>{
   if(d.keys.length>=WORKSHOP_LIMITS.maxKeys&&!nearestKey(d,frame.time)){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，请先删除不再需要的关键帧。`);return;}
-  recordBefore(d);const k=ensureKey(d,frame.time);if(!k){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，请先删除不再需要的关键帧。`);return;}
+  recordBefore(d);const k=ensureKey(d,frame.time,engine.current?.restRoot());if(!k){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，请先删除不再需要的关键帧。`);return;}
   setSelected(k.id);edit(()=>{});
  };
  const delKey=()=>{if(d.keys.length<=2||!sel)return;edit(dd=>{dd.keys=dd.keys.filter(k=>k.id!==sel.id);});setSelected(sortedKeys(d)[0].id);};
@@ -249,11 +249,13 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        {(['L','R']as const).map(side=>{
         const planted=sel.constraints[side==='L'?'plantL':'plantR'],cn=side==='L'?'左':'右';
         // A contact holds (target, yaw, pitch) from the run's first key; a
-        // release key inherits them at its instant too. Stored values on
-        // locked keys are dead data — show and edit the owning key instead.
+        // release key inherits them at its instant. Only those two cases have
+        // dead stored values — ordinary swing keys own their stored pose, so
+        // they must edit sel directly (never reach back to the last plant).
         const ks=sortedKeys(d),si=ks.findIndex(k=>k.id===sel.id);
-        let owner=contactStartKey(d,side,sel.time);
-        if(!owner)for(let s=1;s<ks.length;s++){const j=si-s<0&&!d.loop?-1:((si-s)%ks.length+ks.length)%ks.length;if(j<0)break;if(ks[j].constraints[side==='L'?'plantL':'plantR']){owner=contactStartKey(d,side,ks[j].time)??ks[j];break;}}
+        let owner:WorkshopKey|undefined;
+        if(planted)owner=contactStartKey(d,side,sel.time);
+        else if(isReleaseKey(d,si,side)){const p=si>0?si-1:ks.length-1;owner=contactStartKey(d,side,ks[p].time)??ks[p];}
         owner??=sel;
         const foot=side==='L'?owner.pose.footL:owner.pose.footR;
         return <div key={side}>

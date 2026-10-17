@@ -1,8 +1,8 @@
 # !!!INVESTIGATE!!!
 
-> 调查对象：PR #1「Motion protocol v1 服务 + 工作台评审修复」（分支 `feat/motion-protocol-v1`）。
-> 历程：`7e653c4`（被评审）→ `4b053bf` → `c850ece` → `327c86c` → `0edc53a`，共四轮 review、四轮修复。
-> PR #1 已于 `27d8aaf` 合并入 main。
+> 调查对象：PR #1「Motion protocol v1 服务 + 工作台评审修复」（分支 `feat/motion-protocol-v1`）与 PR #3「issue #2 评审路线图实现」（分支 `fix/issue-2-review-roadmap`）。
+> PR #1 历程：`7e653c4`（被评审）→ `4b053bf` → `c850ece` → `327c86c` → `0edc53a`，共四轮 review、四轮修复，已于 `27d8aaf` 合并入 main。
+> PR #3 历程：`e26c4fe`（被评审）→ `3a01861` → 两轮 review、两轮修复，squash 合并。
 
 # PROBLEM DESCRIPTION
 
@@ -130,3 +130,46 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 - Playwright 纳入 GitHub Actions 独立 job（质量门禁）。
 - 手掌方向更高阶平滑插值（角速度连续）。
 - tip 轨迹跨非握拍段连线处理。
+
+---
+
+# PR #3 — issue #2 评审路线图实现
+
+> 分支 `fix/issue-2-review-roadmap`，覆盖阶段 1 全部与阶段 2 大部；阶段 3（GLB 导出）与阶段 4 多数项目未做，issue #2 保持开放。
+> 历程：`e26c4fe`（两轮提交打包，被评审）→ `3a01861` → `030758e`，两轮 review、两轮修复。
+
+## PR #3 · 第一轮 review（基于 `e26c4fe`，Request changes）
+
+工作台保存无效文档的两处 P1 与三处 P2：
+
+- **P1 `ensureKey()` 不查 `maxKeys`**：创建第 121 帧成功保存，刷新后 `validateDocShape` 拒绝 → 文档被隔离、从可编辑列表消失。
+- **P1 循环 `retimeKeys()` 破坏顺序**：先按比例缩放再单独夹末帧到 `duration−loopGap`；0/.98/.99@1.0s 缩到 0.2s 得 0/.196/.190，不再严格递增 → 同样落隔离区。
+- **P2 接触脚滑块死写**：yaw/pitch 滑块写选中帧；选中帧非支撑开始帧时写入被 contactPlan 覆盖的存储值，画面不动。
+- **P2 撤销不一致**：600ms 合并计时器跨文档共享——切文档后的第一步编辑无快照；`WristPanel` 增量角度只随关键帧重置，撤销后继续按旧累计值算 delta。
+- **P2 库文件覆盖路径**：LibraryFile 整体不可解析或 `schemaVersion` 未知时，`load()` 重建默认库并 `save()`，原始字节被覆盖。
+
+### 修复（`3a01861`）
+
+- `ensureKey` 达 `maxKeys` 返回 `undefined`；「添加关键帧」与拖动手柄自动建帧两处入口拒绝并在页脚提示。
+- `retimeKeys` 改为在合法区间 `[0, span]` 内等比缩放（loop 时 span=`duration−loopGap`），末帧不再单独夹取。
+- 脚部俯仰/朝向滑块显示并写入 owner 键（支撑区间键 → `contactStartKey`；释放帧 → 前一支撑区间开始帧），并附锁定提示。
+- 合并窗口提取为 `RecordGate`：仅同文档 600ms 内合并，跨文档/撤销后必录；`wristEpoch` 使 `WristPanel` 随撤销重建。
+- 不可读库文件原文整体进隔离区、跳过自动保存，字符串原文导出。
+- 回归 +6：上限拒绝、loop 双向 retime、满帧/loop 文档「编辑→保存→重载」、`RecordGate` 语义、损坏/未知版本文件保留。
+
+## PR #3 · 第二轮 review（基于 `3a01861`，Request changes，仅剩局部问题）
+
+- **P2-1 owner 搜索越过释放帧**：向前找"最近支撑帧"没有停在释放边界——连续摆动帧（K2/K3）的存储 yaw/pitch 本是活数据（采样器只对 locked-run 与 release 做 override），却被错写回支撑帧。
+- **P2-2 `ensureKey` 采样原点不一致**：`ensureKey` 用默认 `origin=(0,0,0)`，工作台 `frameAtTime` 用 `restRoot`——`handFrames='pelvis'` 且骨盆转体时，插入帧的手部世界坐标出现偏移（t=.35 处实测 ~4mm，转体越大越明显）。
+
+### 修复（`030758e`）
+
+- owner 规则精确匹配采样器 override 条件：`plant=true` → `contactStartKey`；`isReleaseKey` → 前一支撑区间的开始帧；其余（自由摆动帧）→ `sel` 自身。
+- `ensureKey(doc,time,origin)` 显式接收 rest root；`WorkshopEngine.restRoot()` 公开，两处调用（按钮、拖动自动建帧）与工作台同一原点。
+- 回归 +2：「支撑 → 离地 → 连续摆动 → 落地」断言释放帧朝向死写、摆动帧存储值仍被采样（活数据）；自动建帧用真实 restRoot，插入前后 `frameAt(doc,t,restRoot)` 逐通道一致（非默认原点自洽比较）。
+
+## PR #3 · 合并状态
+
+- `tsc -b` / `vitest run`（115 项）/ `vite build` 通过；浏览器 E2E 见 QA 记录。
+- squash 合并 `main`，远程分支 `fix/issue-2-review-roadmap` 删除。
+- issue #2 阶段 3/4 未做，保持开放不关闭。

@@ -4,7 +4,7 @@ import {Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '../core/rig';
 import {attachRacket} from '../core/racket';
-import {blankDocument,contactStartKey,flattenPose,frameAt,samplePose,validateDocShape,type WorkshopDoc,type WorkshopKey} from './document';
+import {blankDocument,contactStartKey,flattenPose,frameAt,isReleaseKey,samplePose,validateDocShape,type WorkshopDoc,type WorkshopKey} from './document';
 import {ankleYForLift,footGeometry,footLift,type Side} from './foot';
 import {analyzePose,solvePose} from './solver';
 
@@ -124,6 +124,28 @@ describe('P1-5 dragging a planted foot writes the contact run start',()=>{
   start.pose.footL.target.z+=.12;
   const after=(solveAt(d,.75),footPoint('L'));
   expect(after.distanceTo(before)).toBeGreaterThan(.1);
+ });
+});
+
+describe('review P2-1 only planted and release keys defer to the contact owner',()=>{
+ it('keeps stored foot orientation live on free-swing keys inside a swing stretch',()=>{
+  // K0 plant → K1 release → K2 free swing → K3 replant. Stored yaw/pitch are
+  // dead only on the locked run and the release instant; K2's are real
+  // keyframe data the swing passes through.
+  const d=docWith([0,1,2,3],(i,k)=>{
+   k.constraints={plantL:i===0||i===3,plantR:true,grip:false,contact:false};
+   k.pose.footL.yaw=i*20;k.pose.footL.pitch=i*10;
+  },3);
+  expect(isReleaseKey(d,1,'L')).toBe(true);
+  expect(isReleaseKey(d,2,'L')).toBe(false);
+  const at=(t:number)=>samplePose(d,t,origin()).footL;
+  // Release instant: inherited contact orientation (K0 stored 0/0), its own
+  // stored 20/10 is dead.
+  expect(at(1).yaw).toBeCloseTo(0,6);expect(at(1).pitch).toBeCloseTo(0,6);
+  // Free-swing K2: its stored values are sampled — editing them is live.
+  expect(at(2).yaw).toBeCloseTo(40,6);expect(at(2).pitch).toBeCloseTo(20,6);
+  // Replant K3 opens a new contact on its own stored orientation.
+  expect(at(3).yaw).toBeCloseTo(60,6);expect(at(3).pitch).toBeCloseTo(30,6);
  });
 });
 

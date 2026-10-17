@@ -156,8 +156,9 @@ export class WorkshopEngine{
     if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}this.onEditEnd?.();}
   };
   /* ---------- pose evaluation ---------- */
-  /** Pelvis hand-frame origin: the rest root, the same origin the solver uses. */
-  private restRoot(){return this.rig?.rest.get('root')??new Vector3();}
+  /** Pelvis hand-frame origin: the rest root, the same origin the solver uses.
+   * Public so callers sampling poses (e.g. auto-key) use the identical frame. */
+  restRoot(){return this.rig?.rest.get('root')??new Vector3();}
   private frameAtTime(doc:WorkshopDoc,t:number){return frameAt(doc,t,this.restRoot());}
   private currentFrame(){
     const doc=this.getDoc();

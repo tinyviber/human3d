@@ -324,12 +324,14 @@ export function nearestKey(doc:WorkshopDoc,time:number,eps=.02){
 /** Auto-key: reuse the key at this time or sample the live pose into a new one.
  * Returns undefined at the maxKeys limit — inserting anyway would produce a
  * document the validator quarantines on next load, so callers must refuse the
- * edit and say so. */
-export function ensureKey(doc:WorkshopDoc,time:number):WorkshopKey|undefined{
+ * edit and say so. `origin` must be the same rest root the caller samples
+ * with: pelvis-frame hands convert through it, so a different origin stores a
+ * shifted copy of the live pose (a visible jump on insertion). */
+export function ensureKey(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):WorkshopKey|undefined{
   const existing=nearestKey(doc,time);
   if(existing)return existing;
   if(doc.keys.length>=WORKSHOP_LIMITS.maxKeys)return undefined;
-  const frame=frameAt(doc,time);
+  const frame=frameAt(doc,time,origin);
   const ceiling=doc.duration-(doc.loop?WORKSHOP_LIMITS.loopGap:0);
   const key:WorkshopKey={id:`k${Math.random().toString(36).slice(2,8)}`,time:Math.max(0,Math.min(ceiling,time)),label:'',pose:frame.pose,constraints:frame.constraints};
   insertKey(doc,key);return key;

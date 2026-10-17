@@ -165,12 +165,23 @@ describe('workshop document',()=>{
   for(const [,mutate]of cases){const d=JSON.parse(JSON.stringify(good));mutate(d);expect(()=>parseDoc(JSON.stringify(d))).toThrow();}
  });
  it('auto-keys by sampling the live pose at insert time',()=>{
-  const doc=defaultDocument(rig.rest);
-  const k=ensureKey(doc,.35)!;
+  const doc=defaultDocument(rig.rest),origin=rig.rest.get('root')!;
+  const expected=frameAt(doc,.35,origin).pose;
+  const k=ensureKey(doc,.35,origin)!;
   expect(doc.keys.length).toBe(6);expect(k.time).toBe(.35);
-  const expected=samplePose(doc,.35);
   for(let i=0;i<flattenPose(expected).length;i++)expect(flattenPose(k.pose)[i]).toBeCloseTo(flattenPose(expected)[i],6);
-  expect(ensureKey(doc,.35)!.id).toBe(k.id);
+  expect(ensureKey(doc,.35,origin)!.id).toBe(k.id);
+ });
+ it('auto-keyed poses land on the live pose — insertion must not shift the hands',()=>{
+  // handFrames=pelvis + trunk rotation: sampling the insert pose with a
+  // different origin stores a shifted copy of the world hand targets. The
+  // workbench passes its rest root, so the frame at the new key is identical
+  // to the frame it replaced.
+  const doc=defaultDocument(rig.rest),origin=rig.rest.get('root')!,t=.35;
+  const before=flattenPose(frameAt(doc,t,origin).pose);
+  ensureKey(doc,t,origin);
+  const after=flattenPose(frameAt(doc,t,origin).pose);
+  for(let i=0;i<before.length;i++)expect(after[i]).toBeCloseTo(before[i],9);
  });
  it('refuses a new key at the maxKeys limit instead of saving an invalid doc',()=>{
   const doc=blankDocument(rig.rest,'满','full');
