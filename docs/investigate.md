@@ -136,7 +136,7 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 # PR #3 — issue #2 评审路线图实现
 
 > 分支 `fix/issue-2-review-roadmap`，覆盖阶段 1 全部与阶段 2 大部；阶段 3（GLB 导出）与阶段 4 多数项目未做，issue #2 保持开放。
-> 历程：`e26c4fe`（两轮提交打包，被评审）→ `3a01861` → `030758e`，两轮 review、两轮修复。
+> 历程：`e26c4fe`（两轮提交打包，被评审）→ `3a01861` → `0564842`，两轮 review、两轮修复。
 
 ## PR #3 · 第一轮 review（基于 `e26c4fe`，Request changes）
 
@@ -162,7 +162,7 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 - **P2-1 owner 搜索越过释放帧**：向前找"最近支撑帧"没有停在释放边界——连续摆动帧（K2/K3）的存储 yaw/pitch 本是活数据（采样器只对 locked-run 与 release 做 override），却被错写回支撑帧。
 - **P2-2 `ensureKey` 采样原点不一致**：`ensureKey` 用默认 `origin=(0,0,0)`，工作台 `frameAtTime` 用 `restRoot`——`handFrames='pelvis'` 且骨盆转体时，插入帧的手部世界坐标出现偏移（t=.35 处实测 ~4mm，转体越大越明显）。
 
-### 修复（`030758e`）
+### 修复（`0564842`）
 
 - owner 规则精确匹配采样器 override 条件：`plant=true` → `contactStartKey`；`isReleaseKey` → 前一支撑区间的开始帧；其余（自由摆动帧）→ `sel` 自身。
 - `ensureKey(doc,time,origin)` 显式接收 rest root；`WorkshopEngine.restRoot()` 公开，两处调用（按钮、拖动自动建帧）与工作台同一原点。
