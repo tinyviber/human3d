@@ -1,5 +1,5 @@
 import {Bone, Object3D, Quaternion, Vector3, Euler} from 'three';
-import {frameRotation,solveTwoBone,forearmTwist,DEG} from './kinematics';
+import {frameRotation,solveTwoBone,forearmTwist,DEG,WRIST_BEND_LIMIT_DEG} from './kinematics';
 import {handFrame} from './hand-frame';
 import type {RigInfo,Pose} from './types';
 export interface FingerJointPose {mcp:number;pip:number;dip:number;abduction?:number}
@@ -65,7 +65,7 @@ export class HumanRig {
     const forearm=this.point(`wrist_${side}`).sub(this.point(`lowerarm01_${side}`)).normalize();
     let desired=forward.clone().normalize();
     const bend=forearm.angleTo(desired);
-    if(bend>59.8*DEG){const aim=new Quaternion().setFromUnitVectors(forearm,desired);aim.slerp(new Quaternion(),1-59.8*DEG/bend);desired=forearm.clone().applyQuaternion(aim);}
+    if(bend>WRIST_BEND_LIMIT_DEG*DEG){const aim=new Quaternion().setFromUnitVectors(forearm,desired);aim.slerp(new Quaternion(),1-WRIST_BEND_LIMIT_DEG*DEG/bend);desired=forearm.clone().applyQuaternion(aim);}
     const targetQ=frameRotation(f,normal,desired,palmNormal);
     // Share pronation with the distal forearm twist bone to avoid wrist-only twist.
     // The twist is the swing-twist angle of the hand relative to the forearm about

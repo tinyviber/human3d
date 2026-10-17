@@ -7,12 +7,25 @@ import type {WorkshopDoc} from '../workshop/document';
  * fingerprints, artifact ids and manifest bodies; hashing stays with the
  * caller (node:crypto on the server, crypto.subtle in the browser). */
 
+/** Solver build identity — carried into provenance.solverRevision and
+ * artifactIdPayload's solver.revision, i.e. into every pose-package id.
+ * Bump it on ANY change to solve semantics: the document sampler
+ * (frameAt/interpolation/contact rewrite), solvePose/solveEffectiveFrame, IK
+ * (solveTwoBone/limb/hand clamps), the pelvis correction, analyzePose checks.
+ * Without a bump the same request+document hashes to the same artifact id
+ * while delivering a different trajectory — the cache-confusion regression
+ * learning[2] warns about ("same id, different motion"). Pure refactors that
+ * cannot alter a single solved frame (comments, renaming, extraction) do not
+ * require a bump — but when in doubt, bump: a stale id is worse than a
+ * gratuitous one. */
 export const SERVICE_VERSION='0.1.0';
 export const RIG_ID='makehuman-body';
 /** Format revision of the ad-hoc workshop document contract. Bumped with the
  * schema, not per document; bundled actions get a content-derived revision. */
 export const WORKSHOP_REVISION='workshop-doc/v2';
-/** Solver identity: carried into provenance.solver and the artifact hash. */
+/** Solver identity: carried into provenance.solver and the artifact hash.
+ * A rewrite under a new algorithm deserves a new name; same-name semantic
+ * changes bump SERVICE_VERSION (see its comment). */
 export const SOLVER_NAME='workshop-hermite-fk-ik';
 
 // Sorted-key JSON stringify; sufficient for fingerprints on our own data

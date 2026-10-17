@@ -19,6 +19,7 @@
 - `npm run service` — 本地 Motion Protocol v1 服务（127.0.0.1:8788）
 - `npm run dynamics:validate`、`npm run dynamics:test` — 动力学资产与物理记录校验，需要 Python 3.13 与 `scripts/requirements-dynamics.txt`（CI 门禁）
 - `npx tsx scripts/measure-motions.mts` — 测量内置动作的语义峰值，用于阈值校准（见 `docs/validation.md`）
+- `npx tsx scripts/measure-quality-probe.mts [fps=240] [motion|all]` — 高帧率质量探针 CLI；度量实现共享 `src/workshop/quality-probe.ts`（vitest 同源），基线在 `evidence/quality-probe-*.json`
 
 ## 关键语义速记
 
