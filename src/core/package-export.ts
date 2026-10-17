@@ -11,8 +11,14 @@ import {WORKSHOP_LIMITS} from '../workshop/limits';
  * contract and idempotency layers. Everything hashes and validates through
  * the shared src/core/protocol.ts + src/core/pose-package.ts primitives, so a
  * package built here is byte-identical to the service response — including
- * id, requestFingerprint, tracks, events and quality. Node-free: the digest
- * is WebCrypto by default, injectable for tests. */
+ * id, requestFingerprint, tracks, events and quality — whenever the input
+ * reaches the same gate the service's does (an object-shaped document with
+ * fps inside the request schema's bound). Outside that envelope the Ajv
+ * contract layer has no local twin: the builder mirrors the service's gate
+ * ORDER (the fps bound is refused before the document is read, just as the
+ * contract check precedes parseDoc) and its error codes, but phrases those
+ * rejections in its own words. Node-free: the digest is WebCrypto by
+ * default, injectable for tests. */
 
 /** SHA-256 hex of a UTF-8 string. */
 export type Digest=(s:string)=>Promise<string>;
@@ -63,11 +69,19 @@ export async function buildManifestLocal(rigJson:RigJsonFile,sourceHash='',diges
  *  - the semantic validator's problems become the 422 error.details verbatim. */
 export async function buildPosePackageLocal(doc:unknown,fps:number,env:PackageEnv):Promise<PackageExportResult>{
  const digest=env.digest??subtleDigest;
+ // Gate order mirrors the service: its request contract (which carries the
+ // fps bound) runs before parseDoc, so a doubly-bad input — malformed
+ // document plus out-of-range fps — must answer invalid_request here too,
+ // not validation_failed.
+ if(!Number.isFinite(fps)||fps<1||fps>LIMITS_FPS.max)
+  return {status:400,body:{error:{code:'invalid_request',message:`sample.fps ${String(fps)} out of range (${LIMITS_FPS.min}–${LIMITS_FPS.max})`}}};
  let requestDoc:WorkshopDoc;
  try{requestDoc=parseDoc(JSON.stringify(doc));}
  catch(e){return {status:400,body:{error:{code:'validation_failed',message:`document rejected: ${e instanceof Error?e.message:String(e)}`}}};}
- if(!Number.isFinite(fps)||fps<1||fps>LIMITS_FPS.max)
-  return {status:400,body:{error:{code:'invalid_request',message:`sample.fps ${String(fps)} out of range (${LIMITS_FPS.min}–${LIMITS_FPS.max})`}}};
+ // Symmetric dead guards: parseDoc already refuses both caps through
+ // validateDocShape, so neither check can fire on this path. They stay to
+ // mirror service.ts verbatim — there they are live (bundled descriptors
+ // skip parseDoc), and keeping the same belt here makes the twin readable.
  if(requestDoc.duration>WORKSHOP_LIMITS.maxDuration)
   return {status:400,body:{error:{code:'validation_failed',message:`document duration ${requestDoc.duration}s exceeds ${WORKSHOP_LIMITS.maxDuration}s`}}};
  if(requestDoc.keys.length>WORKSHOP_LIMITS.maxKeys)

@@ -58,7 +58,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 |---|---|---|---|
 | `导出 JSON` | `<docId>.workshop.json` | WorkshopDoc v2：米制世界坐标、角度为度、时间为秒；关键帧含 `pose` 全部任务空间字段、`constraints` 和可选 `videoTime` | `导入` 载入同类文件或 motion-file 信封 |
 | `导出姿态包` | `<docId>.<artifactId>.pose.json` | 规范姿态包（`spec/pose-package.schema.json` v2）：`buildPosePackageLocal` 本地求解，与 `POST /v1/motions {workshop-doc}` 同一条 `parseDoc → solveWorkshop → validatePosePackage` 管线，产物与响应对等（对等测试逐字节钉死） | 语义校验 422 时**不下载**，问题明细留在卡片上；需 https/localhost（`crypto.subtle`）；采样率 fps 1–60 进入制品 id |
-| `导出 GLB` | `<docId>.<artifactId>.glb` | 同一求解结果烘焙成 glTF 动画（逐骨四元数轨 + root 位移轨，时间轴原样含非整数末段） | **派生品**：字节不内嵌 artifact id，文件名借用仅作对应；导出用干净重解析的 `human.glb`（编辑器里的球拍/材质不会烘进去），共享 `src/core/glb-export.ts`，Node 侧 `npm run package-to-glb` 走同一转换器 |
+| `导出 GLB` | `<docId>.<artifactId>.glb` | 同一求解结果烘焙成 glTF 动画（逐骨四元数轨 + root 位移轨，时间轴原样含非整数末段） | **派生品**：不承载身份契约——`animations[0].name` 与文件名借用 artifact id 便于对应（非内容寻址声明）；导出用干净重解析的 `human.glb`（编辑器里的球拍/材质不会烘进去），共享 `src/core/glb-export.ts`，Node 侧 `npm run package-to-glb` 走同一转换器 |
 
 三个导出共用同一份当前文档；姿态包与 GLB 由 `solvePackage()` 统一求解，fps 改动会得到不同 artifact id（不同文件名）。
 

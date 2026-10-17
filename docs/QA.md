@@ -71,7 +71,7 @@
 | `posePackageForehand` | 同路径 forehand 包：信封派生恢复名称/球拍能力——视口标题「正手挥拍」、球拍挂载可见、「手部特写」「球拍运动轨迹」控件出现、oneShot 禁用循环开关 |
 | `workshopDragPersist` | 真实指针拖动手柄 → localStorage → 刷新后内存文档与求解腕位一致 |
 | `workshopPackageExport` | 「导出姿态包」真实下载的字节与同文档 POST 响应对等（字符串/结构逐位、浮点 ~1e−12），文件名 `<docId>.<artifactId>.pose.json`，并回环进实验室文件输入成功解码 |
-| `workshopGlbExport` | 「导出 GLB」真实下载：glTF magic/版本、恰好一条 animation、rotation channel 数等于包轨道数；文件名 `<docId>.<artifactId>.glb`（借用制品 id 作对应，字节不含） |
+| `workshopGlbExport` | 「导出 GLB」真实下载：glTF magic/版本、恰好一条 animation、rotation channel 数等于包轨道数；文件名 `<docId>.<artifactId>.glb`（GLB 不承载身份契约——动画名与文件名借用制品 id 便于对应，身份以 .pose.json 为准） |
 | `workshopFootHeight` | UI 取消支撑 → 高度滑块写 0.35 m → 摆动中点 `foot_L` 离地 >0.15 |
 | `workshopWaypointDrag` | 摆动区间内脚柄 passive、青色路径点手柄真实拖动跟手且求解脚位同步升高 |
 

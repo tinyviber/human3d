@@ -139,6 +139,9 @@ describe('exportGlb — golden package through a clean model parse',()=>{
   expect(anim.channels.filter(c=>c.target.path==='rotation').length).toBe(golden.tracks.rotations.length);
   const trans=anim.channels.filter(c=>c.target.path==='translation');
   expect(trans.length).toBe(1);
+  // ...and nothing else: rotation + translation must account for EVERY
+  // channel — a stray scale/weights channel would slip past the two counts.
+  expect(anim.channels.length).toBe(golden.tracks.rotations.length+1);
   expect(json.nodes[trans[0].target.node].name).toBe('root');
   for(const s of anim.samplers)expect(json.accessors[s.input].max![0]).toBeCloseTo(golden.timeline.duration,5);
  });

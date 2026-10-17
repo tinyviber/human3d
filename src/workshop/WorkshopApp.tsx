@@ -144,7 +144,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   };
   window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
  },[]);
- const exportQuarantine=(i:number)=>{const q=L.quarantine[i];if(!q)return;const blob=new Blob([L.quarantineText(i)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${q.id||'quarantined'}.quarantine.json`;a.click();URL.revokeObjectURL(a.href);};
+ const exportQuarantine=(i:number)=>{const q=L.quarantine[i];if(!q)return;download(`${q.id||'quarantined'}.quarantine.json`,new Blob([L.quarantineText(i)],{type:'application/json'}));};
  const liftOf=(side:Side,k:WorkshopKey)=>{const f=side==='L'?k.pose.footL:k.pose.footR;const g=engine.current?.footGeometry(side);return g?footLift(g,f.target.y,f.yaw,f.pitch):f.target.y;};
  const setLift=(side:Side,v:number)=>editSelected(k=>{const f=side==='L'?k.pose.footL:k.pose.footR;const g=engine.current?.footGeometry(side);f.target.y=g?ankleYForLift(g,v,f.yaw,f.pitch):v;});
 
@@ -162,7 +162,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   setSelected(k.id);edit(()=>{});
  };
  const delKey=()=>{if(d.keys.length<=2||!sel)return;edit(dd=>{dd.keys=dd.keys.filter(k=>k.id!==sel.id);});setSelected(sortedKeys(d)[0].id);};
- const exportDoc=()=>{const blob=new Blob([serializeDoc(d)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${d.id}.workshop.json`;a.click();URL.revokeObjectURL(a.href);};
+ const exportDoc=()=>download(`${d.id}.workshop.json`,new Blob([serializeDoc(d)],{type:'application/json'}));
  // Solve + hash + validate locally — the same pipeline the service runs for
  // POST /v1/motions {workshop-doc}, so the downloaded bytes equal the service
  // response for this document. The builder snapshots the doc itself, but the
@@ -183,8 +183,13 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   }else{setPkgProblems(null);setHint(res.body.error.message);}
   return null;
  };
+ // Download filenames borrow the doc/artifact ids; an imported document's id
+ // can carry filesystem-hostile characters, and browsers sanitize download
+ // names differently — strip the portable-hostile set here (keeps the CJK
+ // slugs newDocId produces; a broader \w-class strip would mangle them).
+ const safeName=(name:string)=>name.replace(/[\\/:*?"<>|]/g,'_');
  const download=(name:string,blob:Blob)=>{
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=safeName(name);a.click();URL.revokeObjectURL(a.href);
  };
  const exportPackage=async()=>{
   setExporting(true);
@@ -196,8 +201,10 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   }catch(err){setHint(err instanceof Error?err.message:String(err));}
   finally{setExporting(false);}
  };
- // GLB is a DERIVED view of the same artifact: the bytes never carry the
- // artifact id, so the filename borrows it for correspondence only.
+ // GLB is a DERIVED view of the same artifact: it carries no identity
+ // contract — the clip name (animations[0].name, posePackageToClip's
+ // self-describing default) and the filename both borrow the artifact id
+ // for correspondence only, never as a content-addressed claim.
  const exportGlbFile=async()=>{
   setExporting(true);
   try{
@@ -211,7 +218,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    const gltf=await new GLTFLoader().parseAsync(await resp.arrayBuffer(),'');
    const glb=await exportGlb(gltf.scene,posePackageToClip(pkg));
    download(`${d.id}.${pkg.id}.glb`,new Blob([glb],{type:'model/gltf-binary'}));
-   setHint(`已导出 GLB（${exportFps} fps · ${pkg.timeline.count} 帧）——派生文件不内嵌制品 id，身份以同名 ${pkg.id} 姿态包为准`);
+   setHint(`已导出 GLB（${exportFps} fps · ${pkg.timeline.count} 帧）——派生品不承载身份契约（动画名与文件名借用制品 id 便于对应），身份以同名 ${pkg.id} 姿态包为准`);
   }catch(err){setHint(err instanceof Error?err.message:String(err));}
   finally{setExporting(false);}
  };
@@ -262,8 +269,10 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <div className="ws-sub"><h3>姿态包 <small>本地求解 · 与服务同一条管线</small></h3>
       <label className="ws-field"><span>采样率 fps</span><input type="number" min={1} max={60} step={1} value={exportFps} disabled={!subtleOk||exporting} onChange={e=>setExportFps(Math.max(1,Math.min(60,Math.round(Number(e.target.value)||40))))}/></label>
       <div className="ws-row">
-       <button onClick={()=>void exportPackage()} disabled={!subtleOk||!info||exporting} title={subtleOk?'求解并校验当前文档，下载 .pose.json':'姿态包导出需 https 或 localhost 打开'}><Package size={13}/>{exporting?'求解中…':'导出姿态包'}</button>
-       <button onClick={()=>void exportGlbFile()} disabled={!subtleOk||!info||exporting} title={subtleOk?'同一求解结果烘焙成 glTF 动画，干净模型重新解析后导出':'GLB 导出需 https 或 localhost 打开'}><FileBox size={13}/>{exporting?'导出中…':'导出 GLB'}</button>
+       {/* During model load a click still lands on solvePackage's own !e?.rig
+           guard, which answers with a readable hint — no separate !info gate. */}
+       <button onClick={()=>void exportPackage()} disabled={!subtleOk||exporting} title={subtleOk?'求解并校验当前文档，下载 .pose.json':'姿态包导出需 https 或 localhost 打开'}><Package size={13}/>{exporting?'求解中…':'导出姿态包'}</button>
+       <button onClick={()=>void exportGlbFile()} disabled={!subtleOk||exporting} title={subtleOk?'同一求解结果烘焙成 glTF 动画，干净模型重新解析后导出':'GLB 导出需 https 或 localhost 打开'}><FileBox size={13}/>{exporting?'导出中…':'导出 GLB'}</button>
       </div>
       <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
       {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'#c0392b'}}>上一次导出被语义校验拒绝，未生成文件：</p>

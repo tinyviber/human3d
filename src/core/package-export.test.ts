@@ -98,6 +98,20 @@ describe('peer parity — rejection bodies',()=>{
   d.duration=99; // past WORKSHOP_LIMITS.maxDuration — parseDoc refuses first
   await parity(wire(d));
  });
+ it('double fault: out-of-range fps refuses before the document is read',async()=>{
+  // The service's contract layer carries the fps bound and runs before
+  // parseDoc — a malformed document plus bad fps must answer
+  // invalid_request on both sides (the local fps check precedes parseDoc).
+  // Bodies differ: the service's message comes from Ajv, the builder's is
+  // its own — the shared claim is status + error.code.
+  const malformed={not:'a workshop document'};
+  const served=serve(malformed,99),built=await local(malformed,99);
+  expect(served.status).toBe(400);
+  expect(built.status).toBe(served.status);
+  expect((built.body as {error:{code:string}}).error.code)
+   .toBe((served.body as {error:{code:string}}).error.code);
+  expect((built.body as {error:{code:string}}).error.code).toBe('invalid_request');
+ });
 });
 
 describe('ad-hoc action.parameters presentation',()=>{
@@ -119,16 +133,32 @@ describe('ad-hoc action.parameters presentation',()=>{
 });
 
 describe('peer parity — seeded random documents',()=>{
+ /* randomDoc draws inside the validated domain, but honest random poses
+  * mostly trip the semantic validator — the draw is rejection-heavy, not
+  * 200-tuned (seed 11: 0/8 succeed; seed 23: 1/8). Every draw still runs the
+  * full parity: status and body must match whatever the service answers,
+  * and a 422 must carry its error.details verbatim — those strings are the
+  * diagnostics the workshop card renders. A deterministic-200 anchor doc
+  * rides along so the success side is exercised every run, whatever the
+  * draw produces. */
  for(const seed of [11,23])
-  it(`seed ${seed}: every service-200 package matches byte-for-byte`,async()=>{
+  it(`seed ${seed}: every drawn document gets status+body parity, 422 details verbatim`,async()=>{
    const rng=mulberry32(seed);
-   for(let di=0;di<8;di++){
-    const doc=wire(randomDoc(rng,ctx.rig.rest));
-    const served=serve(doc);
-    if(served.status!==200)continue; // 422 parity is pinned by the fixture case
-    const built=await local(doc);
-    expect(built.status).toBe(200);
-    expect(built.body).toEqual(served.body);
+   const docs=[wire(defaultDocument(rig.rest))]; // service-200 anchor
+   for(let di=0;di<8;di++)docs.push(wire(randomDoc(rng,ctx.rig.rest)));
+   const tally:Record<number,number>={};
+   for(const doc of docs){
+    const {served,built}=await parity(doc);
+    tally[served.status]=(tally[served.status]??0)+1;
+    if(served.status===422){
+     const details=(served.body as {error:{details:string[]}}).error.details;
+     expect(details.length).toBeGreaterThan(0);
+     expect((built.body as {error:{details:string[]}}).error.details).toEqual(details);
+    }
    }
+   // Both sides of the gate must have been compared — the old `continue`
+   // on non-200 let a full-skip seed pass while comparing nothing.
+   expect(tally[200]).toBeGreaterThan(0);
+   expect(tally[422]).toBeGreaterThan(0);
   },60000);
 });
