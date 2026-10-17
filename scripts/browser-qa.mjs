@@ -97,9 +97,12 @@ await page.locator('.ws-check').filter({hasText:'左脚支撑锁定'}).locator('
 assert(!(await liftSlider.isDisabled()),'lift slider did not enable after unplanting the foot');
 await liftSlider.evaluate(el=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(el,'0.35');el.dispatchEvent(new Event('input',{bubbles:true}));});
 await page.waitForTimeout(200);
-const lift=await page.evaluate(()=>{const e=window.__WS__;const ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);const mid=ks[1];e.seek((mid.time+ks[2].time)/2);e.solveCurrent();return {target:mid.pose.footL.target.y,planted:mid.constraints.plantL,footY:e.rig.point('foot_L').y};});
+const lift=await page.evaluate(()=>{const e=window.__WS__;const ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);const mid=ks[1];e.seek((mid.time+ks[2].time)/2);e.solveCurrent();return {target:mid.pose.footL.target.y,yaw:mid.pose.footL.yaw,pitch:mid.pose.footL.pitch,planted:mid.constraints.plantL,footY:e.rig.point('foot_L').y};});
 assert.equal(lift.planted,false,'plantL did not toggle off via the UI');
-assert(Math.abs(lift.target-.35)<1e-3,`UI slider did not write footL.target.y (got ${lift.target})`);
+// The slider sets sole lift; the stored value is ankle height — convert back
+// with the same footLift() the UI uses instead of comparing raw target.y.
+const soleLift=await page.evaluate(async l=>{const {footLift}=await import('/src/workshop/foot.ts');return footLift(window.__WS__.footGeometry('L'),l.target,l.yaw,l.pitch);},lift);
+assert(Math.abs(soleLift-.35)<1e-3,`UI slider did not write sole lift .35 (got ${soleLift})`);
 assert(lift.footY>.15,`solved foot did not leave the ground mid-swing (y=${lift.footY})`);
 result.checks.workshopFootHeight=true;
 // Waypoint 3D drag: during a release interval the actual-foot handle becomes
