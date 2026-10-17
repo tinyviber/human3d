@@ -1,5 +1,5 @@
 import {Bone, Object3D, Quaternion, Vector3, Euler} from 'three';
-import {frameRotation,solveTwoBone,DEG} from './kinematics';
+import {frameRotation,solveTwoBone,forearmTwist,DEG} from './kinematics';
 import {handFrame} from './hand-frame';
 import type {RigInfo,Pose} from './types';
 export interface FingerJointPose {mcp:number;pip:number;dip:number;abduction?:number}
@@ -66,16 +66,20 @@ export class HumanRig {
     let desired=forward.clone().normalize();
     const bend=forearm.angleTo(desired);
     if(bend>59.8*DEG){const aim=new Quaternion().setFromUnitVectors(forearm,desired);aim.slerp(new Quaternion(),1-59.8*DEG/bend);desired=forearm.clone().applyQuaternion(aim);}
+    const targetQ=frameRotation(f,normal,desired,palmNormal);
     // Share pronation with the distal forearm twist bone to avoid wrist-only twist.
-    const forearmBone=this.bone(`lowerarm01_${side}`);
-    const oldNormal=normal.clone().applyQuaternion(forearmBone.getWorldQuaternion(new Quaternion()));
-    const project=(v:Vector3)=>v.clone().addScaledVector(forearm,-v.dot(forearm)).normalize();
-    const a=project(oldNormal),b=project(palmNormal);
-    const roll=Math.atan2(new Vector3().crossVectors(a,b).dot(forearm),a.dot(b));
+    // The twist is the swing-twist angle of the hand relative to the forearm about
+    // the forearm axis: the wrist keeps the swing, so the split is well-posed for
+    // every palm direction the bend clamp allows and changes continuously with the
+    // target. A single-axis roll from the palm normal has no value when that normal
+    // runs parallel to the forearm, and the twist bone then jumps.
     const restAxis=this.rest.get(`wrist_${side}`)!.clone().sub(this.rest.get(`lowerarm01_${side}`)!).normalize();
-    this.bone(`lowerarm02_${side}`).quaternion.setFromAxisAngle(restAxis,Math.max(-80*DEG,Math.min(80*DEG,roll))*.65);
+    const forearmQ=this.bone(`lowerarm01_${side}`).getWorldQuaternion(new Quaternion());
+    const rel=forearmQ.clone().invert().multiply(targetQ);
+    const roll=Math.atan2(Math.sin(2*Math.atan2(restAxis.dot(new Vector3(rel.x,rel.y,rel.z)),rel.w)),Math.cos(2*Math.atan2(restAxis.dot(new Vector3(rel.x,rel.y,rel.z)),rel.w)));
+    this.bone(`lowerarm02_${side}`).quaternion.setFromAxisAngle(restAxis,forearmTwist(roll));
     this.model.updateMatrixWorld(true);
-    this.worldRotation(`wrist_${side}`,frameRotation(f,normal,desired,palmNormal));
+    this.worldRotation(`wrist_${side}`,targetQ);
   }
   relaxHand(side:'L'|'R'){
     const {flexionAxis}=handFrame(this.rest,side);

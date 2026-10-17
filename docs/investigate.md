@@ -2,7 +2,7 @@
 
 > 调查对象：PR #1「Motion protocol v1 服务 + 工作台评审修复」（分支 `feat/motion-protocol-v1`）。
 > 历程：`7e653c4`（被评审）→ `4b053bf` → `c850ece` → `327c86c` → `0edc53a`，共四轮 review、四轮修复。
-> PR 仍处于 open 状态。
+> PR #1 已于 `27d8aaf` 合并入 main。
 
 # PROBLEM DESCRIPTION
 

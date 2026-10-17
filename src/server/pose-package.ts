@@ -1,16 +1,22 @@
-import {Quaternion,Vector3} from 'three';
+import {Quaternion} from 'three';
 import {HumanRig} from '../core/rig';
-import {angleAt,DEG,LIMITS} from '../core/kinematics';
 import {poseAt} from '../core/authoring';
 import type {AuthoredKeyframedId} from '../core/authored-motions';
 import type {MotionSpec} from '../core/types';
 import {frameAt,sortedKeys,type WorkshopDoc} from '../workshop/document';
-import {analyzePose,solvePose} from '../workshop/solver';
+import {analyzePose,limitItems,solvePose,type CheckItem} from '../workshop/solver';
 import {canonical,sha256} from './rig-manifest';
 export const POSE_PACKAGE_KIND='pose-package';
-export interface PackageCheck{id:string;ok:boolean;detail:string}
+export const POSE_PACKAGE_SCHEMA_VERSION=2;
+
+/** One aggregated quality check. `value` is the worst sample observed and
+ * `worstTime` is when it occurred; `ok` holds only if every sample passed.
+ * Checks are machine-readable: `code` is a stable identifier, never prose. */
+export interface QualityCheck{code:string;ok:boolean;label:string;value:number|null;limit:number|null;unit:string;worstTime:number|null}
+export type PackageEventType='phase'|'keyframe'|'contact'|'support-start'|'support-end';
+export interface PackageEvent{time:number;label:string;type:PackageEventType;side?:'L'|'R'}
 export interface PosePackage{
- schemaVersion:1;kind:typeof POSE_PACKAGE_KIND;id:string;
+ schemaVersion:typeof POSE_PACKAGE_SCHEMA_VERSION;kind:typeof POSE_PACKAGE_KIND;id:string;
  units:{length:'meter';angle:'radian';time:'second'};
  frame:{handedness:'right';up:'+Y';forward:'+Z'};
  poseMode:'local-trs';quaternionOrder:'xyzw';
@@ -18,40 +24,29 @@ export interface PosePackage{
  rig:{id:string;manifestSHA256:string;bones:number};
  timeline:{fps:number;duration:number;count:number;timestamps:number[]};
  tracks:{translation:{bone:'root';values:number[]};rotations:{bone:string;values:number[]}[]};
- events:{time:number;label:string;type:string}[];
- quality:{checks:PackageCheck[];warnings:string[]};
+ events:PackageEvent[];
+ quality:{checks:QualityCheck[];warnings:string[]};
  provenance:{solver:string;solverRevision:string;source:string;requestFingerprint:string;license:{motion:string;rig:string};parametersResolved:Record<string,unknown>};
 }
 interface CaptureMeta{
- motionId:string;action:PosePackage['action'];events:PosePackage['events'];
- quality:PosePackage['quality'];provenance:PosePackage['provenance'];
+ motionId:string;action:PosePackage['action'];events:PackageEvent[];
+ quality:{warnings:string[]};provenance:PosePackage['provenance'];
  manifestSHA256:string;bones:number;
 }
-interface FrameCheck{check:PackageCheck;severity:number}
-function jointChecks(rig:HumanRig):FrameCheck[]{
- const out:FrameCheck[]=[];
- const push=(id:string,value:number,limit:number,unit:string,tol=.5)=>
-  out.push({severity:value/limit,check:{id,ok:value<=limit+tol,detail:`${value.toFixed(0)}${unit} / ≤${limit}${unit}`}});
- for(const side of ['L','R'] as const){
-  const P=(n:string)=>rig.point(n);
-  push(`knee-flexion-${side}`,angleAt(P(`upperleg01_${side}`),P(`lowerleg01_${side}`),P(`foot_${side}`)),LIMITS.kneeFlexion[1],'°');
-  push(`elbow-flexion-${side}`,angleAt(P(`upperarm01_${side}`),P(`lowerarm01_${side}`),P(`wrist_${side}`)),LIMITS.elbowFlexion[1],'°');
-  const shoulder=P(`lowerarm01_${side}`).clone().sub(P(`upperarm01_${side}`)).angleTo(new Vector3(0,-1,0))/DEG;
-  push(`shoulder-elevation-${side}`,shoulder,LIMITS.shoulderElevation[1],'°');
- }
- for(const side of ['L','R'] as const)
-  out.push({severity:-rig.point(`foot_${side}`).y*50,
-   check:{id:`foot-clearance-${side}`,ok:rig.point(`foot_${side}`).y>-.02,detail:`sole-joint height ${(rig.point(`foot_${side}`).y*1000).toFixed(0)}mm`}});
- return out;
+type Sampler=(t:number)=>CheckItem[];
+
+/** Fold one measured item into the aggregate. Items without a value (not
+ * applicable at this sample, e.g. CoM with no planted foot) are skipped. */
+function fold(acc:Map<string,QualityCheck>,it:CheckItem,t:number){
+ if(it.value===null)return;
+ const prev=acc.get(it.code);
+ const ok=(prev?.ok??true)&&it.ok;
+ if(!prev||prev.value===null||it.value>prev.value){
+  acc.set(it.code,{code:it.code,ok,label:it.label,value:it.value,limit:it.limit,unit:it.unit,worstTime:t});
+ }else acc.set(it.code,{...prev,ok});
 }
-// Keep the worst-severity frame result per check id.
-function mergeChecks(acc:Map<string,FrameCheck>,items:FrameCheck[]){
- for(const it of items){
-  const prev=acc.get(it.check.id);
-  if(!prev||it.severity>prev.severity)acc.set(it.check.id,it);
- }
-}
-function capture(rig:HumanRig,duration:number,fps:number,apply:(t:number)=>void,meta:CaptureMeta):PosePackage{
+
+function capture(rig:HumanRig,duration:number,fps:number,sample:Sampler,meta:CaptureMeta,extraTimes:number[]=[]):PosePackage{
  // Sample grid: uniform 1/fps steps PLUS the exact action end — when
  // duration×fps is non-integer the last interval is partial, but the final
  // timestamp is always exactly `duration` so the package reproduces the
@@ -62,13 +57,15 @@ function capture(rig:HumanRig,duration:number,fps:number,apply:(t:number)=>void,
  timestamps[timestamps.length-1]=duration;
  const count=timestamps.length;
  const rootPos:number[]=[];const rot=new Map([...rig.bones.keys()].map(n=>[n,new Float64Array(count*4)]));
- const checkAcc=new Map<string,FrameCheck>();
+ const checkAcc=new Map<string,QualityCheck>();
  for(let i=0;i<count;i++){
-  const t=timestamps[i];apply(t);
+  const t=timestamps[i];
+  for(const it of sample(t))fold(checkAcc,it,t);
   rootPos.push(...rig.bone('root').position.toArray());
   for(const [n,b]of rig.bones)rot.get(n)!.set(b.quaternion.toArray(),i*4);
-  mergeChecks(checkAcc,jointChecks(rig));
  }
+ // Authored key instants are checked too, even when they fall between grid samples.
+ for(const t of extraTimes)for(const it of sample(t))fold(checkAcc,it,t);
  rig.reset();
  const rotations:{bone:string;values:number[]}[]=[];
  const prev=new Quaternion();
@@ -86,14 +83,15 @@ function capture(rig:HumanRig,duration:number,fps:number,apply:(t:number)=>void,
   rotations.push({bone:n,values});
  }
  return {
-  schemaVersion:1,kind:POSE_PACKAGE_KIND,id:meta.motionId,
+  schemaVersion:POSE_PACKAGE_SCHEMA_VERSION,kind:POSE_PACKAGE_KIND,id:meta.motionId,
   units:{length:'meter',angle:'radian',time:'second'},
   frame:{handedness:'right',up:'+Y',forward:'+Z'},
   poseMode:'local-trs',quaternionOrder:'xyzw',
   action:meta.action,rig:{id:'makehuman-body',manifestSHA256:meta.manifestSHA256,bones:meta.bones},
   timeline:{fps,duration,count,timestamps},
   tracks:{translation:{bone:'root',values:rootPos},rotations},
-  events:meta.events,quality:{checks:[...checkAcc.values()].map(f=>f.check),warnings:meta.quality.warnings},
+  events:meta.events,
+  quality:{checks:[...checkAcc.values()],warnings:meta.quality.warnings},
   provenance:meta.provenance,
  };
 }
@@ -101,14 +99,14 @@ export function solveKeyframed(rig:HumanRig,spec:MotionSpec,fps:number,meta:Omit
  const id=spec.id as AuthoredKeyframedId;
  const warnings:string[]=[];
  if(id==='forehand')warnings.push('documented-defect: 已知上臂与躯干穿插（研究姿态，未修复）');
- return capture(rig,spec.duration,fps,t=>poseAt(rig,id,t),{...meta,
-  events:spec.phases.map(p=>({time:p.time,label:p.label,type:'phase'})),
-  quality:{checks:[],warnings}});
+ // Authored motions carry no contact flags, so only the joint and sole limits apply.
+ return capture(rig,spec.duration,fps,t=>{poseAt(rig,id,t);return limitItems(rig);},{...meta,
+  events:spec.phases.map(p=>({time:p.time,label:p.label,type:'phase' as const})),
+  quality:{warnings}});
 }
 export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,meta:Omit<CaptureMeta,'events'|'quality'>):PosePackage{
  const warnings:string[]=['engineering-approximation: 运动学求解器输出，未做动力学验证'];
- const events:{time:number;label:string;type:string}[]=[];
- const keyChecks=new Map<string,PackageCheck>();
+ const events:PackageEvent[]=[];
  // Support is an interval, not a per-key flag: emit support-start only on a
  // false→true transition (including a doc that begins planted) and
  // support-end on true→false, so each event pair brackets one contact.
@@ -116,25 +114,22 @@ export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,meta:Omit<
  for(const k of sortedKeys(doc)){
   events.push({time:k.time,label:k.label,type:'keyframe'});
   if(k.constraints.contact)events.push({time:k.time,label:`${k.label} · 触球`,type:'contact'});
-  for(const side of ['plantL','plantR'] as const){
-   const foot=side==='plantL'?'左脚':'右脚',now=k.constraints[side],was=support[side];
-   support[side]=now;
-   if(now&&!was)events.push({time:k.time,label:`${foot}支撑开始`,type:'support-start'});
-   if(!now&&was)events.push({time:k.time,label:`${foot}支撑结束`,type:'support-end'});
+  for(const side of ['L','R'] as const){
+   const flag=side==='L'?'plantL':'plantR',foot=side==='L'?'左脚':'右脚',now=k.constraints[flag],was=support[flag];
+   support[flag]=now;
+   if(now&&!was)events.push({time:k.time,label:`${foot}支撑开始`,type:'support-start',side});
+   if(!now&&was)events.push({time:k.time,label:`${foot}支撑结束`,type:'support-end',side});
   }
  }
- const pkg=capture(rig,doc.duration,fps,t=>{const f=frameAt(doc,t);solvePose(rig,f.pose,f.constraints);},{...meta,
-  events,quality:{checks:[],warnings}});
- for(const k of sortedKeys(doc)){
-  const f=frameAt(doc,k.time);solvePose(rig,f.pose,f.constraints);
-  for(const it of analyzePose(rig,f.pose,f.constraints).items){
-   const prev=keyChecks.get(it.label);
-   keyChecks.set(it.label,{id:`keyframe:${it.label}`,ok:(prev?.ok??true)&&it.ok,
-    detail:!it.ok?`t=${k.time.toFixed(2)}s ${it.detail}`:prev?.detail??`t=${k.time.toFixed(2)}s ${it.detail}`});
-  }
- }
+ const origin=rig.rest.get('root')!;
+ const sample:Sampler=t=>{
+  const f=frameAt(doc,t,origin);
+  solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+  return analyzePose(rig,f.pose,f.constraints).items;
+ };
+ const keyTimes=sortedKeys(doc).map(k=>k.time);
+ const pkg=capture(rig,doc.duration,fps,sample,{...meta,events,quality:{warnings}},keyTimes);
  rig.reset();
- pkg.quality.checks.push(...keyChecks.values());
  return pkg;
 }
 export const actionDefinitionHash=(payload:unknown)=>sha256(canonical(payload));

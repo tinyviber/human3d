@@ -46,7 +46,7 @@ npm run build
 - 人体表面、绑定骨骼、坐标轴、IK 端点、代表性肌腱路径、支持力和肌肉功率显示。
 - 网球拍手柄与右手手指刚性握持；正常步态肩肘协调和支撑期足部锚定。
 - 动作工作台（页头「动作工作台」或 `/workshop.html`）：动作库支持自定义命名的新建 / 复制 / 删除动作并自动保存到浏览器；拖动 IK 末端手柄摆关键姿态，关键帧携带支撑脚锁定 / 握拍 / 触球约束，Hermite 补间生成连续动作，含关节限位与重心投影检查、参考视频对齐和 JSON 导入导出。设计依据见 [docs/WORKSHOP.md](docs/WORKSHOP.md)。
-- 动作服务（`npm run service`，仅 loopback `127.0.0.1:8788`）：v1 HTTP 协议提供能力目录、rig manifest（VRM 语义映射 + 内容哈希）和 `POST /v1/motions` 同步求解，返回规范姿态包（逐骨局部旋转 + root 平移、事件、质量检查）。可服务 keyframed 五动作与提交的 WorkshopDoc；GLB/渲染/MCP 未实现。契约见 [spec/openapi.yaml](spec/openapi.yaml)，方案见 [docs/ANIMATION-PROTOCOL-PLAN.md](docs/ANIMATION-PROTOCOL-PLAN.md)。
+- 动作服务（`npm run service`，仅 loopback `127.0.0.1:8788`）：v1 HTTP 协议提供能力目录、rig manifest（VRM 语义映射 + 内容哈希）和 `POST /v1/motions` 同步求解，返回规范姿态包（逐骨局部旋转 + root 平移、事件、质量检查）。可服务 keyframed 五动作与提交的 WorkshopDoc；GLB/渲染/MCP 未实现。请求经 Host/Origin/Content-Type 守卫并按 JSON Schema（Ajv 2020 严格模式）校验；返回前经语义校验，违反运动学阈值的动作以 422 `motion_rejected` 拒绝，阈值与已知限制见 [docs/validation.md](docs/validation.md)。契约见 [spec/openapi.yaml](spec/openapi.yaml)，方案见 [docs/ANIMATION-PROTOCOL-PLAN.md](docs/ANIMATION-PROTOCOL-PLAN.md)。
 
 键盘：空格播放 / 暂停，1–8 切换动作，R 重播。拖动画布旋转，滚轮缩放，右键拖动平移。
 
@@ -60,6 +60,7 @@ npm run build
 
 ```sh
 npm test                  # 人体网格、IK、骨架、手部抓握与动画回归
+npm run spec:check        # 契约：Ajv 严格编译、OpenAPI 与服务一致、golden 样例
 npm run dynamics:validate # 需要先激活 .venv-dynamics
 npm run dynamics:test     # 校验导出的物理记录与参数哈希
 npm run qa                # Playwright 浏览器交互、截图和视频

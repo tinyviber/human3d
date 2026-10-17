@@ -4,56 +4,83 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '../core/rig';
 import {authoredMotionById,isKeyframedId} from '../core/authored-motions';
 import {keyframedDefinition} from '../core/authoring';
-import {parseDoc} from '../workshop/document';
+import {parseDoc,type WorkshopDoc} from '../workshop/document';
+import {WORKSHOP_LIMITS} from '../workshop/limits';
 import {buildRigManifest,RIG_ID,canonical,sha256,type RigManifest} from './rig-manifest';
 import {actionDefinitionHash,solveKeyframed,solveWorkshop,type PosePackage} from './pose-package';
+import {createContract,describeErrors,type Contract} from './contract';
+import {validatePosePackage} from './validate';
+import type {ErrorCode} from './errors';
+
 export const SERVICE_VERSION='0.1.0';
-export const LIMITS_SVC={maxFps:60,defaultFps:40,maxWorkshopDuration:10,maxWorkshopKeys:120,maxBodyBytes:1<<20,
- idempotencyMaxKeys:256,idempotencyTtlSeconds:900} as const;
-interface IdempotentEntry{fingerprint:string;status:number;body:unknown;at:number}
-export interface ServiceContext{rig:HumanRig;manifest:RigManifest;idempotent:Map<string,IdempotentEntry>}
+export const LIMITS_SVC={maxFps:60,defaultFps:40,
+ /** Same caps the workshop UI and validator use (src/workshop/limits.ts). */
+ maxWorkshopDuration:WORKSHOP_LIMITS.maxDuration,maxWorkshopKeys:WORKSHOP_LIMITS.maxKeys,
+ maxBodyBytes:1<<20,
+ idempotencyMaxKeys:256,idempotencyMaxBytes:32<<20,idempotencyTtlSeconds:900,idempotencyKeyMaxLength:128} as const;
+
+interface IdempotentEntry{fingerprint:string;status:number;body:unknown;at:number;bytes:number}
+export interface ServiceContext{rig:HumanRig;manifest:RigManifest;contract:Contract;idempotent:Map<string,IdempotentEntry>;idempotentBytes:number}
+
 export async function createService(assetDir:string):Promise<ServiceContext>{
  const glb=fs.readFileSync(path.join(assetDir,'models/human.glb'));
  const rigJson=fs.readFileSync(path.join(assetDir,'models/rig.json'));
  const gltf=await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset,glb.byteOffset+glb.byteLength),'');
  const parsed:Parameters<typeof buildRigManifest>[0]=JSON.parse(rigJson.toString('utf8'));
  return {rig:new HumanRig(gltf.scene,parsed),manifest:buildRigManifest(parsed,sha256(rigJson)),
-  idempotent:new Map()};
+  contract:createContract(),idempotent:new Map(),idempotentBytes:0};
 }
+
 interface ActionDescriptor{
  id:string;revision:string;title:string;english:string;kind:'keyframed'|'workshop-doc';
+ /** Hash of the resolved action definition; null for client-supplied documents (their hash is per request). */
+ definitionSHA256:string|null;
  durationSeconds:number|null;parameters:Record<string,unknown>;outputs:{kind:string;format:string}[];
  phases?:{time:number;label:string}[];provenance:{source:string;license:string;upstreamLicense?:string};
  notes?:string[];
 }
+
+const KEYFRAMED_IDS=['idle','reach','squat','ready','forehand'] as const;
+const KEYFRAMED_PARAMS={type:'object',additionalProperties:false,properties:{}};
+/** Format revision of the workshop document contract. Bumped with the schema, not per document. */
+const WORKSHOP_REVISION='workshop-doc/v2';
 const WORKSHOP_DOC_PARAMS={
- type:'object',additionalProperties:false,
- properties:{
-  document:{type:'object',description:`WorkshopDoc JSON (schemaVersion 1): named keyframes with pose targets + constraints (plantL/plantR/grip/contact). Solved by the kinematic FK/IK pipeline; max ${LIMITS_SVC.maxWorkshopDuration}s and ${LIMITS_SVC.maxWorkshopKeys} keys.`},
-  sampleHz:{type:'number',minimum:1,maximum:LIMITS_SVC.maxFps},
- },required:['document']};
+ type:'object',additionalProperties:false,required:['document'],
+ properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact). Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. Documents with schemaVersion 1 are upgraded on input.`}},
+};
+const IDEMPOTENCY_KEY=new RegExp(`^[!-~]{1,${LIMITS_SVC.idempotencyKeyMaxLength}}$`);
+
+/** Keyframed revision is content-derived: any change to the authored keys
+ * changes it. The hash covers the definition only, never the revision string. */
+function keyframedInfo(id:(typeof KEYFRAMED_IDS)[number]){
+ const spec=authoredMotionById(id)!;
+ const definitionSHA256=actionDefinitionHash({schema:'keyframed-definition/v2',id,duration:spec.duration,phases:spec.phases,
+  definition:keyframedDefinition(id)});
+ return {definitionSHA256,revision:`keyframed-${definitionSHA256.slice(0,12)}`};
+}
+
+let CATALOG:ActionDescriptor[]|undefined;
 export function actionCatalog():ActionDescriptor[]{
- const out:ActionDescriptor[]=['idle','reach','squat','ready','forehand'].map(id=>{
-  const spec=authoredMotionById(id)!;
-  return {id,revision:'keyframed-v1',title:spec.name,english:spec.english,kind:'keyframed' as const,
-   durationSeconds:spec.duration,
-   parameters:{type:'object',additionalProperties:false,properties:{}},
-   outputs:[{kind:'motion',format:'pose-json'}],phases:spec.phases,
+ if(CATALOG)return CATALOG;
+ const keyframed:ActionDescriptor[]=KEYFRAMED_IDS.map(id=>{
+  const spec=authoredMotionById(id)!,info=keyframedInfo(id);
+  return {id,revision:info.revision,title:spec.name,english:spec.english,kind:'keyframed',definitionSHA256:info.definitionSHA256,
+   durationSeconds:spec.duration,parameters:KEYFRAMED_PARAMS,outputs:[{kind:'motion',format:'pose-json'}],phases:spec.phases,
    provenance:{source:'authored-keyframes',license:'MIT (project-authored motion data)'},
-   notes:id==='forehand'?['documented-defect: upper arm/torso interpenetration in strike zone']:[]
-  };
+   notes:id==='forehand'?['documented-defect: upper arm/torso interpenetration in strike zone']:[]};
  });
- out.push({id:'workshop-doc',revision:'workshop-doc-v1',title:'自定义动作文档',english:'CUSTOM WORKSHOP DOCUMENT',kind:'workshop-doc',
-  durationSeconds:null,parameters:WORKSHOP_DOC_PARAMS,
+ CATALOG=[...keyframed,{id:'workshop-doc',revision:WORKSHOP_REVISION,title:'自定义动作文档',english:'CUSTOM WORKSHOP DOCUMENT',kind:'workshop-doc',
+  definitionSHA256:null,durationSeconds:null,parameters:WORKSHOP_DOC_PARAMS,
   outputs:[{kind:'motion',format:'pose-json'}],
   provenance:{source:'client-supplied WorkshopDoc',license:'caller-owned; service asserts no rights'},
-  notes:['kinematic solve only — no dynamics validation']});
- return out;
+  notes:['kinematic solve only — no dynamics validation']}];
+ return CATALOG;
 }
-function err(status:number,code:string,message:string,extra:Record<string,unknown>={}){return {status,body:{error:{code,message,...extra}}};}
-const json=(body:unknown,status=200)=>({status,body});
-/** What the client sent — request identity for idempotent replay only. */
-function fingerprint(body:unknown){return sha256(canonical(body));}
+
+type Reply={status:number;body:unknown};
+function err(status:number,code:ErrorCode,message:string,extra:Record<string,unknown>={}):Reply{return {status,body:{error:{code,message,...extra}}};}
+const json=(body:unknown,status=200):Reply=>({status,body});
+
 /** What the artifact IS — binds the request to the exact action definition,
  * rig manifest and solver that produced it. A solver or rig upgrade yields a
  * new id for the same request, so caches never conflate two trajectories. */
@@ -61,7 +88,8 @@ export const artifactId=(request:string,definitionSHA256:string,ctx:ServiceConte
  'mot_'+sha256(canonical({protocol:'v1',requestFingerprint:request,definitionSHA256,
   rig:{id:RIG_ID,manifestSHA256:ctx.manifest.manifestSHA256},
   solver:{name:solver,revision:SERVICE_VERSION}})).slice(0,16);
-export function handleRequest(ctx:ServiceContext,method:string,route:string,body?:unknown,headers:Record<string,string>={}){
+
+export function handleRequest(ctx:ServiceContext,method:string,route:string,body?:unknown,headers:Record<string,string>={}):Reply{
  if(method==='GET'&&route==='/v1/capabilities')return json({
   service:{name:'human3d-motion',version:SERVICE_VERSION,protocol:'v1'},
   rigs:[{id:RIG_ID,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,height:ctx.manifest.height,semantics:ctx.manifest.semantics}],
@@ -81,75 +109,109 @@ export function handleRequest(ctx:ServiceContext,method:string,route:string,body
  if(method==='POST'&&route==='/v1/motions')return solveMotion(ctx,body,headers);
  return err(404,'not_found',`${method} ${route}`);
 }
-/** Prune expired idempotency entries, then evict oldest until under the cap.
- * Map iteration order is insertion order, so the first keys are the oldest. */
+
+interface RequestBody{action:{id:string;revision?:string;definitionSHA256?:string;parameters?:Record<string,unknown>};rig?:string;
+ outputs?:{kind:string;format:string}[];sample?:{fps?:number}}
+
+/** The request as the service understands it: defaults filled, the document
+ * normalized (schemaVersion 2), and preconditions dropped because they do not
+ * change the output. Two requests that mean the same motion share this form,
+ * so their fingerprints and artifact ids agree. */
+export function normalizedRequest(actionId:string,doc:WorkshopDoc|undefined,fps:number){
+ return {action:{id:actionId,parameters:doc?{document:doc}:{}},rig:RIG_ID,outputs:[{kind:'motion',format:'pose-json'}],sample:{fps}};
+}
+
+function forgetIdempotent(ctx:ServiceContext,key:string){
+ const e=ctx.idempotent.get(key);
+ if(e){ctx.idempotentBytes-=e.bytes;ctx.idempotent.delete(key);}
+}
+/** Prune expired entries, then evict oldest until under both the count and
+ * byte caps. Map iteration order is insertion order, so the first keys are the oldest. */
 function storeIdempotent(ctx:ServiceContext,key:string,entry:IdempotentEntry){
  const now=Date.now(),ttl=LIMITS_SVC.idempotencyTtlSeconds*1000;
- for(const [k,v]of ctx.idempotent)if(now-v.at>ttl)ctx.idempotent.delete(k);
- while(ctx.idempotent.size>=LIMITS_SVC.idempotencyMaxKeys)ctx.idempotent.delete(ctx.idempotent.keys().next().value!);
- ctx.idempotent.set(key,entry);
+ for(const [k,v]of ctx.idempotent)if(now-v.at>ttl)forgetIdempotent(ctx,k);
+ forgetIdempotent(ctx,key);
+ while(ctx.idempotent.size>=LIMITS_SVC.idempotencyMaxKeys||ctx.idempotentBytes+entry.bytes>LIMITS_SVC.idempotencyMaxBytes){
+  const oldest=ctx.idempotent.keys().next().value;
+  if(oldest===undefined)break;
+  forgetIdempotent(ctx,oldest);
+ }
+ ctx.idempotent.set(key,entry);ctx.idempotentBytes+=entry.bytes;
 }
-function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,string>){
+
+function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,string>):Reply{
  if(!body||typeof body!=='object'||Array.isArray(body))return err(400,'invalid_request','body must be a JSON object');
- const req=body as {action?:unknown;rig?:unknown;outputs?:unknown;sample?:unknown};
- const action=(req.action&&typeof req.action==='object'?req.action:undefined) as {id?:unknown;parameters?:unknown}|undefined;
- if(!action||typeof action.id!=='string')return err(400,'invalid_request','action.id is required');
- const actionId=action.id;
+ if(!ctx.contract.request(body)){
+  const details=describeErrors(ctx.contract.request.errors);
+  return err(400,'invalid_request',`request does not match the contract: ${details[0]}`,{details});
+ }
+ const req=body as RequestBody;
+ const actionId=req.action.id;
  const descriptor=actionCatalog().find(a=>a.id===actionId);
  if(!descriptor)return err(404,'unknown_action',`no action '${actionId}'`,{missing:['solver capability for this action'],available:actionCatalog().map(a=>a.id)});
- const params=(action.parameters===undefined?{}:action.parameters) as Record<string,unknown>;
- if(typeof params!=='object'||params===null||Array.isArray(params))return err(400,'invalid_request','action.parameters must be an object');
- if(req.rig!==undefined&&typeof req.rig!=='string')return err(400,'invalid_request','rig must be a string id');
- const rigId=(req.rig as string|undefined)??RIG_ID;
- if(rigId!==RIG_ID)return err(409,'unsupported_rig',`rig '${rigId}' cannot be served`,{missing:['retarget adapter'],available:[RIG_ID]});
- if(req.outputs!==undefined){
-  if(!Array.isArray(req.outputs))return err(400,'invalid_request','outputs must be an array');
-  for(const o of req.outputs){
-   if(!o||typeof o!=='object')return err(400,'invalid_request','outputs entries must be objects');
-   const {kind,format}=o as {kind?:unknown;format?:unknown};
-   if(kind!=='motion')return err(400,'unsupported_output',`output kind '${String(kind)}' not implemented`,{available:['motion']});
-   if(format!=='pose-json')return err(400,'unsupported_output',`format '${String(format)}' not implemented`,{available:['pose-json']});
-  }
+ for(const o of req.outputs??[]){
+  if(o.kind!=='motion')return err(400,'unsupported_output',`output kind '${o.kind}' not implemented`,{available:['motion']});
+  if(o.format!=='pose-json')return err(400,'unsupported_output',`format '${o.format}' not implemented`,{available:['pose-json']});
  }
- if(req.sample!==undefined&&(typeof req.sample!=='object'||req.sample===null))return err(400,'invalid_request','sample must be an object');
- const fps=(req.sample as {fps?:unknown}|undefined)?.fps??params.sampleHz??LIMITS_SVC.defaultFps;
- if(!(typeof fps==='number'&&Number.isFinite(fps)&&fps>=1&&fps<=LIMITS_SVC.maxFps))return err(400,'invalid_request',`sample fps must be 1..${LIMITS_SVC.maxFps}`);
- const fp=fingerprint(body);
+ const rigId=req.rig??RIG_ID;
+ if(rigId!==RIG_ID)return err(409,'unsupported_rig',`rig '${rigId}' cannot be served`,{missing:['retarget adapter'],available:[RIG_ID]});
+ const fps=req.sample?.fps??LIMITS_SVC.defaultFps;
+ const params=req.action.parameters??{};
+ const paramCheck=ctx.contract.compileParameters(descriptor.parameters);
+ if(!paramCheck(params)){
+  const details=describeErrors(paramCheck.errors);
+  return err(400,'invalid_request',`action.parameters do not match '${actionId}': ${details[0]}`,{details});
+ }
+
+ let doc:WorkshopDoc|undefined;
+ if(descriptor.kind==='workshop-doc'){
+  try{doc=parseDoc(JSON.stringify(params.document));}
+  catch(e){return err(400,'validation_failed',`document rejected: ${e instanceof Error?e.message:String(e)}`);}
+  if(doc.duration>LIMITS_SVC.maxWorkshopDuration)return err(400,'validation_failed',`document duration ${doc.duration}s exceeds ${LIMITS_SVC.maxWorkshopDuration}s`);
+  if(doc.keys.length>LIMITS_SVC.maxWorkshopKeys)return err(400,'validation_failed',`document has ${doc.keys.length} keys > ${LIMITS_SVC.maxWorkshopKeys}`);
+ }
+ const revision=descriptor.kind==='keyframed'?descriptor.revision:WORKSHOP_REVISION;
+ const definitionSHA256=descriptor.kind==='keyframed'
+  ?descriptor.definitionSHA256!
+  :actionDefinitionHash({schema:WORKSHOP_REVISION,document:doc});
+ // Preconditions: the client may pin the revision or definition it expects.
+ if(req.action.revision!==undefined&&req.action.revision!==revision)
+  return err(409,'precondition_failed',`action.revision '${req.action.revision}' does not match '${revision}'`,{expected:{revision}});
+ if(req.action.definitionSHA256!==undefined&&req.action.definitionSHA256!==definitionSHA256)
+  return err(409,'precondition_failed',`action.definitionSHA256 does not match the resolved definition`,{expected:{definitionSHA256}});
+
+ // Resolve the request identity from the normalized form, so the key and the
+ // artifact id ignore spelling differences (defaults written out or not).
+ const fp=sha256(canonical(normalizedRequest(actionId,doc,fps)));
  const key=headers['idempotency-key'];
+ if(key!==undefined&&!IDEMPOTENCY_KEY.test(key))
+  return err(400,'invalid_request',`Idempotency-Key must be 1..${LIMITS_SVC.idempotencyKeyMaxLength} visible ASCII characters`);
  if(key){
   const seen=ctx.idempotent.get(key);
   if(seen&&Date.now()-seen.at<=LIMITS_SVC.idempotencyTtlSeconds*1000)
    return seen.fingerprint===fp?{status:seen.status,body:seen.body}:err(409,'idempotency_conflict','Idempotency-Key reused with a different request body');
-  if(seen)ctx.idempotent.delete(key);
+  if(seen)forgetIdempotent(ctx,key);
  }
- // Resolve the action definition BEFORE naming the artifact: the id must
- // change whenever the definition, rig or solver changes — a bare request
- // fingerprint would collide across solver/rig upgrades.
- let solver:string,parametersResolved:Record<string,unknown>,definitionSHA256:string;
- let actionParams:Record<string,unknown>,run:(motionId:string)=>PosePackage;
- if(descriptor.kind==='keyframed'){
-  if(!isKeyframedId(actionId))return err(404,'unknown_action',`no keyframed action '${actionId}'`);
-  const spec=authoredMotionById(actionId)!;
-  solver='keyframe-hermite-ik';parametersResolved={fps};actionParams={};
-  definitionSHA256=actionDefinitionHash({revision:descriptor.revision,duration:spec.duration,phases:spec.phases,definition:keyframedDefinition(actionId)});
-  run=motionId=>solveKeyframed(ctx.rig,spec,fps,meta(motionId));
- }else{
-  const docRaw=params.document;
-  if(docRaw===undefined)return err(400,'invalid_request','parameters.document is required for workshop-doc');
-  let doc:ReturnType<typeof parseDoc>;
-  try{doc=parseDoc(JSON.stringify(docRaw));}catch(e){return err(400,'validation_failed',`document rejected: ${e instanceof Error?e.message:e}`);}
-  if(doc.duration>LIMITS_SVC.maxWorkshopDuration)return err(400,'validation_failed',`document duration ${doc.duration}s exceeds ${LIMITS_SVC.maxWorkshopDuration}s`);
-  if(doc.keys.length>LIMITS_SVC.maxWorkshopKeys)return err(400,'validation_failed',`document has ${doc.keys.length} keys > ${LIMITS_SVC.maxWorkshopKeys}`);
-  solver='workshop-hermite-fk-ik';parametersResolved={fps,duration:doc.duration,keys:doc.keys.length};
-  actionParams={documentName:doc.name};
-  definitionSHA256=actionDefinitionHash({revision:descriptor.revision,document:doc});
-  run=motionId=>solveWorkshop(ctx.rig,doc,fps,meta(motionId));
- }
- const meta=(motionId:string)=>({motionId,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,
-  action:{id:actionId,revision:descriptor.revision,parameters:actionParams,definitionSHA256},
+
+ const solver=descriptor.kind==='keyframed'?'keyframe-hermite-ik':'workshop-hermite-fk-ik';
+ const motionId=artifactId(fp,definitionSHA256,ctx,solver);
+ const meta=(id:string)=>({motionId:id,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,
+  action:{id:actionId,revision,parameters:doc?{documentName:doc.name}:{},definitionSHA256},
   provenance:{solver,solverRevision:SERVICE_VERSION,source:descriptor.provenance.source,requestFingerprint:fp,
-   license:{motion:descriptor.provenance.license,rig:'CC0'},parametersResolved}});
- const res=json(run(artifactId(fp,definitionSHA256,ctx,solver)));
- if(key)storeIdempotent(ctx,key,{fingerprint:fp,status:res.status,body:res.body,at:Date.now()});
+   license:{motion:descriptor.provenance.license,rig:'CC0'},
+   parametersResolved:doc?{fps,duration:doc.duration,keys:doc.keys.length}:{fps}}});
+ const pkg=doc?solveWorkshop(ctx.rig,doc,fps,meta(motionId)):solveKeyframed(ctx.rig,authoredMotionById(actionId)!,fps,meta(motionId));
+
+ // Two gates before anything leaves the service: the package must satisfy the
+ // published schema (a failure here is a service bug, hence 500), and the
+ // semantic validator must accept the motion (a failure is a rejected input).
+ if(!ctx.contract.posePackage(pkg))
+  return err(500,'internal','solved package does not satisfy spec/pose-package.schema.json',{details:describeErrors(ctx.contract.posePackage.errors).slice(0,5)});
+ const rejected=validatePosePackage(pkg,ctx.manifest);
+ const res=rejected.length
+  ?err(422,'motion_rejected','the solved motion fails the semantic checks; see details',{details:rejected})
+  :json(pkg);
+ if(key&&(res.status===200||res.status===422))
+  storeIdempotent(ctx,key,{fingerprint:fp,status:res.status,body:res.body,at:Date.now(),bytes:JSON.stringify(res.body).length});
  return res;
 }

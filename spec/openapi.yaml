@@ -10,10 +10,16 @@ info:
     render requests — not yet implemented.
 
     Design doc: docs/ANIMATION-PROTOCOL-PLAN.md
-    Schemas: spec/pose-package.schema.json, spec/rig-manifest.schema.json
+    Schemas: spec/motion-request.schema.json, spec/pose-package.schema.json,
+    spec/rig-manifest.schema.json. The service compiles these with Ajv at
+    startup, validates every request against the request schema, and validates
+    every package against the package schema before returning it
+    (src/server/contract.ts). Semantic limits are documented in docs/validation.md.
 
-    Local deployment: loopback only, request bodies capped at 1 MiB. No
-    user-supplied scripts, file paths, or model files are accepted.
+    Local deployment: loopback only. The Host header must be 127.0.0.1 or
+    localhost; an Origin header, when present, must match Host; POST bodies must
+    be application/json. Request bodies are capped at 1 MiB after decompression.
+    No user-supplied scripts, file paths, or model files are accepted.
 servers:
   - url: http://127.0.0.1:8788
     description: local reference service (npm run service)
@@ -55,7 +61,7 @@ paths:
   /v1/actions/{actionId}:
     get:
       operationId: getAction
-      summary: Single action's parameter schema, provenance and executable constraints
+      summary: Single action's parameter schema, provenance, revision and definition hash
       parameters:
         - name: actionId
           in: path
@@ -89,28 +95,37 @@ paths:
       operationId: runMotion
       summary: Solve an action into a canonical pose package (synchronous)
       description: |
-        Short solves return `200` with the completed pose package. The
-        `Idempotency-Key` header associates client retries with one run:
-        replaying the key with an identical canonical request body returns the
-        stored response; reusing the key with a different body returns `409`.
-        Keys are bounded (see `limits.idempotencyMaxKeys` /
-        `idempotencyTtlSeconds`); expired keys accept a new body.
+        Returns `200` with the completed pose package when the solved motion
+        passes the semantic checks. A motion that solves but fails them returns
+        `422 motion_rejected`, with one message per failed check in
+        `error.details`; the package is not returned.
 
-        Two identities are reported: `provenance.requestFingerprint` hashes
-        the canonical request (what the client sent), while the package `id`
-        is the artifact identity — it additionally covers the action
-        definition hash, rig manifest hash and solver name+revision, so a
-        solver or rig upgrade produces a new id for the same request.
-        Request fingerprints use sorted-key canonical JSON (see service
-        source; full RFC 8785 JCS is planned).
+        Preconditions: `action.revision` and `action.definitionSHA256` may pin
+        the definition the client expects (both are listed by
+        `GET /v1/actions/{actionId}`; for `workshop-doc` the hash is that of the
+        submitted document). A mismatch returns `409 precondition_failed`.
 
-        Request bodies may be sent `Content-Encoding: gzip`; the size limit
+        Idempotency: the `Idempotency-Key` header (1–128 visible ASCII
+        characters) associates client retries with one run. Replaying the key
+        with an identical request returns the stored response (200 or 422);
+        reusing it with a different request returns `409 idempotency_conflict`.
+        Keys expire after `limits.idempotencyTtlSeconds`; the cache is bounded
+        by `limits.idempotencyMaxKeys` and `limits.idempotencyMaxBytes`.
+
+        Identities: `provenance.requestFingerprint` hashes the request after
+        defaults are filled in, so `{"action":{"id":"idle"}}` and the fully
+        spelled-out form agree. The package `id` additionally covers the action
+        definition hash, the rig manifest hash and the solver name and revision,
+        so a solver or rig upgrade yields a new id for the same request. Canonical
+        JSON uses sorted keys (full RFC 8785 JCS is planned).
+
+        Request bodies may be sent with `Content-Encoding: gzip`; the size limit
         applies to the decompressed payload.
       parameters:
         - name: Idempotency-Key
           in: header
           required: false
-          schema: {type: string, maxLength: 128}
+          schema: {type: string, minLength: 1, maxLength: 128, pattern: '^[!-~]{1,128}$'}
       requestBody:
         required: true
         content:
@@ -123,8 +138,13 @@ paths:
             application/json:
               schema: {$ref: 'pose-package.schema.json'}
         '400': {$ref: '#/components/responses/Error'}
+        '403': {$ref: '#/components/responses/Error'}
         '404': {$ref: '#/components/responses/Error'}
         '409': {$ref: '#/components/responses/Error'}
+        '413': {$ref: '#/components/responses/Error'}
+        '415': {$ref: '#/components/responses/Error'}
+        '422': {$ref: '#/components/responses/Error'}
+        '500': {$ref: '#/components/responses/Error'}
 components:
   schemas:
     MotionRequest:
@@ -140,19 +160,30 @@ components:
             id:
               type: string
               enum: [idle, reach, squat, ready, forehand, workshop-doc]
+            revision:
+              type: string
+              description: Optional precondition; a mismatch is 409 precondition_failed.
+            definitionSHA256:
+              type: string
+              pattern: '^[0-9a-f]{64}$'
+              description: Optional precondition on the resolved definition hash; a mismatch is 409 precondition_failed.
             parameters:
               type: object
               description: |
-                Per-action bounded parameters. Keyframed actions accept `{}`.
-                `workshop-doc` requires `document` (WorkshopDoc JSON:
-                named keyframes with pose targets and plant/grip/contact
-                constraints; max 10 s, 120 keys) and optional `sampleHz`.
+                Per-action parameters, checked against that action's own schema
+                (`parameters` in GET /v1/actions/{actionId}). Keyframed actions
+                accept only `{}`. `workshop-doc` requires `document`: WorkshopDoc
+                JSON (named keyframes with pose targets and plant/grip/contact
+                constraints; at most 10 s and 120 keys). Documents with
+                schemaVersion 1 are upgraded on input.
         rig:
           type: string
           default: makehuman-body
           description: Only 'makehuman-body' is servable; other rigs return 409 until a validated retarget adapter exists.
         outputs:
           type: array
+          minItems: 1
+          maxItems: 4
           items:
             type: object
             required: [kind, format]
@@ -162,6 +193,7 @@ components:
           description: Only pose-json is implemented; other formats return 400 unsupported_output.
         sample:
           type: object
+          additionalProperties: false
           properties:
             fps: {type: number, minimum: 1, maximum: 60, default: 40}
     ActionDescriptor:
@@ -169,7 +201,12 @@ components:
       required: [id, revision, title, english, kind, parameters, outputs, provenance]
       properties:
         id: {type: string}
-        revision: {type: string}
+        revision:
+          type: string
+          description: "keyframed-<first 12 hex digits of definitionSHA256> for keyframed actions; workshop-doc/v2 for documents."
+        definitionSHA256:
+          type: [string, 'null']
+          description: Hash of the resolved action definition; null for client-supplied documents, whose hash is computed per request.
         title: {type: string}
         english: {type: string}
         kind: {enum: [keyframed, workshop-doc]}
@@ -198,10 +235,15 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, invalid_json, request_too_large, validation_failed, unknown_action, unknown_rig, unsupported_rig, unsupported_output, idempotency_conflict, not_found, internal]
+              enum: [invalid_request, invalid_json, request_too_large, unsupported_media_type, forbidden, validation_failed, unknown_action, unknown_rig, unsupported_rig, unsupported_output, idempotency_conflict, precondition_failed, motion_rejected, not_found, internal]
             message: {type: string}
+            details:
+              type: array
+              items: {type: string}
+              description: Every failed check (400 validation, 422 semantic). Present when more than one problem was found.
             missing: {type: array, items: {type: string}, description: Capabilities the request would need that the service does not have}
             available: {type: array}
+            expected: {type: object, description: The value the service expected, for 409 precondition_failed}
   responses:
     Error:
       description: Error envelope

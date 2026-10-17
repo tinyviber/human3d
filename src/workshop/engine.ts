@@ -4,9 +4,10 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig} from '../core/rig';
 import {attachRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
-import type {EffectiveFrame,KeyConstraints,PoseParams,WorkshopDoc,WorkshopKey} from './document';
-import {constraintsAt,frameAt,sortedKeys,toV} from './document';
+import type {EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from './document';
+import {contactStartKey,frameAt,isReleaseKey,sortedKeys,toV} from './document';
 import {analyzePose,solvePose,type Analysis} from './solver';
+import {ankleYForLift,footGeometry,type FootGeometry,type Side} from './foot';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
 export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean}
@@ -29,6 +30,7 @@ export class WorkshopEngine{
   private raycaster=new Raycaster();private pointer=new Vector2();
   private drag?:{h:Handle;plane:Plane;offset:Vector3;key:WorkshopKey};private docDirty=true;
   private latestFrame?:EffectiveFrame;
+  private footGeo?:Record<Side,FootGeometry>;
   onFrame?:(f:WorkshopFrame)=>void;onReady?:(info:RigInfo)=>void;onError?:(e:Error)=>void;
   /** App hooks: begin edit = pick or auto-insert the key being dragged. */
   onBeginEdit?:(time:number,prefer?:string)=>WorkshopKey|null;
@@ -61,6 +63,7 @@ export class WorkshopEngine{
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
       this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
       this.racket=attachRacket(this.rig);this.racket.visible=false;
+      this.footGeo={L:footGeometry(this.rig.rest,'L'),R:footGeometry(this.rig.rest,'R')};
       this.makeHandles();this.makeMarkers();
       this.ready=true;this.solveCurrent();this.setView('threeQuarter');this.onReady?.(info);
     }catch(err){this.onError?.(err instanceof Error?err:new Error(String(err)));}
@@ -88,6 +91,8 @@ export class WorkshopEngine{
       const line=new Line(new BufferGeometry(),new LineBasicMaterial({color,transparent:true,opacity:.55}));line.frustumCulled=false;this.scene.add(line);this.trajectories.set(id,line);
     }
   }
+  /** Foot geometry from the loaded rig (sole offsets for lift and clearance). */
+  footGeometry(side:Side){return this.footGeo?.[side];}
   /* ---------- pointer / drag ---------- */
   private pick(ev:PointerEvent){
     const rect=this.renderer.domElement.getBoundingClientRect();
@@ -99,8 +104,15 @@ export class WorkshopEngine{
   private onPointerDown=(ev:PointerEvent)=>{
     if(ev.button!==0||!this.ready)return;
     const h=this.pick(ev);if(!h)return;
-    const time=h.keyId?this.getDoc().keys.find(k=>k.id===h.keyId)?.time??this.time:this.time;
-    const key=this.onBeginEdit?.(time,h.keyId);if(!key)return;
+    const doc=this.getDoc();
+    const time=h.keyId?doc.keys.find(k=>k.id===h.keyId)?.time??this.time:this.time;
+    // A planted foot is one contact: its target lives on the run-start key,
+    // so the drag edits that key (not an unrelated key at the current time).
+    let prefer=h.keyId;
+    if(h.kind==='foot'&&h.side&&this.frameAtTime(doc,this.time).constraints[h.side==='L'?'plantL':'plantR']){
+      prefer=contactStartKey(doc,h.side,this.time)?.id??prefer;
+    }
+    const key=this.onBeginEdit?.(time,prefer);if(!key)return;
     if(h.keyId){this.time=key.time;this.onSeek?.(key.time);this.onSelectKey?.(key.id);}else this.onSelectKey?.(key.id);
     this.solveCurrent();
     const origin=h.mesh.getWorldPosition(new Vector3());
@@ -127,10 +139,10 @@ export class WorkshopEngine{
     switch(this.drag.h.kind){
       case 'root':{const rest=this.rig.rest.get('root')!;k.root={x:pos.x-rest.x,y:pos.y-rest.y,z:pos.z-rest.z};break;}
       case 'hand':{(this.drag.h.side==='L'?k.handL:k.handR).target={x:pos.x,y:pos.y,z:pos.z};break;}
-      case 'foot':{const f=this.drag.h.side==='L'?k.footL:k.footR;
-        const lock=this.drag.key.constraints[this.drag.h.side==='L'?'plantL':'plantR'];
-        f.target={x:pos.x,y:lock?f.target.y:Math.max(0,pos.y),z:pos.z};break;}
-      case 'swing':{const f=this.drag.h.side==='L'?k.footL:k.footR;f.target={x:pos.x,y:Math.max(0,pos.y),z:pos.z};break;}
+      case 'foot':{const side=this.drag.h.side!;const f=side==='L'?k.footL:k.footR;
+        const lock=this.drag.key.constraints[side==='L'?'plantL':'plantR'];
+        f.target={x:pos.x,y:lock?f.target.y:this.minAnkleY(side,f,pos.y),z:pos.z};break;}
+      case 'swing':{const side=this.drag.h.side!;const f=side==='L'?k.footL:k.footR;f.target={x:pos.x,y:this.minAnkleY(side,f,pos.y),z:pos.z};break;}
       case 'poleArm':{(this.drag.h.side==='L'?k.handL:k.handR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'poleLeg':{(this.drag.h.side==='L'?k.footL:k.footR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'tip':case 'contact':{
@@ -144,21 +156,34 @@ export class WorkshopEngine{
     if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}this.onEditEnd?.();}
   };
   /* ---------- pose evaluation ---------- */
+  /** Pelvis hand-frame origin: the rest root, the same origin the solver uses. */
+  private restRoot(){return this.rig?.rest.get('root')??new Vector3();}
+  private frameAtTime(doc:WorkshopDoc,t:number){return frameAt(doc,t,this.restRoot());}
   private currentFrame(){
     const doc=this.getDoc();
-    const f=frameAt(doc,Math.max(0,Math.min(doc.duration,this.time)));
-    return f;
+    return this.frameAtTime(doc,Math.max(0,Math.min(doc.duration,this.time)));
+  }
+  /** Solve an effective frame; support fades and the grip ramp come from the sampler, not the key flags. */
+  private solveFrame(f:EffectiveFrame){
+    if(!this.rig)return;
+    solvePose(this.rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+  }
+  /** Lowest ankle height keeping the sole on or above the rest sole plane. */
+  private minAnkleY(side:Side,f:{yaw:number;pitch:number},y:number){
+    const g=this.footGeo?.[side];
+    return g?Math.max(y,ankleYForLift(g,0,f.yaw,f.pitch)):Math.max(0,y);
   }
   solveCurrent(){
     if(!this.rig)return;
     const f=this.currentFrame();
-    solvePose(this.rig,f.pose,f.constraints);
+    this.solveFrame(f);
     this.latestFrame=f;
-    if(this.racket)this.racket.visible=f.constraints.grip;
-    this.updateHandles(f.pose,f.constraints);
+    if(this.racket)this.racket.visible=f.gripAmount>0;
+    this.updateHandles(f);
   }
-  private updateHandles(p:PoseParams,c:KeyConstraints){
+  private updateHandles(f:EffectiveFrame){
     if(!this.rig)return;
+    const p=f.pose,doc=this.getDoc();
     const put=(kind:DragKind,side:'L'|'R'|undefined,where:Vector3,visible=true)=>{
       const h=this.handles.find(x=>x.kind===kind&&x.side===side);if(!h)return;h.mesh.visible=visible&&this.options.handles;h.mesh.position.copy(where);
     };
@@ -167,16 +192,16 @@ export class WorkshopEngine{
     put('foot','L',this.rig.point('foot_L'));put('foot','R',this.rig.point('foot_R'));
     put('poleArm','L',toV(p.handL.pole));put('poleArm','R',toV(p.handR.pole));
     put('poleLeg','L',toV(p.footL.pole));put('poleLeg','R',toV(p.footR.pole));
-    put('tip',undefined,this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3(),c.grip);
+    put('tip',undefined,this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3(),f.gripAmount>0);
     // Swing waypoint split: during a release interval the visible foot sits ON
     // the path contact→waypoint→landing, so the bone handle becomes display
     // only and the editable control is a separate handle bound to the release
     // key's stored target — the mid-swing waypoint the foot passes through.
     // Without it a drag would write the stored target while the handle stayed
     // glued to the inherited contact (no visual feedback).
-    const keys=sortedKeys(this.getDoc()),i=constraintsAt(keys,this.time).keyIndex;
-    for(const [flag,foot,side]of [['plantL','footL','L'],['plantR','footR','R']]as const){
-      const release=i>0&&i<keys.length-1&&!keys[i].constraints[flag]&&keys[i-1].constraints[flag];
+    const keys=sortedKeys(doc),i=f.keyIndex;
+    for(const [foot,side]of [['footL','L'],['footR','R']]as const){
+      const release=isReleaseKey(doc,i,side);
       const bone=this.handles.find(x=>x.kind==='foot'&&x.side===side),sw=this.handles.find(x=>x.kind==='swing'&&x.side===side);
       if(bone)bone.passive=release;
       if(sw){sw.mesh.visible=release&&this.options.handles;if(release){sw.keyId=keys[i].id;sw.mesh.position.copy(toV(keys[i].pose[foot].target));}}
@@ -185,16 +210,16 @@ export class WorkshopEngine{
   private rebuildAux(){
     if(!this.rig)return;
     const doc=this.getDoc(),keys=sortedKeys(doc);
-    const save=frameAt(doc,this.time);
+    const save=this.frameAtTime(doc,this.time);
     // Trajectory lines at 60 samples.
     const samples=60,paths:Record<string,Vector3[]>={tip:[],wrist_R:[],wrist_L:[]};
     for(let i=0;i<=samples;i++){
-      const f=frameAt(doc,i/samples*doc.duration);
-      solvePose(this.rig,f.pose,f.constraints);
+      const f=this.frameAtTime(doc,i/samples*doc.duration);
+      this.solveFrame(f);
       paths.wrist_R.push(this.rig.point('wrist_R'));paths.wrist_L.push(this.rig.point('wrist_L'));
       // No grip → no racket: skipping the sample keeps non-grip stretches out
       // of the tip line instead of writing the world origin into the path.
-      if(f.constraints.grip&&this.racket)paths.tip.push(this.racket.localToWorld(new Vector3(0,.61,0)));
+      if(f.gripAmount>0&&this.racket)paths.tip.push(this.racket.localToWorld(new Vector3(0,.61,0)));
     }
     for(const [id,line]of this.trajectories){
       const pts=paths[id]??[];
@@ -205,7 +230,7 @@ export class WorkshopEngine{
     for(const m of this.contactMarkers){this.scene.remove(m);m.geometry.dispose();}
     this.contactMarkers=[];
     for(const k of keys.filter(k2=>k2.constraints.contact)){
-      const f=frameAt(doc,k.time);solvePose(this.rig,f.pose,f.constraints);
+      const f=this.frameAtTime(doc,k.time);this.solveFrame(f);
       const at=this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3();
       const ball=new Mesh(new SphereGeometry(.022,16,12),new MeshStandardMaterial({color:0xf0b429,depthTest:false,transparent:true,opacity:.95}));
       ball.position.copy(at);ball.renderOrder=21;
@@ -214,9 +239,9 @@ export class WorkshopEngine{
       const h:Handle={kind:'contact',mesh:ball,keyId:k.id};ball.userData.ref=h;ball.userData.handle=true;
       this.contactMarkers.push(ball);this.scene.add(ball);
     }
-    solvePose(this.rig,save.pose,save.constraints);this.latestFrame=save;
-    if(this.racket)this.racket.visible=save.constraints.grip;
-    this.updateHandles(save.pose,save.constraints);
+    this.solveFrame(save);this.latestFrame=save;
+    if(this.racket)this.racket.visible=save.gripAmount>0;
+    this.updateHandles(save);
     this.docDirty=false;
   }
   private updateBalance(a:Analysis){
@@ -249,7 +274,12 @@ export class WorkshopEngine{
     const dt=Math.min(this.clock.getDelta(),.1);
     if(this.ready&&this.rig){
       const doc=this.getDoc();
-      if(this.playing&&!this.drag){this.time+=dt*this.speed;if(this.time>doc.duration)this.time%=doc.duration||1;}
+      if(this.playing&&!this.drag){
+        this.time+=dt*this.speed;
+        // Loops wrap; a plain clip stops on its last frame instead of restarting.
+        if(doc.loop)this.time=doc.duration>0?this.time%doc.duration:0;
+        else if(this.time>=doc.duration){this.time=doc.duration;this.playing=false;this.notify(true);}
+      }
       if(this.docDirty&&!this.drag)this.rebuildAux();
       this.solveCurrent();
       const a=this.rig?analyzePose(this.rig,this.latestFrame!.pose,this.latestFrame!.constraints,this.racket):undefined;

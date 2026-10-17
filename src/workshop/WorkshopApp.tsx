@@ -1,31 +1,34 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
-import {Activity,ArrowLeft,Camera,Check,Download,Film,Pause,Play,Plus,RotateCcw,Sparkles,Trash2,Upload,Video,X} from 'lucide-react';
+import {Activity,ArrowLeft,Camera,Check,Download,Film,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
-import type {WorkshopDoc,WorkshopKey} from './document';
-import {defaultDocument,ensureKey,keyAt,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
+import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
+import {defaultDocument,ensureKey,keyAt,loopBlockers,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
 import {MotionLibrary} from './library';
+import {HistoryBook} from './history';
+import {clampDuration,WORKSHOP_LIMITS} from './limits';
+import {ankleYForLift,footLift,type Side} from './foot';
 import {rotateHandFrame} from './solver';
 import type {RigInfo,ViewId} from '../core/types';
 
 const fmt=(t:number)=>`${Math.floor(t/60)}:${(Math.floor(t%60)).toString().padStart(2,'0')}.${Math.floor(t*100%100).toString().padStart(2,'0')}`;
 
-function Row({label,checked,onChange,detail}:{label:string;checked:boolean;onChange:(v:boolean)=>void;detail?:string}){
- return <label className="ws-check"><input type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)}/><span>{label}{detail?<small>{detail}</small>:null}</span></label>;
+function Row({label,checked,onChange,detail,disabled}:{label:string;checked:boolean;onChange:(v:boolean)=>void;detail?:string;disabled?:boolean}){
+ return <label className="ws-check"><input type="checkbox" checked={checked} disabled={disabled} onChange={e=>onChange(e.target.checked)}/><span>{label}{detail?<small>{detail}</small>:null}</span></label>;
 }
 function Slider({label,value,min,max,step,unit,disabled,onChange}:{label:string;value:number;min:number;max:number;step:number;unit?:string;disabled?:boolean;onChange:(v:number)=>void}){
  return <label className="ws-slider"><span>{label}<output>{value.toFixed(unit==='m'?3:1)}{unit??'°'}</output></span><input type="range" min={min} max={max} step={step} value={value} disabled={disabled} onChange={e=>onChange(Number(e.target.value))}/></label>;
 }
 /** Delta sliders for the stored wrist frame: the control resets to zero each
  * key, edits rotate the key's forward/normal pair by the slider delta. */
-function WristPanel({k,edit}:{k:WorkshopKey;edit:(fn:(key:WorkshopKey)=>void)=>void}){
+function WristPanel({k,side,edit}:{k:WorkshopKey;side:Side;edit:(fn:(key:WorkshopKey)=>void)=>void}){
  const [v,setV]=useState({flex:0,dev:0,twist:0});
  const turn=(kind:'flex'|'dev'|'twist',next:number)=>{
   const delta=next-v[kind];setV({...v,[kind]:next});
-  edit(key=>{rotateHandFrame(key.pose.handR,kind,delta);});
+  edit(key=>{rotateHandFrame(side==='L'?key.pose.handL:key.pose.handR,kind,delta);});
  };
- return <div className="ws-sub"><h3>右手腕姿态 <small>屈伸 / 侧偏 / 旋转</small></h3>
+ return <div className="ws-sub"><h3>{side==='L'?'左':'右'}手腕姿态 <small>屈伸 / 侧偏 / 旋转</small></h3>
   <Slider label="屈 / 伸" value={v.flex} min={-60} max={60} step={1} onChange={x=>turn('flex',x)}/>
   <Slider label="尺桡偏" value={v.dev} min={-60} max={60} step={1} onChange={x=>turn('dev',x)}/>
   <Slider label="旋前 / 旋后" value={v.twist} min={-90} max={90} step={1} onChange={x=>turn('twist',x)}/>
@@ -64,6 +67,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const [info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState('');
  const [frame,setFrame]=useState<WorkshopFrame>({time:0,duration:.8,playing:true,label:''});
  const [view,setView]=useState<ViewId>('threeQuarter');
+ const books=useRef(new HistoryBook()),lastRecord=useRef(0),shortcuts=useRef<{undo:()=>void;redo:()=>void}>({undo:()=>{},redo:()=>{}});
  const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true});
  const [videoUrl,setVideoUrl]=useState('');const [sync,setSync]=useState(false);const syncOffset=useRef(0);const [videoPlaying,setVideoPlaying]=useState(false);
  useEffect(()=>{
@@ -82,6 +86,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    e.onEditEnd=()=>{lib.current!.save();bump(v=>v+1);};
    e.onBeginEdit=(time,prefer)=>{
     const d=lib.current!.active();
+    // Snapshot before any key is inserted, so one drag is one undo step.
+    books.current.of(d.id).record(d);lastRecord.current=performance.now();
     if(prefer){const k=keyAt(d,prefer);if(k)return k;}
     const k=ensureKey(d,time);lib.current!.save();bump(v=>v+1);return k;
    };
@@ -98,7 +104,29 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   else if(Math.abs(el.currentTime-target)>.05)el.currentTime=target;
  },[frame,sync]);
  const L=lib.current!;
- const edit=(fn:(d:WorkshopDoc)=>void)=>{fn(L.active());L.save();engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
+ /** Snapshot before an edit. Edits within 600 ms of each other (a slider drag) share one undo step. */
+ const recordBefore=(doc:WorkshopDoc)=>{const now=performance.now();if(now-lastRecord.current>600)books.current.of(doc.id).record(doc);lastRecord.current=now;};
+ const edit=(fn:(d:WorkshopDoc)=>void)=>{recordBefore(L.active());fn(L.active());L.save();engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
+ const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return;L.docs[i]=next;L.save();lastRecord.current=0;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);};
+ const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(prev)applyDoc(prev);};
+ const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(next)applyDoc(next);};
+ shortcuts.current={undo,redo};
+ useEffect(()=>{
+  // Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes. Text fields keep their native undo.
+  const onKey=(ev:KeyboardEvent)=>{
+   const t=ev.target as HTMLElement|null;
+   if(t&&(t.isContentEditable||/^(INPUT|TEXTAREA|SELECT)$/.test(t.tagName)))return;
+   if(!(ev.ctrlKey||ev.metaKey))return;
+   const k=ev.key.toLowerCase();
+   if(k==='z'&&!ev.shiftKey){ev.preventDefault();shortcuts.current.undo();}
+   else if((k==='z'&&ev.shiftKey)||k==='y'){ev.preventDefault();shortcuts.current.redo();}
+  };
+  window.addEventListener('keydown',onKey);return()=>window.removeEventListener('keydown',onKey);
+ },[]);
+ const exportQuarantine=(i:number)=>{const q=L.quarantine[i];if(!q)return;const blob=new Blob([L.quarantineText(i)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${q.id||'quarantined'}.quarantine.json`;a.click();URL.revokeObjectURL(a.href);};
+ const liftOf=(side:Side,k:WorkshopKey)=>{const f=side==='L'?k.pose.footL:k.pose.footR;const g=engine.current?.footGeometry(side);return g?footLift(g,f.target.y,f.yaw,f.pitch):f.target.y;};
+ const setLift=(side:Side,v:number)=>editSelected(k=>{const f=side==='L'?k.pose.footL:k.pose.footR;const g=engine.current?.footGeometry(side);f.target.y=g?ankleYForLift(g,v,f.yaw,f.pitch):v;});
+
  const editSelected=(fn:(k:WorkshopKey)=>void)=>{const k=keyAt(L.active(),selected);if(k)edit(()=>fn(k));};
  const d=L.active();
  const sel=keyAt(d,selected)??nearestKey(d,frame.time,1e9);
@@ -107,7 +135,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const createDoc=()=>{const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
  const removeDoc=(id:string)=>{const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
- const addKey=()=>{const k=ensureKey(d,frame.time);setSelected(k.id);edit(()=>{});};
+ const addKey=()=>{recordBefore(d);const k=ensureKey(d,frame.time);setSelected(k.id);edit(()=>{});};
  const delKey=()=>{if(d.keys.length<=2||!sel)return;edit(dd=>{dd.keys=dd.keys.filter(k=>k.id!==sel.id);});setSelected(sortedKeys(d)[0].id);};
  const exportDoc=()=>{const blob=new Blob([serializeDoc(d)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${d.id}.workshop.json`;a.click();URL.revokeObjectURL(a.href);};
  const importDoc=async(f:File)=>{try{const next=parseDoc(await f.text());const added=L.add(next);selectDoc(added.id);}catch(e){setError(e instanceof Error?e.message:String(e));}};
@@ -134,11 +162,17 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button onClick={createDoc}><Plus size={13}/>新建</button>
      </div>
      <p className="ws-note" style={L.lastError?{color:'#c0392b'}:undefined}>{L.lastError?`保存失败（仅存于内存）：${L.lastError}`:'动作自动保存到本机浏览器；导出 JSON 可跨设备分享。'}</p>
+     {L.quarantine.length?<div className="ws-quarantine"><p className="ws-note" style={{color:'#c0392b'}}>{L.quarantine.length} 个动作未通过校验，已隔离保存，不参与播放。导出后可修复再导入。</p>
+      {L.quarantine.map((q,i)=><div key={`${q.id}-${i}`} className="ws-row"><small>{q.name||q.id||'未命名'}：{q.reason}</small><button onClick={()=>exportQuarantine(i)}><Download size={12}/>导出</button><button aria-label={`丢弃 ${q.name||q.id}`} onClick={()=>{if(confirm('丢弃这个隔离动作？此操作不可撤销。'))L.discardQuarantine(i);bump(v=>v+1);}}><Trash2 size={12}/></button></div>)}
+     </div>:null}
     </section>
     <section className="ws-card"><h2>动作文档</h2>
      <label className="ws-field"><span>名称</span><input value={d.name} onChange={e=>edit(dd=>{dd.name=e.target.value;})}/></label>
-     <label className="ws-field"><span>时长 s</span><input type="number" min=".2" max="10" step=".1" value={d.duration} onChange={e=>edit(dd=>retimeKeys(dd,Math.max(.2,Number(e.target.value)||.2)))}/></label>
+     <label className="ws-field"><span>时长 s（{WORKSHOP_LIMITS.minDuration}–{WORKSHOP_LIMITS.maxDuration}）</span><input type="number" min={WORKSHOP_LIMITS.minDuration} max={WORKSHOP_LIMITS.maxDuration} step=".1" value={d.duration} onChange={e=>edit(dd=>retimeKeys(dd,clampDuration(Number(e.target.value))))}/></label>
      <p className="ws-note">{d.keys.length} 个关键帧 · {d.inbetweens?'Hermite 补间':'逐帧保持'}</p>
+     <Row label="循环播放" detail={loopBlockers(d).join('；')||'首帧位于 0 s，末帧早于时长'} checked={d.loop} disabled={!d.loop&&loopBlockers(d).length>0} onChange={v=>edit(dd=>{if(v&&loopBlockers(dd).length)return;dd.loop=v;})}/>
+     <label className="ws-field"><span>左手坐标系</span><select value={d.handFrames.L} onChange={e=>edit(dd=>{dd.handFrames.L=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
+     <label className="ws-field"><span>右手坐标系</span><select value={d.handFrames.R} onChange={e=>edit(dd=>{dd.handFrames.R=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
      <div className="ws-row">
       <button onClick={exportDoc}><Download size={13}/>导出 JSON</button>
       <button onClick={()=>importRef.current?.click()}><Upload size={13}/>导入</button>
@@ -200,10 +234,13 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <Slider label="骨盆前后" value={sel.pose.root.z} min={-.4} max={.4} step={.005} unit="m" onChange={v=>editSelected(k=>{k.pose.root.z=v;})}/>
        <Slider label="骨盆左右" value={sel.pose.root.x} min={-.4} max={.4} step={.005} unit="m" onChange={v=>editSelected(k=>{k.pose.root.x=v;})}/>
       </div>
-      <WristPanel key={sel.id} k={sel} edit={editSelected}/>
+      <WristPanel key={`${sel.id}-L`} side="L" k={sel} edit={editSelected}/>
+      <WristPanel key={`${sel.id}-R`} side="R" k={sel} edit={editSelected}/>
       <div className="ws-sub"><h3>脚部姿态 <small>离地帧的抬升高度即摆动路径点</small></h3>
-       <Slider label="左脚抬升高度" value={sel.pose.footL.target.y} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantL} onChange={v=>editSelected(k=>{k.pose.footL.target.y=v;})}/>
-       <Slider label="右脚抬升高度" value={sel.pose.footR.target.y} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantR} onChange={v=>editSelected(k=>{k.pose.footR.target.y=v;})}/>
+       <Slider label="左脚抬升高度（脚底离地）" value={liftOf('L',sel)} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantL} onChange={v=>setLift('L',v)}/>
+       <Slider label="左脚俯仰" value={sel.pose.footL.pitch} min={-40} max={40} step={1} onChange={v=>editSelected(k=>{k.pose.footL.pitch=v;})}/>
+       <Slider label="右脚抬升高度（脚底离地）" value={liftOf('R',sel)} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantR} onChange={v=>setLift('R',v)}/>
+       <Slider label="右脚俯仰" value={sel.pose.footR.pitch} min={-40} max={40} step={1} onChange={v=>editSelected(k=>{k.pose.footR.pitch=v;})}/>
        <Slider label="左脚朝向" value={sel.pose.footL.yaw} min={-90} max={90} step={1} onChange={v=>editSelected(k=>{k.pose.footL.yaw=v;})}/>
        <Slider label="右脚朝向" value={sel.pose.footR.yaw} min={-90} max={90} step={1} onChange={v=>editSelected(k=>{k.pose.footR.yaw=v;})}/>
       </div>
@@ -225,6 +262,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <div className="ws-transport">
     <button className="ws-play" aria-label={frame.playing?'暂停':'播放'} onClick={()=>engine.current?.setPlaying(!frame.playing)} disabled={!info}>{frame.playing?<Pause size={21} fill="currentColor"/>:<Play size={21} fill="currentColor"/>}</button>
     <button aria-label="回到开头" onClick={()=>engine.current?.seek(0)}><RotateCcw size={17}/></button>
+    <button aria-label="撤销" title="撤销 (Ctrl+Z)" disabled={!books.current.of(d.id).canUndo()} onClick={undo}><Undo2 size={17}/></button>
+    <button aria-label="重做" title="重做 (Ctrl+Shift+Z)" disabled={!books.current.of(d.id).canRedo()} onClick={redo}><Redo2 size={17}/></button>
     <span className="ws-time">{fmt(frame.time)}<i>/</i>{fmt(d.duration)}</span>
    </div>
    <Timeline doc={d} time={frame.time} selected={sel?.id??''} onSelect={id=>{setSelected(id);engine.current?.setPlaying(false);}} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>edit(()=>{const k=keyAt(d,id);if(k)setKeyTime(d,k,t);})}/>
