@@ -265,12 +265,12 @@ export function randomDoc(rng:()=>number,rest:ReadonlyMap<string,Vector3>):Works
   return false;
  };
 
- /** A non-loop document may not end on a release key: the sampler's release
-  * branch evaluates its swing Hermite at the raw (unclamped) time, so a tail
-  * after the last key would extrapolate the swing instead of holding the last
-  * pose — and an unplanted trailing key is a dead-write state the UI itself
-  * warns about. Landing the foot (plant=true) keeps the doc in the intended
-  * domain. */
+ /** A non-loop document may not end on a release key. The tail-extrapolation
+  * hazard this guarded against is fixed (b6ecf38: the release branch clamps
+  * its swing Hermite to the governing interval), but the generator still
+  * avoids leaning on tail semantics — a trailing unplanted key also remains
+  * a dead-write state the UI itself warns about. Landing the foot
+  * (plant=true) keeps the doc in the intended domain. */
  const landTailReleases=(doc:WorkshopDoc)=>{
   if(doc.loop||doc.keys.length<2)return;
   const keys=[...doc.keys].sort((a,b)=>a.time-b.time),last=keys[keys.length-1],prev=keys[keys.length-2];

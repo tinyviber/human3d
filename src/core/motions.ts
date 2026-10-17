@@ -40,6 +40,4 @@ const actionMotions:MotionSpec[]=actionFiles.map((action)=>{
   source:{kind:'dynamics' as const},oneShot:action.display.oneShot,objectDescription:action.display.objectDescription};
 });
 export const MOTIONS:MotionSpec[]=[...fileMotions,...actionMotions];
-export const DYNAMICS_MOTION_IDS=new Set(actionMotions.map(m=>m.id));
-export const isDynamicsMotion=(id:string)=>DYNAMICS_MOTION_IDS.has(id);
 export const motionById=(id:string)=>MOTIONS.find(m=>m.id===id)??MOTIONS[0];

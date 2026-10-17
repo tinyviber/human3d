@@ -1,6 +1,7 @@
-// Measure the shipped keyframed motions and the default workshop document
-// against the semantic limits in src/server/validate.ts. One line per motion;
-// the calibration table in docs/validation.md comes from this output at 40 fps.
+// Measure the bundled workshop-motion envelopes and the default workshop
+// document against the semantic limits in src/server/validate.ts. One line per
+// motion; the calibration table in docs/validation.md comes from this output
+// at 40 fps.
 // Usage: tsx scripts/measure-motions.mts [fps=40]
 import path from 'node:path';
 import {createService,handleRequest} from '../src/server/service';
@@ -10,9 +11,9 @@ import type {PosePackage} from '../src/server/pose-package';
 
 const fps=Number(process.argv[2]??40);
 const ctx=await createService(path.resolve('public'));
-const keyframed=['idle','reach','squat','ready','forehand'];
+const bundled=['idle','reach','squat','ready','forehand'];
 const requests:[string,unknown][]=[
-  ...keyframed.map(id=>[id,{action:{id,parameters:{}},sample:{fps}}] as [string,unknown]),
+  ...bundled.map(id=>[id,{action:{id,parameters:{}},sample:{fps}}] as [string,unknown]),
   ['workshop',{action:{id:'workshop-doc',parameters:{document:JSON.parse(serializeDoc(defaultDocument(ctx.rig.rest)))}},sample:{fps}}],
 ];
 

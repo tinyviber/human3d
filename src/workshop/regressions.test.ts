@@ -6,10 +6,13 @@ import {HumanRig} from '../core/rig';
 import {attachRacket} from '../core/racket';
 import {blankDocument,contactStartKey,flattenPose,frameAt,isReleaseKey,samplePose,validateDocShape,type WorkshopDoc,type WorkshopKey} from './document';
 import {ankleYForLift,footGeometry,footLift,type Side} from './foot';
-import {analyzePose,solvePose} from './solver';
+import {analyzePose,solveEffectiveFrame} from './solver';
 
 /** Regression tests for issue #2 P1-1..P1-5. Every case runs through the same
- * path the engine and the service use: frameAt → solvePose → rig measurements. */
+ * path the engine and the service use: frameAt → solveEffectiveFrame → rig
+ * measurements. solveEffectiveFrame forwards every frame-carried solve state
+ * (support fades, grip ramp, clavicle assist), so the tests stay valid as
+ * EffectiveFrame gains fields. */
 let rig:HumanRig;
 beforeAll(async()=>{
  const bytes=fs.readFileSync('public/models/human.glb');
@@ -23,7 +26,7 @@ const origin=()=>rig.rest.get('root')!;
 function solveAt(doc:WorkshopDoc,t:number,mode?:'stepped'){
   const d=mode==='stepped'?{...doc,inbetweens:false}:doc;
   const f=frameAt(d as WorkshopDoc,t,origin());
-  const r=solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+  const r=solveEffectiveFrame(rig,f);
   return {f,...r};
 }
 const footPoint=(side:Side)=>rig.point(`foot_${side}`).clone();
@@ -217,7 +220,7 @@ describe('loop seam, grip ramp, and random documents',()=>{
    expect(validateDocShape(d)).toEqual([]);
    for(let s=0;s<=10;s++){
     const t=s/10*duration;const f=frameAt(d,t,origin());
-    const out=solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+    const out=solveEffectiveFrame(rig,f);
     expect(Number.isFinite(out.pelvisShift)).toBe(true);
     const a=analyzePose(rig,f.pose,f.constraints);
     for(const it of a.items)expect(Number.isFinite(it.value??0)).toBe(true);

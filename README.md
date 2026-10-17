@@ -46,7 +46,7 @@ npm run build
 - 人体表面、绑定骨骼、坐标轴、IK 端点、代表性肌腱路径、支持力和肌肉功率显示。
 - 网球拍手柄与右手手指刚性握持；正常步态肩肘协调和支撑期足部锚定。
 - 动作工作台（页头「动作工作台」或 `/workshop.html`）：动作库支持自定义命名的新建 / 复制 / 删除动作并自动保存到浏览器；拖动 IK 末端手柄摆关键姿态，关键帧携带支撑脚锁定 / 握拍 / 触球约束，Hermite 补间生成连续动作，含关节限位与重心投影检查、参考视频对齐和 JSON 导入导出。设计依据见 [docs/WORKSHOP.md](docs/WORKSHOP.md)。
-- 动作服务（`npm run service`，仅 loopback `127.0.0.1:8788`）：v1 HTTP 协议提供能力目录、rig manifest（VRM 语义映射 + 内容哈希）和 `POST /v1/motions` 同步求解，返回规范姿态包（逐骨局部旋转 + root 平移、事件、质量检查）。可服务 keyframed 五动作与提交的 WorkshopDoc；GLB/渲染/MCP 未实现。请求经 Host/Origin/Content-Type 守卫并按 JSON Schema（Ajv 2020 严格模式）校验；返回前经语义校验，违反运动学阈值的动作以 422 `motion_rejected` 拒绝，阈值与已知限制见 [docs/validation.md](docs/validation.md)。契约见 [spec/openapi.yaml](spec/openapi.yaml)，方案见 [docs/ANIMATION-PROTOCOL-PLAN.md](docs/ANIMATION-PROTOCOL-PLAN.md)。
+- 动作服务（`npm run service`，仅 loopback `127.0.0.1:8788`）：v1 HTTP 协议提供能力目录、rig manifest（VRM 语义映射 + 内容哈希）和 `POST /v1/motions` 同步求解，返回规范姿态包（逐骨局部旋转 + root 平移、事件、质量检查）。内置动作以 WorkshopDoc 数据文件（`assets/motions/*.json`）驱动，工作台与服务共用同一求解管线；也可提交自定义 WorkshopDoc。GLB/渲染/MCP 未实现。请求经 Host/Origin/Content-Type 守卫并按 JSON Schema（Ajv 2020 严格模式）校验；返回前经语义校验，违反运动学阈值的动作以 422 `motion_rejected` 拒绝，阈值与已知限制见 [docs/validation.md](docs/validation.md)。契约见 [spec/openapi.yaml](spec/openapi.yaml)，方案见 [docs/ANIMATION-PROTOCOL-PLAN.md](docs/ANIMATION-PROTOCOL-PLAN.md)。
 
 键盘：空格播放 / 暂停，1–8 切换动作，R 重播。拖动画布旋转，滚轮缩放，右键拖动平移。
 
@@ -75,8 +75,9 @@ npm run qa:dynamics       # 肌骨投掷阶段截图、握拳特写与实时投�
 |---|---|
 | `src/core/rig.ts` / `kinematics.ts` | 连续人体骨架、解析 IK、关节活动范围 |
 | `src/core/dynamics.ts` / `engine.ts` | 物理记录解析、蒙皮重定向、相机与播放状态 |
-| `src/core/motions.ts` / `authoring.ts` | JSON 动作目录、运动学预设和阶段曲线 |
-| `src/workshop/` | 动作工作台：任务空间姿态编辑、带约束关键帧、补间与合理性检查 |
+| `src/core/motions.ts` / `motion-files.ts` / `motion-file.ts` | 动作目录与 motion-file 信封（`assets/motions/*.json`）的校验 / 规范化：`workshop-motion` 内嵌文档，`clip-motion` 指向外部片段 |
+| `src/core/motion-source.ts` | 统一播放源：clip / 文档 / 动力学记录 / 姿态包共用一个 playhead |
+| `src/workshop/` | 动作工作台与求解管线：任务空间姿态编辑、带约束关键帧、补间与合理性检查（`random-document.ts` 为种子化随机文档生成器，供属性测试） |
 | `assets/actions/` | 可编辑肌肉动作参数和 JSON Schema |
 | `assets/source/dynamics/` | 完整 MyoSim XML、416 执行器 / 424 路径 / 惯性清单与许可 |
 | `assets/dynamics/` | 可复现肌肉激励、参考轨迹与正向仿真源记录 |

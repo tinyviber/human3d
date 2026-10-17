@@ -75,6 +75,24 @@ describe('motion file envelopes',()=>{
    expect(()=>normalizeMotionFile(raw),name).not.toThrow();
   }
  });
+ it('enforces the document/clip kind exclusivity on both schema and runtime validator',()=>{
+  const dir=path.resolve('assets/motions');
+  const ajv=new Ajv2020({allErrors:true,strict:true});
+  const check=ajv.compile(JSON.parse(fs.readFileSync(path.join(dir,'motion.schema.json'),'utf8')));
+  const idle=JSON.parse(fs.readFileSync(path.join(dir,'idle.json'),'utf8'));
+  const walk=JSON.parse(fs.readFileSync(path.join(dir,'walk.json'),'utf8'));
+  const drop=(o:Record<string,unknown>,k:string)=>{const c={...o};delete c[k];return c;};
+  const bad=[
+   {...idle,clip:{url:'/x.json'}},          // workshop-motion carrying a clip
+   {...walk,document:idle.document},       // clip-motion embedding a document
+   drop(idle,'document'),                  // workshop-motion without document
+   drop(walk,'clip'),                      // clip-motion without clip
+  ];
+  for(const b of bad){
+   expect(check(b),JSON.stringify(check.errors)).toBe(false);
+   expect(()=>normalizeMotionFile(b)).toThrow();
+  }
+ });
 });
 
 describe('OpenAPI description matches the executable contract',()=>{

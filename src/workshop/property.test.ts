@@ -1,4 +1,4 @@
-import {describe,it,expect,beforeAll} from 'vitest';
+import {describe,it,beforeAll} from 'vitest';
 import fs from 'node:fs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {Quaternion,Vector3} from 'three';
@@ -67,7 +67,12 @@ function maxKeyVel(doc:WorkshopDoc){
 }
 
 /** Run the full assertion set on one document; returns human-readable problems
- * (empty = clean). Assertions 1–9 from the sweep contract. */
+ * (empty = clean). Assertions of the sweep contract, in execution order:
+ * (1) finite channels, unit quaternions, finite world points; (2) rigid
+ * segments; (3) interpolated weights inside [0,1]; (4) soles never under the
+ * ground plane; (5) contacts held (effective target, stored contact point,
+ * position/rotation between samples); (6) bounded step displacement;
+ * (7) deterministic re-solve; (8) loop seam. */
 function checkDocument(doc:WorkshopDoc){
  const problems:string[]=[];
  const bad=(m:string)=>{if(problems.length<60)problems.push(m);};
@@ -101,6 +106,7 @@ function checkDocument(doc:WorkshopDoc){
   rig.model.updateMatrixWorld(true);
   const pts=new Map<string,Vector3>();
   // (1) finite channels, unit quaternions, finite world points; (2) rigid segments
+  // (segment lengths measured on local translations against the rest pose)
   if(!flattenPose(f.pose).every(Number.isFinite))bad(`t=${t.toFixed(3)} flattenPose non-finite`);
   if(!Number.isFinite(f.support.L+f.support.R+f.gripAmount))bad(`t=${t.toFixed(3)} non-finite support/grip`);
   for(const n of bones){
@@ -114,15 +120,15 @@ function checkDocument(doc:WorkshopDoc){
     if(d>1e-7)bad(`t=${t.toFixed(3)} ${n} segment moved ${(d*1000).toFixed(3)}mm`);
    }
   }
-  // (6) interpolated weights stay inside [0,1]
+  // (3) interpolated weights stay inside [0,1]
   for(const [nm,v]of [['support.L',f.support.L],['support.R',f.support.R],['gripAmount',f.gripAmount]]as const)
    if(!(v>=0&&v<=1))bad(`t=${t.toFixed(3)} ${nm}=${v} outside [0,1]`);
-  // (5) the sole never passes under the ground plane (2mm tolerance)
+  // (4) the sole never passes under the ground plane (2mm tolerance)
   for(const s of SIDES)for(const n of geo[s].names){
    const y=pts.get(n)!.y;
    if(!(y>=-.002))bad(`t=${t.toFixed(3)} ${n} y=${y.toFixed(4)} under ground`);
   }
-  // (4)+(6) contacts: position held ≤2mm/step, orientation ≤1°/step, and the
+  // (5) contacts: position held ≤2mm/step, orientation ≤1°/step, and the
   // solved ankle within 6mm of both the effective target and the run's
   // stored contact point
   for(const s of SIDES){
@@ -146,17 +152,27 @@ function checkDocument(doc:WorkshopDoc){
    }
    wasPlanted[s]=planted;prevFoot[s]=p;prevFootQ[s]=q;
   }
-  // (3) bounded step displacement — interpolated docs only (stepped mode is
+  // (6) bounded step displacement — interpolated docs only (stepped mode is
   // piecewise-constant and jumps at keys by design)
   if(doc.inbetweens&&prevPts){
    const dt=t-prevT;
+   /* Bound provenance: `vel·dt` is the worst key-to-key travel the document
+    * channels can inject (maxKeyVel); ×4 is slack for Catmull-Rom interior
+    * tangents overshooting the secant rate between keys. `+.8·dt` covers
+    * solver-added displacement the channels don't express: the posterior
+    * pelvis shift (≤.15 m, solver maxShift) fades in/out with the support
+    * weights across a transition interval — up to ~0.75 m/s of root motion
+    * over a ~.2 s fade. The .05 m floor keeps near-static documents
+    * measurable — it absorbs fixed per-sample residue such as grip-ramp
+    * finger travel and one-step contact corrections, which are not driven
+    * by key velocity at all. */
    const bound=Math.max(.05,4*vel*dt+.8*dt);
    for(const n of bones){
     const d=pts.get(n)!.distanceTo(prevPts.get(n)!);
     if(d>bound+1e-9)bad(`t=${t.toFixed(3)} ${n} stepped ${d.toFixed(4)}m > bound ${bound.toFixed(4)}m (dt=${dt.toFixed(4)}s, keyVel=${vel.toFixed(2)}m/s)`);
    }
   }
-  // (8) determinism: re-solving the same frame must be bitwise identical
+  // (7) determinism: re-solving the same frame must be bitwise identical
   if(detAt.has(idx)){
    const snap=bones.map(n=>{const b=rig.bone(n);return[b.position.x,b.position.y,b.position.z,b.quaternion.x,b.quaternion.y,b.quaternion.z,b.quaternion.w];});
    solveEffectiveFrame(rig,frameAt(doc,t,origin));
@@ -168,7 +184,7 @@ function checkDocument(doc:WorkshopDoc){
   }
   prevPts=pts;prevT=t;
  }
- // (7) loop seam: the wrap step must look like any other uniform step
+ // (8) loop seam: the wrap step must look like any other uniform step
  if(doc.loop&&doc.inbetweens){
   const dt=doc.duration/UNIFORM;
   const diff=(a:number,b:number)=>{const x=flattenPose(frameAt(doc,a,origin).pose),y=flattenPose(frameAt(doc,b,origin).pose);let m=0;for(let i=0;i<x.length;i++)m=Math.max(m,Math.abs(x[i]-y[i]));return m;};

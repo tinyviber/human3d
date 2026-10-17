@@ -46,7 +46,7 @@
 - **持拍准备**：预设右手抓握与稳定支撑。是刚性运动学连接，不是摩擦接触求解。
 - **正手挥拍**：参考 [Elliott, 2006, Biomechanics and tennis](https://pmc.ncbi.nlm.nih.gov/articles/PMC2577481/) 对动力链与躯干 / 上肢时序的讨论，组织准备、引拍、加速、击球区、随挥和恢复。骨盆开始回转早于胸廓，肩肘腕随躯干运动；没有可信且可直接再分发的网球动捕数据被采用，故明确标注为研究参考关键姿态。手臂轨迹、各时点、幅度、抓握角度均为工程近似，不是专业正手测量结果。
 
-关键姿态之间使用非均匀三次 Hermite 时间曲线，编译为 40 Hz 四元数轨道；不会让每个关节按互不相关的正弦函数摆动。原有动作可在 `authoring.ts` 扩展，或加载兼容骨架 AnimationClip。肌肉驱动动作走单独的参数 JSON 流程，见 [ACTION-TEMPLATE.md](ACTION-TEMPLATE.md)。
+关键姿态之间使用非均匀三次 Hermite 时间曲线；不会让每个关节按互不相关的正弦函数摆动。原有动作以 `assets/motions/*.json` 的 motion-file 信封保存（由 `scripts/migrate-authored-motions.mts` 从原 keyframed 定义迁移生成，可重跑），walk 则是 `clip-motion` 信封指向兼容骨架的 AnimationClip。肌肉驱动动作走单独的参数 JSON 流程，见 [ACTION-TEMPLATE.md](ACTION-TEMPLATE.md)。
 
 ## 肌骨动力链与投掷 / 直拳
 

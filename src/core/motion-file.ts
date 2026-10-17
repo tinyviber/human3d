@@ -22,9 +22,10 @@ const isNum=(v:unknown):v is number=>typeof v==='number'&&Number.isFinite(v);
 const isObj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 
 /** Structural check for the envelope. Required/type errors plus the kind
- * branch contract: a workshop-motion carries its document inline, a
- * clip-motion points at an external clip. `document` content itself is the
- * WorkshopDoc validator's job (normalizeMotionFile runs it). */
+ * branch contract — mutually exclusive: a workshop-motion must carry its
+ * document inline and may not point at an external clip; a clip-motion must
+ * point at an external clip and may not embed a document. `document` content
+ * itself is the WorkshopDoc validator's job (normalizeMotionFile runs it). */
 export function validateMotionFileShape(raw:unknown):string[]{
  const e:string[]=[];
  if(!isObj(raw))return ['动作文件不是对象'];
@@ -52,8 +53,14 @@ export function validateMotionFileShape(raw:unknown):string[]{
    if(c.locomotion!==undefined&&c.locomotion!=='in-place'&&c.locomotion!=='follow')e.push('capabilities.locomotion 必须是 in-place 或 follow');
   }
  }
- if(f.kind==='workshop-motion'&&!isObj(f.document))e.push('workshop-motion 必须有 document');
- if(f.kind==='clip-motion'&&(!isObj(f.clip)||!isStr(f.clip.url)))e.push('clip-motion 必须有 clip.url');
+ if(f.kind==='workshop-motion'){
+  if(!isObj(f.document))e.push('workshop-motion 必须有 document');
+  if(f.clip!==undefined)e.push('workshop-motion 不得有 clip（轨迹字段互斥）');
+ }
+ if(f.kind==='clip-motion'){
+  if(!isObj(f.clip)||!isStr(f.clip.url))e.push('clip-motion 必须有 clip.url');
+  if(f.document!==undefined)e.push('clip-motion 不得有 document（轨迹字段互斥）');
+ }
  if(f.clip!==undefined&&(!isObj(f.clip)||!isStr(f.clip.url)||(f.clip.meta!==undefined&&typeof f.clip.meta!=='string')))e.push('clip 必须是 {url,meta?}');
  return e;
 }

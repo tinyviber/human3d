@@ -149,7 +149,8 @@ export function insidePolygon(p:Vector3,poly:Vector3[],margin=.02){
 const NUMERIC_EPS=1e-3;
 /** Per-side limit checks measured on the solved rig: joint flexion limits,
  * ankle dorsiflexion and sole depth. Independent of which feet are planted,
- * so the package builder can reuse them for keyframed motions too. */
+ * so the package builder can run them on every sampled frame, whatever the
+ * document's constraint mix. */
 export function limitItems(rig:HumanRig):CheckItem[]{
   const items:CheckItem[]=[];
   const P=(n:string)=>rig.point(n);

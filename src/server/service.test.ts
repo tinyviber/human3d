@@ -169,8 +169,9 @@ describe('request semantics',()=>{
   ctx.idempotent.get('stale-key')!.at=Date.now()-(LIMITS_SVC.idempotencyTtlSeconds+1)*1000;
   const fresh=post({action:{id:'squat'},sample:{fps:1}},{'idempotency-key':'stale-key'});
   expect(fresh.status).toBe(200);
- // Filling the cache runs ~300 real document solves — slower than the old
- // keyframed path, so this test gets the same room as the HTTP smoke test.
+ // Filling the cache runs ~300 real document solves — slower than the
+ // pre-convergence baked-definition path, so this test gets the same room as
+ // the HTTP smoke test.
  },30000);
 });
 describe('preconditions, parameters and idempotency keys',()=>{

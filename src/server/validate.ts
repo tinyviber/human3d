@@ -32,7 +32,9 @@ export interface Measurements{
  rootSpeed:Peak;
  knee:Peak;
  elbow:Peak;
- /** null when the package has no support intervals (keyframed motions). */
+ /** null when the package has no support intervals — e.g. a document that
+  * never plants a foot. The bundled motions are planted throughout, so they
+  * always produce intervals. */
  slip:Peak|null;
  /** Largest rate of change of root velocity (m/s²). Catches a pelvis step that a
   * speed limit alone can miss at low frame rates. */

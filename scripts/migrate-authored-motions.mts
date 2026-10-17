@@ -1,7 +1,8 @@
-// One-shot migration: bake the authored keyframed motions (src/core/authoring.ts)
-// into WorkshopDoc envelopes under assets/motions/, and measure how faithfully
-// the workshop pipeline reproduces them against golden captures taken in the
-// same run. Rerunnable — all outputs are overwritten.
+// One-shot migration: bake the authored motions (the since-deleted
+// src/core/authoring.ts keyframe presets, kept verbatim below as a frozen
+// snapshot) into WorkshopDoc envelopes under assets/motions/, and measure how
+// faithfully the workshop pipeline reproduces them against golden captures
+// taken in the same run. Rerunnable — all outputs are overwritten.
 // Usage: npx tsx scripts/migrate-authored-motions.mts
 import fs from 'node:fs';
 import path from 'node:path';
@@ -18,9 +19,10 @@ import {normalizeMotionFile,type MotionCapabilities,type MotionFile} from '../sr
 import type {RigInfo} from '../src/core/types';
 
 /* ---- frozen migration snapshot — do not edit -----------------------------
- * Verbatim copy of src/core/authoring.ts @ feat/arch-convergence; the module
- * is deleted once this migration lands. The only adaptation: seq is keyed by
- * plain string so poseAt takes `id:string` instead of the deleted alias. */
+ * Verbatim copy of the former src/core/authoring.ts @ feat/arch-convergence;
+ * that module was deleted once this migration landed. The only adaptation:
+ * seq is keyed by plain string so poseAt takes `id:string` instead of the
+ * deleted alias. */
 type V=[number,number,number];
 interface Controls{y:number;z:number;yaw:number;chest:number;lean:number;right:V;left:V;rf:V;rn:V;lf:V;ln:V;stance:number}
 type Key={t:number;pose:Partial<Controls>};
@@ -156,7 +158,10 @@ const keyTimesFor=(id:string)=>{
    s=e+1;
   }
  }
- const sorted=[...times].sort((a,b)=>a-b);
+ // Quantize to microseconds: fractional subdivision and bisection otherwise
+ // leak binary float tails (e.g. 5.599999997764826) into the shipped document,
+ // which is hashed verbatim into definitionSHA256.
+ const sorted=[...times].sort((a,b)=>a-b).map(t=>Math.round(t*1e6)/1e6);
  return sorted.filter((t,i)=>i===0||t-sorted[i-1]>.01);
 };
 const footFor=(id:string)=>id==='ready'||id==='forehand'?{zBase:.018,zStep:.045}:{zBase:.018,zStep:0};
@@ -203,8 +208,10 @@ const motionSchema={
   clip:{type:'object',required:['url'],additionalProperties:false,properties:{url:{type:'string'},meta:{type:'string'}}},
  },
  allOf:[
-  {if:{properties:{kind:{const:'workshop-motion'}}},then:{required:['document'],properties:{document:{type:'object'}}}},
-  {if:{properties:{kind:{const:'clip-motion'}}},then:{required:['clip'],properties:{clip:{type:'object',required:['url'],properties:{url:{type:'string'}}}}}},
+  // Kind exclusivity: a `false` property schema rejects the sibling payload
+  // outright (strictRequired forbids `not:{required:[...]}` here).
+  {if:{properties:{kind:{const:'workshop-motion'}}},then:{required:['document'],properties:{document:{type:'object'},clip:false}}},
+  {if:{properties:{kind:{const:'clip-motion'}}},then:{required:['clip'],properties:{clip:{type:'object',required:['url'],properties:{url:{type:'string'}}},document:false}}},
  ],
 };
 

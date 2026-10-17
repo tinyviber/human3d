@@ -9,9 +9,12 @@ import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,ret
 import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from './limits';
-import {analyzePose,rotateHandFrame,solvePose,supportPolygon} from './solver';
+import {analyzePose,rotateHandFrame,solveEffectiveFrame,supportPolygon} from './solver';
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
+// frameAt's origin must be the rest root — the same value the engine and the
+// service pass, so pelvis-frame hands resolve to the same world targets.
+const origin=()=>rig.rest.get('root')!;
 beforeAll(async()=>{
  const bytes=fs.readFileSync('public/models/human.glb');
  const gltf=await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');
@@ -201,7 +204,7 @@ describe('workshop solver',()=>{
  it('keeps bone lengths and joint limits across the whole motion',()=>{
   const doc=defaultDocument(rig.rest);
   for(let i=0;i<=40;i++){
-   const f=frameAt(doc,i/40*doc.duration);solvePose(rig,f.pose,f.constraints);
+   const f=frameAt(doc,i/40*doc.duration,origin());solveEffectiveFrame(rig,f);
    for(const [n,b]of rig.bones){if(n!=='root')expect(b.position.distanceTo(rig.restLocal.get(n)!)).toBeLessThan(1e-7);expect(b.quaternion.length()).toBeCloseTo(1,4);}
    for(const side of ['L','R']as const){
     expect(angleAt(rig.point(`upperleg01_${side}`),rig.point(`lowerleg01_${side}`),rig.point(`foot_${side}`))).toBeLessThanOrEqual(135.1);
@@ -212,7 +215,7 @@ describe('workshop solver',()=>{
  it('keeps planted feet at their targets within IK residual',()=>{
   const doc=defaultDocument(rig.rest);
   for(let i=0;i<=40;i++){
-   const f=frameAt(doc,i/40*doc.duration);solvePose(rig,f.pose,f.constraints);
+   const f=frameAt(doc,i/40*doc.duration,origin());solveEffectiveFrame(rig,f);
    for(const side of ['L','R']as const){
     const planted=side==='L'?f.constraints.plantL:f.constraints.plantR;if(!planted)continue;
     const t=toV((side==='L'?f.pose.footL:f.pose.footR).target);
@@ -223,14 +226,14 @@ describe('workshop solver',()=>{
  it('keeps the grip transform fixed while grip is constrained',()=>{
   const doc=defaultDocument(rig.rest);
   for(let i=0;i<=40;i++){
-   const f=frameAt(doc,i/40*doc.duration);solvePose(rig,f.pose,f.constraints);
+   const f=frameAt(doc,i/40*doc.duration,origin());solveEffectiveFrame(rig,f);
    const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone());
    expect(racket.getWorldPosition(new Vector3()).distanceTo(expected)).toBeLessThan(1e-10);
   }
  });
  it('reports a stable balance check on the ready key',()=>{
-  const doc=defaultDocument(rig.rest),f=frameAt(doc,0);
-  solvePose(rig,f.pose,f.constraints);
+  const doc=defaultDocument(rig.rest),f=frameAt(doc,0,origin());
+  solveEffectiveFrame(rig,f);
   const a=analyzePose(rig,f.pose,f.constraints,racket);
   expect(a.comStable).toBe(true);expect(a.support.length).toBeGreaterThanOrEqual(3);
   expect(a.items.every(i=>i.ok)).toBe(true);
@@ -238,7 +241,7 @@ describe('workshop solver',()=>{
  it('flags balance when the root is dragged far off the feet',()=>{
   const doc=defaultDocument(rig.rest),k=ensureKey(doc,0)!;
   k.pose.root.z=.6;
-  const f=frameAt(doc,0);solvePose(rig,f.pose,f.constraints);
+  const f=frameAt(doc,0,origin());solveEffectiveFrame(rig,f);
   const a=analyzePose(rig,f.pose,f.constraints,racket);
   expect(a.comStable).toBe(false);
  });
@@ -307,7 +310,7 @@ describe('motion library',()=>{
   const a=l.create('发球'),b=l.create('发球');
   expect(a.id).not.toBe(b.id);expect(l.active().id).toBe(b.id);expect(l.docs.length).toBe(3);
   for(const doc of [a,b]){expect(doc.keys.length).toBe(2);expect(doc.keys.every(k=>k.constraints.plantL&&k.constraints.plantR&&!k.constraints.grip)).toBe(true);}
-  const f=frameAt(a,0);solvePose(rig,f.pose,f.constraints);
+  const f=frameAt(a,0,origin());solveEffectiveFrame(rig,f);
   expect(analyzePose(rig,f.pose,f.constraints).comStable).toBe(true);
  });
  it('duplicates deep-copies keys so editing a copy leaves the source intact',()=>{

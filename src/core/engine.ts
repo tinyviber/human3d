@@ -16,6 +16,8 @@ export class HumanEngine{
  /** The one and only playhead, in seconds of the active source. */
  time=0;activeId:MotionId='idle';playing=true;speed=1;private _loop=true;disposed=false;ready=false;
  private sources=new Map<MotionId,MotionSource>();private specs=new Map<MotionId,MotionSpec>();
+ /** Fallback key material for pose packages that arrive without an artifact id. */
+ private pkgSeq=0;
  private _source?:MotionSource;private fade=new PoseFade();private dynSession?:DynamicsSession;
  debug:DebugOptions={surface:true,skeleton:false,axes:false,targets:false,trail:false,muscles:false};
  racket?:Group;skeletonLines?:LineSegments;jointGroup=new Group();axesGroup=new Group();targetGroup=new Group();
@@ -86,7 +88,11 @@ export class HumanEngine{
   const problems=checkPosePackageShape(pkg,new Set(this.rig.bones.keys()));
   if(problems.length){this.onError?.(new Error(`姿态包不可用：${problems[0]}${problems.length>1?`（共 ${problems.length} 处问题）`:''}`));return undefined;}
   const p=pkg as PosePackage,actionId=typeof p.action?.id==='string'&&p.action.id?p.action.id:'pose-package';
-  const spec:MotionSpec={id:`pkg:${actionId}`,name:actionId,english:'POSE PACKAGE',duration:p.timeline.duration,
+  // Key the temp entry on the package's artifact id (content-addressed), not
+  // the action id: two packages solved for the same action stay distinct
+  // entries, and reopening the same package is idempotent.
+  const specId=`pkg:${typeof p.id==='string'&&p.id?p.id:`unkeyed-${this.pkgSeq++}`}`;
+  const spec:MotionSpec={id:specId,name:actionId,english:'POSE PACKAGE',duration:p.timeline.duration,
    description:'外部姿态包（pose-json）回放',method:'服务交付轨迹 · FK 采样重放',focus:['姿态包回放'],phases:[],source:{kind:'pose-package',package:p}};
   this.specs.set(spec.id,spec);this.sources.set(spec.id,new PosePackageSource(this.rig,p));
   this.setMotion(spec.id,false);return spec;
