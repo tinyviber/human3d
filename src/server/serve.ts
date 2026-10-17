@@ -23,7 +23,9 @@ const server=http.createServer((req,res)=>{
  if(enc!=='identity'&&enc!=='gzip'){send(400,{error:{code:'invalid_request',message:`unsupported Content-Encoding '${enc}'`}});req.resume();return;}
  const stream=enc==='gzip'?req.pipe(zlib.createGunzip()):req;
  const chunks:Buffer[]=[];let size=0,done=false;
- const fail=(status:number,code:string,message:string)=>{if(!done){done=true;send(status,{error:{code,message}});req.socket.end();}};
+ // fail() also destroys the gunzip stream: a rejected request must stop
+ // spending CPU on decompressing the rest of an over-limit body.
+ const fail=(status:number,code:string,message:string)=>{if(!done){done=true;send(status,{error:{code,message}});if(stream!==req)stream.destroy();req.socket.end();}};
  stream.on('data',(c:Buffer)=>{size+=c.length;if(size>LIMITS_SVC.maxBodyBytes){fail(413,'request_too_large',`body exceeds ${LIMITS_SVC.maxBodyBytes} bytes`);return;}chunks.push(c);});
  stream.on('error',()=>fail(400,'invalid_request','request body could not be decompressed'));
  req.on('error',()=>fail(400,'invalid_request','request stream failed'));

@@ -102,7 +102,11 @@ export class WorkshopEngine{
     this.solveCurrent();
     const origin=h.mesh.getWorldPosition(new Vector3());
     const normal=new Vector3();this.camera.getWorldDirection(normal);
-    const plane=h.kind==='foot'
+    // A planted foot is a contact — dragging stays on the ground plane. An
+    // unplanted foot is a swing waypoint: drag in the camera-facing plane so
+    // the stored target can carry real height.
+    const planted=h.kind==='foot'&&key.constraints[h.side==='L'?'plantL':'plantR'];
+    const plane=planted
       ?new Plane(new Vector3(0,1,0),-origin.y)
       :new Plane().setFromNormalAndCoplanarPoint(normal,origin);
     const hit=this.raycaster.ray.intersectPlane(plane,new Vector3())??origin;
@@ -120,7 +124,9 @@ export class WorkshopEngine{
     switch(this.drag.h.kind){
       case 'root':{const rest=this.rig.rest.get('root')!;k.root={x:pos.x-rest.x,y:pos.y-rest.y,z:pos.z-rest.z};break;}
       case 'hand':{(this.drag.h.side==='L'?k.handL:k.handR).target={x:pos.x,y:pos.y,z:pos.z};break;}
-      case 'foot':{const f=this.drag.h.side==='L'?k.footL:k.footR;f.target={x:pos.x,y:f.target.y,z:pos.z};break;}
+      case 'foot':{const f=this.drag.h.side==='L'?k.footL:k.footR;
+        const lock=this.drag.key.constraints[this.drag.h.side==='L'?'plantL':'plantR'];
+        f.target={x:pos.x,y:lock?f.target.y:Math.max(0,pos.y),z:pos.z};break;}
       case 'poleArm':{(this.drag.h.side==='L'?k.handL:k.handR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'poleLeg':{(this.drag.h.side==='L'?k.footL:k.footR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'tip':case 'contact':{

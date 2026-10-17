@@ -82,6 +82,26 @@ const live=await page.evaluate(()=>{const e=window.__WS__;return {target:e.getDo
 assert.deepEqual(live.target,moved,'live doc handR.target differs from the persisted edit');
 assert(live.wrist.every((v,i)=>Math.abs(v-wristBefore[i])<.01),'solved wrist position changed across reload');
 result.checks.workshopDragPersist=true;
+// Foot-height editing through the real UI: add a mid key, unplant the left
+// foot on it — the key then starts a swing interval and its stored target is
+// the mid-swing waypoint — then set the lift slider and confirm the solved
+// foot actually leaves the ground inside that interval.
+await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);});
+await page.waitForTimeout(150); // let the React frame state flush before addKey reads it
+await page.getByRole('button',{name:'添加关键帧',exact:true}).click();
+assert.equal(await page.locator('.ws-key').count(),3);
+await page.locator('.ws-key').nth(1).click();
+const liftSlider=page.locator('.ws-slider').filter({hasText:'左脚抬升高度'}).locator('input');
+assert(await liftSlider.isDisabled(),'lift slider should be disabled while the foot is planted');
+await page.locator('.ws-check').filter({hasText:'左脚支撑锁定'}).locator('input').uncheck();
+assert(!(await liftSlider.isDisabled()),'lift slider did not enable after unplanting the foot');
+await liftSlider.evaluate(el=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(el,'0.35');el.dispatchEvent(new Event('input',{bubbles:true}));});
+await page.waitForTimeout(200);
+const lift=await page.evaluate(()=>{const e=window.__WS__;const ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);const mid=ks[1];e.seek((mid.time+ks[2].time)/2);e.solveCurrent();return {target:mid.pose.footL.target.y,planted:mid.constraints.plantL,footY:e.rig.point('foot_L').y};});
+assert.equal(lift.planted,false,'plantL did not toggle off via the UI');
+assert(Math.abs(lift.target-.35)<1e-3,`UI slider did not write footL.target.y (got ${lift.target})`);
+assert(lift.footY>.15,`solved foot did not leave the ground mid-swing (y=${lift.footY})`);
+result.checks.workshopFootHeight=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 

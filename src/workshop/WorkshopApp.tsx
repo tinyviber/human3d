@@ -14,8 +14,8 @@ const fmt=(t:number)=>`${Math.floor(t/60)}:${(Math.floor(t%60)).toString().padSt
 function Row({label,checked,onChange,detail}:{label:string;checked:boolean;onChange:(v:boolean)=>void;detail?:string}){
  return <label className="ws-check"><input type="checkbox" checked={checked} onChange={e=>onChange(e.target.checked)}/><span>{label}{detail?<small>{detail}</small>:null}</span></label>;
 }
-function Slider({label,value,min,max,step,unit,onChange}:{label:string;value:number;min:number;max:number;step:number;unit?:string;onChange:(v:number)=>void}){
- return <label className="ws-slider"><span>{label}<output>{value.toFixed(unit==='m'?3:1)}{unit??'°'}</output></span><input type="range" min={min} max={max} step={step} value={value} onChange={e=>onChange(Number(e.target.value))}/></label>;
+function Slider({label,value,min,max,step,unit,disabled,onChange}:{label:string;value:number;min:number;max:number;step:number;unit?:string;disabled?:boolean;onChange:(v:number)=>void}){
+ return <label className="ws-slider"><span>{label}<output>{value.toFixed(unit==='m'?3:1)}{unit??'°'}</output></span><input type="range" min={min} max={max} step={step} value={value} disabled={disabled} onChange={e=>onChange(Number(e.target.value))}/></label>;
 }
 /** Delta sliders for the stored wrist frame: the control resets to zero each
  * key, edits rotate the key's forward/normal pair by the slider delta. */
@@ -163,7 +163,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     <section className="ws-card ws-legend"><h2>手柄</h2>
      <p><i style={{background:'#2469ee'}}/>髋部 / 根骨</p>
      <p><i style={{background:'#ec8c39'}}/>手腕（IK 末端）</p>
-     <p><i style={{background:'#e2543a'}}/>脚踝（地面锁定拖动）</p>
+     <p><i style={{background:'#e2543a'}}/>脚踝（支撑贴地 · 离地可三维拖动）</p>
      <p><i style={{background:'#4a9e6b'}}/>肘 / 膝极点</p>
      <p><i style={{background:'#d23c3c'}}/>拍头 · <em style={{color:'#f0b429'}}>触球点</em></p>
      <p className="ws-note">直接拖动末端，IK 自动解算整条链；在空白处拖动仍是旋转视角。</p>
@@ -197,7 +197,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <Slider label="骨盆左右" value={sel.pose.root.x} min={-.4} max={.4} step={.005} unit="m" onChange={v=>editSelected(k=>{k.pose.root.x=v;})}/>
       </div>
       <WristPanel key={sel.id} k={sel} edit={editSelected}/>
-      <div className="ws-sub"><h3>脚部朝向</h3>
+      <div className="ws-sub"><h3>脚部姿态 <small>离地帧的抬升高度即摆动路径点</small></h3>
+       <Slider label="左脚抬升高度" value={sel.pose.footL.target.y} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantL} onChange={v=>editSelected(k=>{k.pose.footL.target.y=v;})}/>
+       <Slider label="右脚抬升高度" value={sel.pose.footR.target.y} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantR} onChange={v=>editSelected(k=>{k.pose.footR.target.y=v;})}/>
        <Slider label="左脚朝向" value={sel.pose.footL.yaw} min={-90} max={90} step={1} onChange={v=>editSelected(k=>{k.pose.footL.yaw=v;})}/>
        <Slider label="右脚朝向" value={sel.pose.footR.yaw} min={-90} max={90} step={1} onChange={v=>editSelected(k=>{k.pose.footR.yaw=v;})}/>
       </div>
