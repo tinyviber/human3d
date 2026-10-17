@@ -1,0 +1,23 @@
+import fs from 'node:fs';import path from 'node:path';
+import {createService} from '../../src/server/service';
+import {attachRacket} from '../../src/core/racket';
+import {normalizeDoc} from '../../src/workshop/document';
+import {probeDocument} from '../../src/workshop/quality-probe';
+import {rotateHandFrame} from '../../src/workshop/solver';
+const ctx=await createService(path.resolve('public'));const racket=attachRacket(ctx.rig);
+const base=JSON.parse(fs.readFileSync(process.argv[2],'utf8'));
+const c=JSON.parse(fs.readFileSync(process.argv[3],'utf8'))[0];
+const d=normalizeDoc(JSON.parse(JSON.stringify(base)));
+if(c.duration)d.duration=c.duration;
+for(const k of d.keys){const p=c.keys[k.id]??c.keys[k.label];if(!p)continue;
+ if(p.time!==undefined)k.time=p.time;
+ for(const a of ['yaw','lean','chest','side'])if(p[a]!==undefined)k.pose[a]=p[a];
+ if(p.root)k.pose.root={x:p.root[0],y:p.root[1],z:p.root[2]};
+ if(p.handR)k.pose.handR.target={x:p.handR[0],y:p.handR[1],z:p.handR[2]};
+ if(p.wrist){const[f,dv,t]=p.wrist;rotateHandFrame(k.pose.handR,'flex',f);rotateHandFrame(k.pose.handR,'dev',dv);rotateHandFrame(k.pose.handR,'twist',t);}}
+d.keys.sort((a,b)=>a.time-b.time);
+const r=probeDocument(ctx.rig,d,{fps:240,tip:racket,name:c.name});
+console.log('accelTop tip:',r.tip.accelTop.map(a=>`a=${a.a.toFixed(0)} dv=${a.dv.toFixed(2)} @${a.t.toFixed(2)}`).join('  '));
+console.log('accelTop wrist:',r.wrist.accelTop.map(a=>`a=${a.a.toFixed(0)} dv=${a.dv.toFixed(2)} @${a.t.toFixed(2)}`).join('  '));
+console.log('turns tip:',r.tip.turns.slice(0,5).map(t=>`${t.deg.toFixed(0)}°@${t.t.toFixed(2)} v${t.v.toFixed(1)}`).join('  '));
+console.log('vpeakT',r.tip.vpeakT.toFixed(2),'vmax',r.tip.vmax.toFixed(2),'contactTip',r.contact.tipSpeed?.toFixed(2),'kicks',r.tip.kicks,'wristKicks',r.wrist.kicks);
