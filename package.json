@@ -1,0 +1,39 @@
+{
+  "name": "human3d",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "vite --host 127.0.0.1",
+    "build": "tsc -b && vite build",
+    "preview": "vite preview --host 127.0.0.1",
+    "test": "vitest run",
+    "qa": "node scripts/browser-qa.mjs",
+    "assets": "python3 scripts/build-human.py && tsx scripts/retarget-walk.mjs",
+    "dynamics:validate": "python3 scripts/validate-action-spec.py",
+    "dynamics:test": "python3 scripts/test-dynamics-records.py",
+    "dynamics:new": "python3 scripts/new-muscle-action.py",
+    "dynamics:build": "python3 scripts/build-muscle-action.py",
+    "qa:dynamics": "node scripts/dynamics-browser-qa.mjs"
+  },
+  "dependencies": {
+    "lucide-react": "^0.468.0",
+    "react": "^19.1.1",
+    "react-dom": "^19.1.1",
+    "three": "^0.180.0"
+  },
+  "devDependencies": {
+    "@types/react": "^19.1.1",
+    "@types/react-dom": "^19.1.1",
+    "@types/three": "^0.180.0",
+    "@vitejs/plugin-react": "^5.0.4",
+    "playwright": "^1.55.0",
+    "tsx": "^4.20.6",
+    "typescript": "~5.9.3",
+    "vite": "^7.1.9",
+    "vitest": "^4.1.12"
+  },
+  "engines": {
+    "node": ">=22.12.0"
+  }
+}

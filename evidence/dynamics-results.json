@@ -1,0 +1,1173 @@
+{
+  "date": "2026-10-17",
+  "browser": "156.0.8078.4",
+  "viewport": [
+    1536,
+    1024
+  ],
+  "action": "baseball-throw",
+  "poses": [
+    {
+      "name": "baseball-throw-front",
+      "time": 0,
+      "view": "front",
+      "file": "baseball-throw-front.png",
+      "phase": "准备",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.2722259521484375,
+        1.2717462126211225,
+        0.2761899292469028
+      ],
+      "support": [
+        520.2962036132812,
+        -82.17727661132812,
+        5.1766791343688965,
+        -520.6679077148438,
+        82.7957534790039,
+        820.5986938476562
+      ],
+      "power": [
+        0.18512368202209473,
+        0.1308760792016983,
+        -0.010783795267343521
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 5.432917307822556,
+      "fingerCurlDeg": 220.645215957726,
+      "toeOutRightDeg": 3.448364814817342,
+      "toeOutLeftDeg": 3.448364814817342,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-side",
+      "time": 0,
+      "view": "side",
+      "file": "baseball-throw-side.png",
+      "phase": "准备",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.2722259521484375,
+        1.2717462126211225,
+        0.2761899292469028
+      ],
+      "support": [
+        520.2962036132812,
+        -82.17727661132812,
+        5.1766791343688965,
+        -520.6679077148438,
+        82.7957534790039,
+        820.5986938476562
+      ],
+      "power": [
+        0.18512368202209473,
+        0.1308760792016983,
+        -0.010783795267343521
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 5.432917307822556,
+      "fingerCurlDeg": 220.645215957726,
+      "toeOutRightDeg": 3.448364814817342,
+      "toeOutLeftDeg": 3.448364814817342,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-back",
+      "time": 0,
+      "view": "back",
+      "file": "baseball-throw-back.png",
+      "phase": "准备",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.2722259521484375,
+        1.2717462126211225,
+        0.2761899292469028
+      ],
+      "support": [
+        520.2962036132812,
+        -82.17727661132812,
+        5.1766791343688965,
+        -520.6679077148438,
+        82.7957534790039,
+        820.5986938476562
+      ],
+      "power": [
+        0.18512368202209473,
+        0.1308760792016983,
+        -0.010783795267343521
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 5.432917307822556,
+      "fingerCurlDeg": 220.645215957726,
+      "toeOutRightDeg": 3.448364814817342,
+      "toeOutLeftDeg": 3.448364814817342,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-three-quarter",
+      "time": 0,
+      "view": "threeQuarter",
+      "file": "baseball-throw-three-quarter.png",
+      "phase": "准备",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.2722259521484375,
+        1.2717462126211225,
+        0.2761899292469028
+      ],
+      "support": [
+        520.2962036132812,
+        -82.17727661132812,
+        5.1766791343688965,
+        -520.6679077148438,
+        82.7957534790039,
+        820.5986938476562
+      ],
+      "power": [
+        0.18512368202209473,
+        0.1308760792016983,
+        -0.010783795267343521
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 5.432917307822556,
+      "fingerCurlDeg": 220.645215957726,
+      "toeOutRightDeg": 3.448364814817342,
+      "toeOutLeftDeg": 3.448364814817342,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-ready",
+      "time": 0.3,
+      "view": "threeQuarter",
+      "file": "baseball-throw-ready.png",
+      "phase": "准备",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.27162224650382993,
+        1.2719547096685468,
+        0.276233991980553
+      ],
+      "support": [
+        715.7926025390625,
+        -48.95115280151367,
+        -152.91896057128906,
+        -711.9664916992188,
+        8.868501663208008,
+        986.2543334960938
+      ],
+      "power": [
+        1.3276692628860474,
+        -0.0480879470705986,
+        0.5229226350784302
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 4.487309633746024,
+      "fingerCurlDeg": 226.54569941471044,
+      "toeOutRightDeg": 3.4476040797725522,
+      "toeOutLeftDeg": 3.447509893841542,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-load",
+      "time": 0.7166666666666667,
+      "view": "threeQuarter",
+      "file": "baseball-throw-load.png",
+      "phase": "准备",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.3980159223079681,
+        1.6200092776413657,
+        -0.37873347997665296
+      ],
+      "support": [
+        102.0688247680664,
+        -22.11811065673828,
+        504.3362731933594,
+        -89.93601989746094,
+        -59.55720901489258,
+        305.4374694824219
+      ],
+      "power": [
+        -24.344690322875977,
+        -51.218753814697266,
+        6.163429260253906
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": -19.133055459667172,
+      "fingerCurlDeg": 277.39611115335504,
+      "toeOutRightDeg": 3.4502982419051116,
+      "toeOutLeftDeg": 3.4489674859199955,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-max-cock",
+      "time": 1.1333333333333333,
+      "view": "threeQuarter",
+      "file": "baseball-throw-max-cock.png",
+      "phase": "最大蓄力 / 肩外展",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.34505704641342155,
+        1.598037177701384,
+        -0.5823948224385578
+      ],
+      "support": [
+        567.1052856445312,
+        -54.246856689453125,
+        446.6034851074219,
+        -590.2544555664062,
+        -86.95166778564453,
+        421.23370361328125
+      ],
+      "power": [
+        45.50979995727539,
+        -20.994491577148438,
+        1.3251771926879883
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": -33.480378367919414,
+      "fingerCurlDeg": 405.35576508816644,
+      "toeOutRightDeg": 3.445990119292389,
+      "toeOutLeftDeg": 3.447079591385986,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-pelvis-drive",
+      "time": 1.5,
+      "view": "threeQuarter",
+      "file": "baseball-throw-pelvis-drive.png",
+      "phase": "蹬地与骨盆启动",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.4606536090373992,
+        1.6194990221456587,
+        -0.22324793934822199
+      ],
+      "support": [
+        -128.71412658691406,
+        54.896995544433594,
+        4.277411460876465,
+        184.0637664794922,
+        21.36084747314453,
+        798.39404296875
+      ],
+      "power": [
+        42.098838806152344,
+        -72.216796875,
+        4.869878768920898
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": -33.1198912288099,
+      "fingerCurlDeg": 409.91598357620785,
+      "toeOutRightDeg": 3.453910540969039,
+      "toeOutLeftDeg": 3.4422657830090393,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-trunk-follow",
+      "time": 1.8833333333333333,
+      "view": "threeQuarter",
+      "file": "baseball-throw-trunk-follow.png",
+      "phase": "躯干跟进",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.3782425979773201,
+        1.6271708551839887,
+        0.23336728016535357
+      ],
+      "support": [
+        1065.9134521484375,
+        25.482219696044922,
+        1848.55810546875,
+        -1075.2745361328125,
+        -26.11477279663086,
+        -1033.6068115234375
+      ],
+      "power": [
+        1.1708557605743408,
+        -6.083590030670166,
+        6.350586891174316
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": -6.239274927082275,
+      "fingerCurlDeg": 329.1595802323693,
+      "toeOutRightDeg": 3.448997942477167,
+      "toeOutLeftDeg": 3.444259490898124,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-release",
+      "time": 2.3,
+      "view": "threeQuarter",
+      "file": "baseball-throw-release.png",
+      "phase": "肩肘加速与释放",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.5109131693840091,
+        1.4449928347066812,
+        0.4312506079673779
+      ],
+      "support": [
+        770.5301513671875,
+        21.025272369384766,
+        390.37811279296875,
+        -716.588623046875,
+        96.91148376464844,
+        357.729736328125
+      ],
+      "power": [
+        -0.2960015535354614,
+        -11.227023124694824,
+        11.287375450134277
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 45.18350452957523,
+      "fingerCurlDeg": 332.7545000728619,
+      "toeOutRightDeg": 3.4479564405835603,
+      "toeOutLeftDeg": 3.4474516205387973,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-follow-through",
+      "time": 2.8833333333333333,
+      "view": "threeQuarter",
+      "file": "baseball-throw-follow-through.png",
+      "phase": "随挥制动",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.12433286110556852,
+        1.1306272490616651,
+        0.3177403072515729
+      ],
+      "support": [
+        380.2784118652344,
+        34.63029479980469,
+        728.876220703125,
+        -364.4600524902344,
+        -32.35743713378906,
+        110.55499267578125
+      ],
+      "power": [
+        -3.643357515335083,
+        5.3751749992370605,
+        -1.854620099067688
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 43.28825680849092,
+      "fingerCurlDeg": 304.06541591964947,
+      "toeOutRightDeg": 3.4502357785595317,
+      "toeOutLeftDeg": 3.447596573985667,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-recovery",
+      "time": 3.4666666666666663,
+      "view": "threeQuarter",
+      "file": "baseball-throw-recovery.png",
+      "phase": "随挥制动",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.2773755153020341,
+        1.2687501652832722,
+        0.27700476447741196
+      ],
+      "support": [
+        443.7795715332031,
+        17.393884658813477,
+        10.233149528503418,
+        -442.9897155761719,
+        -32.59364700317383,
+        807.375732421875
+      ],
+      "power": [
+        5.149096488952637,
+        -6.862770080566406,
+        0.17864444851875305
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 29.572748596579665,
+      "fingerCurlDeg": 338.7359787669962,
+      "toeOutRightDeg": 3.4482206097785224,
+      "toeOutLeftDeg": 3.448666958019954,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-release-front",
+      "time": 2.3,
+      "view": "front",
+      "file": "baseball-throw-release-front.png",
+      "phase": "肩肘加速与释放",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.5109131693840091,
+        1.4449928347066812,
+        0.4312506079673779
+      ],
+      "support": [
+        770.5301513671875,
+        21.025272369384766,
+        390.37811279296875,
+        -716.588623046875,
+        96.91148376464844,
+        357.729736328125
+      ],
+      "power": [
+        -0.2960015535354614,
+        -11.227023124694824,
+        11.287375450134277
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 45.18350452957523,
+      "fingerCurlDeg": 332.7545000728619,
+      "toeOutRightDeg": 3.4479564405835603,
+      "toeOutLeftDeg": 3.4474516205387973,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-release-side",
+      "time": 2.3,
+      "view": "side",
+      "file": "baseball-throw-release-side.png",
+      "phase": "肩肘加速与释放",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.5109131693840091,
+        1.4449928347066812,
+        0.4312506079673779
+      ],
+      "support": [
+        770.5301513671875,
+        21.025272369384766,
+        390.37811279296875,
+        -716.588623046875,
+        96.91148376464844,
+        357.729736328125
+      ],
+      "power": [
+        -0.2960015535354614,
+        -11.227023124694824,
+        11.287375450134277
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 45.18350452957523,
+      "fingerCurlDeg": 332.7545000728619,
+      "toeOutRightDeg": 3.4479564405835603,
+      "toeOutLeftDeg": 3.4474516205387973,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-follow-through-side",
+      "time": 2.8833333333333333,
+      "view": "side",
+      "file": "baseball-throw-follow-through-side.png",
+      "phase": "随挥制动",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.12433286110556852,
+        1.1306272490616651,
+        0.3177403072515729
+      ],
+      "support": [
+        380.2784118652344,
+        34.63029479980469,
+        728.876220703125,
+        -364.4600524902344,
+        -32.35743713378906,
+        110.55499267578125
+      ],
+      "power": [
+        -3.643357515335083,
+        5.3751749992370605,
+        -1.854620099067688
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 43.28825680849092,
+      "fingerCurlDeg": 304.06541591964947,
+      "toeOutRightDeg": 3.4502357785595317,
+      "toeOutLeftDeg": 3.447596573985667,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    },
+    {
+      "name": "baseball-throw-release-hand-close",
+      "time": 2.3,
+      "view": "hand",
+      "file": "baseball-throw-release-hand-close.png",
+      "phase": "肩肘加速与释放",
+      "loadedMass": 84.26498825710956,
+      "hand": [
+        -0.5109131693840091,
+        1.4449928347066812,
+        0.4312506079673779
+      ],
+      "support": [
+        770.5301513671875,
+        21.025272369384766,
+        390.37811279296875,
+        -716.588623046875,
+        96.91148376464844,
+        357.729736328125
+      ],
+      "power": [
+        -0.2960015535354614,
+        -11.227023124694824,
+        11.287375450134277
+      ],
+      "audit": {
+        "externalAppliedForceMax": 0,
+        "virtualWorkErrorW": 1.9895196601282805e-13,
+        "minimumForearmClearanceM": 0.16815093568604988,
+        "maxScalarJointLimitViolationRad": 0.019514957954927747,
+        "maxReferenceHandErrorM": 0.22048013195399693,
+        "meanReferenceHandErrorM": 0.03941341379530858,
+        "maxControllerCoordinateError": 1.6038334362264974,
+        "maxSupportDriftM": 0.000050761221932381175
+      },
+      "wristFlexionDeg": 45.18350452957523,
+      "fingerCurlDeg": 332.7545000728619,
+      "toeOutRightDeg": 3.4479564405835603,
+      "toeOutLeftDeg": 3.4474516205387973,
+      "hasCarriedObject": false,
+      "activeSceneProps": []
+    }
+  ],
+  "checks": {
+    "pageIdentity": true,
+    "notBlank": true,
+    "noFrameworkOverlay": true,
+    "noVisibleOrCarriedBall": true,
+    "toesPointOut": true,
+    "withinSoftLimitTolerance": true,
+    "throwHandTracking": true,
+    "supportDrift": true,
+    "forearmClearance": true,
+    "pelvisLeadsTrunk": true,
+    "forwardTrunkFollowThrough": true,
+    "throwWristCocksAndReleases": true,
+    "throwSkinHandOpensAtRelease": true,
+    "throwPhysicalRecordDocumentsFingerRetarget": true,
+    "throwKneeLoadsThenUnloads": true,
+    "throwArmExtendsAtRelease": true,
+    "fullActionVideo": true,
+    "handCameraTargetsPhysicsWrist": true,
+    "fistJointTargets": true,
+    "wristMotion": true,
+    "wristFlexesDuringPunch": true,
+    "wristAlignedAtExtension": true,
+    "throwAndPunchHaveDifferentHandPaths": true,
+    "thumbWrapsIndex": true,
+    "punchElbowMatchesMuscleState": true,
+    "punchArmDirectionMatchesMuscleState": true,
+    "skinArmLengthsStayFixed": true,
+    "handOpensDuringRecovery": true
+  },
+  "chain": [
+    {
+      "time": 0.3,
+      "pelvisYawDeg": -0.0021665527030728816,
+      "trunkAxialDeg": 0.002200925698706628,
+      "trunkFlexionDeg": -1.1892626131639825,
+      "kneeDeg": 15.595136997911041,
+      "elbowDeg": 80.56719024179957,
+      "wristFlexionDeg": 4.487309633746024,
+      "physicsFingerCurlDeg": 226.54569941471044,
+      "skinFingerCurlDeg": 387.99999999999994,
+      "hand": [
+        -0.27162224650382993,
+        1.2719547096685468,
+        0.276233991980553
+      ]
+    },
+    {
+      "time": 0.7166666666666667,
+      "pelvisYawDeg": -20.943842155560883,
+      "trunkAxialDeg": -2.237354821137322,
+      "trunkFlexionDeg": -11.156510391247929,
+      "kneeDeg": 17.98046274477481,
+      "elbowDeg": 90.18352968747641,
+      "wristFlexionDeg": -19.133055459667172,
+      "physicsFingerCurlDeg": 277.39611115335504,
+      "skinFingerCurlDeg": 259.9999999999999,
+      "hand": [
+        -0.3980159223079681,
+        1.6200092776413657,
+        -0.37873347997665296
+      ]
+    },
+    {
+      "time": 1.1333333333333333,
+      "pelvisYawDeg": -29.055926763143447,
+      "trunkAxialDeg": -14.845446896873979,
+      "trunkFlexionDeg": -1.7133015134355118,
+      "kneeDeg": 19.6022092009243,
+      "elbowDeg": 76.55732961405765,
+      "wristFlexionDeg": -33.480378367919414,
+      "physicsFingerCurlDeg": 405.35576508816644,
+      "skinFingerCurlDeg": 390.28937193268695,
+      "hand": [
+        -0.34505704641342155,
+        1.598037177701384,
+        -0.5823948224385578
+      ]
+    },
+    {
+      "time": 1.5,
+      "pelvisYawDeg": -9.728342852139775,
+      "trunkAxialDeg": -9.683445200498571,
+      "trunkFlexionDeg": -6.600118516689102,
+      "kneeDeg": 16.654331998545352,
+      "elbowDeg": 85.79304310785719,
+      "wristFlexionDeg": -33.1198912288099,
+      "physicsFingerCurlDeg": 409.91598357620785,
+      "skinFingerCurlDeg": 342.6309444079743,
+      "hand": [
+        -0.4606536090373992,
+        1.6194990221456587,
+        -0.22324793934822199
+      ]
+    },
+    {
+      "time": 1.8833333333333333,
+      "pelvisYawDeg": 4.376743801349675,
+      "trunkAxialDeg": 3.7317630723825,
+      "trunkFlexionDeg": -4.117074960917252,
+      "kneeDeg": 15.364025594512613,
+      "elbowDeg": 72.24823156858831,
+      "wristFlexionDeg": -6.239274927082275,
+      "physicsFingerCurlDeg": 329.1595802323693,
+      "skinFingerCurlDeg": 263.3665835490124,
+      "hand": [
+        -0.3782425979773201,
+        1.6271708551839887,
+        0.23336728016535357
+      ]
+    },
+    {
+      "time": 2.3,
+      "pelvisYawDeg": 13.23709912400221,
+      "trunkAxialDeg": 14.693714244462146,
+      "trunkFlexionDeg": -5.07741791435444,
+      "kneeDeg": 16.04167769037355,
+      "elbowDeg": 20.14097793774949,
+      "wristFlexionDeg": 45.18350452957523,
+      "physicsFingerCurlDeg": 332.7545000728619,
+      "skinFingerCurlDeg": 21.999999999999815,
+      "hand": [
+        -0.5109131693840091,
+        1.4449928347066812,
+        0.4312506079673779
+      ]
+    },
+    {
+      "time": 2.8833333333333333,
+      "pelvisYawDeg": 9.79480314070385,
+      "trunkAxialDeg": 9.803789718579612,
+      "trunkFlexionDeg": -18.700328824801012,
+      "kneeDeg": 18.478550874903405,
+      "elbowDeg": 91.554068616142,
+      "wristFlexionDeg": 43.28825680849092,
+      "physicsFingerCurlDeg": 304.06541591964947,
+      "skinFingerCurlDeg": 21.999999999999815,
+      "hand": [
+        -0.12433286110556852,
+        1.1306272490616651,
+        0.3177403072515729
+      ]
+    },
+    {
+      "time": 3.4666666666666663,
+      "pelvisYawDeg": -0.4121279474089045,
+      "trunkAxialDeg": 0.40888092368933593,
+      "trunkFlexionDeg": -1.6917246256823244,
+      "kneeDeg": 15.766991387617733,
+      "elbowDeg": 80.42077147656201,
+      "wristFlexionDeg": 29.572748596579665,
+      "physicsFingerCurlDeg": 338.7359787669962,
+      "skinFingerCurlDeg": 180.00000000000017,
+      "hand": [
+        -0.2773755153020341,
+        1.2687501652832722,
+        0.27700476447741196
+      ]
+    }
+  ],
+  "throwAudit": {
+    "externalAppliedForceMax": 0,
+    "virtualWorkErrorW": 1.9895196601282805e-13,
+    "minimumForearmClearanceM": 0.16815093568604988,
+    "maxScalarJointLimitViolationRad": 0.019514957954927747,
+    "maxReferenceHandErrorM": 0.22048013195399693,
+    "meanReferenceHandErrorM": 0.03941341379530858,
+    "maxControllerCoordinateError": 1.6038334362264974,
+    "maxSupportDriftM": 0.000050761221932381175
+  },
+  "video": "baseball-throw.webm",
+  "videoBytes": 283065,
+  "punch": {
+    "frames": [
+      {
+        "time": 0.48,
+        "hand": [
+          -0.4990262150764463,
+          1.5695683304266033,
+          0.2104009672999388
+        ],
+        "pronationDeg": -5.349221023506866,
+        "wristFlexionDeg": -15.539566578823818,
+        "wristDeviationDeg": -0.5085533673192295,
+        "skinElbowInteriorDeg": 132.2073541633651,
+        "simElbowInteriorDeg": 132.20735416336512,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.25889077559511114,
+        "skinForearmLengthM": 0.2672026170348526,
+        "mcp3Deg": 75.46333138450754,
+        "pip3Deg": 78.03760919211784,
+        "dip3Deg": 28.15327136251093,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 5.24702489165016,
+        "thumbOppositionDeg": 23.237918896122085,
+        "thumbMcpDeg": 23.611395347485676,
+        "thumbIpDeg": 4.447136595482125,
+        "thumbIndexContactM": 0.006321410811213433
+      },
+      {
+        "time": 0.8,
+        "hand": [
+          -0.5345270395278932,
+          1.6278598848775923,
+          -0.128665649890899
+        ],
+        "pronationDeg": -77.56985051699868,
+        "wristFlexionDeg": -42.41403357586431,
+        "wristDeviationDeg": 16.83028450175405,
+        "skinElbowInteriorDeg": 118.64995478298657,
+        "simElbowInteriorDeg": 118.64995478298657,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.25889077559511114,
+        "skinForearmLengthM": 0.2672026170348526,
+        "mcp3Deg": 90.11849945638872,
+        "pip3Deg": 82.92807244917115,
+        "dip3Deg": 78.97294212724856,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 3.248430444244932,
+        "thumbOppositionDeg": 44.76539108443831,
+        "thumbMcpDeg": 40.28469478135616,
+        "thumbIpDeg": 11.766925251145615,
+        "thumbIndexContactM": 0.0063214108112137355
+      },
+      {
+        "time": 1.3,
+        "hand": [
+          -0.24912852644920433,
+          1.4213797394231857,
+          0.43312126994132927
+        ],
+        "pronationDeg": -49.27165620067842,
+        "wristFlexionDeg": 21.060369211357397,
+        "wristDeviationDeg": -7.801595749244889,
+        "skinElbowInteriorDeg": 138.28206485433333,
+        "simElbowInteriorDeg": 138.28206485433336,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.258890775595111,
+        "skinForearmLengthM": 0.2672026170348524,
+        "mcp3Deg": 70.83575527841884,
+        "pip3Deg": 74.77489612749444,
+        "dip3Deg": 56.50989453208607,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 1.2484304442448382,
+        "thumbOppositionDeg": 23.45298106251828,
+        "thumbMcpDeg": 40.0870939935731,
+        "thumbIpDeg": 25.039700601056648,
+        "thumbIndexContactM": 0.006321410811213651
+      },
+      {
+        "time": 1.5,
+        "hand": [
+          -0.19346494078636262,
+          1.3929250780538616,
+          0.514591282606125
+        ],
+        "pronationDeg": -35.76678760767577,
+        "wristFlexionDeg": 43.911552551389605,
+        "wristDeviationDeg": -10.004001346172902,
+        "skinElbowInteriorDeg": 165.3492023458261,
+        "simElbowInteriorDeg": 165.3492023458261,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.25889077559511114,
+        "skinForearmLengthM": 0.26720261703485254,
+        "mcp3Deg": 63.16091759488563,
+        "pip3Deg": 70.97656645834782,
+        "dip3Deg": 44.4523464393037,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 0.5435695557551732,
+        "thumbOppositionDeg": 41.50070751023937,
+        "thumbMcpDeg": 40.05516285920329,
+        "thumbIpDeg": 18.09461228127865,
+        "thumbIndexContactM": 0.007351005866745587
+      },
+      {
+        "time": 1.7,
+        "hand": [
+          -0.04113959372043657,
+          1.3786739651159348,
+          0.5276091456413272
+        ],
+        "pronationDeg": -26.295091078052284,
+        "wristFlexionDeg": 36.35706280103202,
+        "wristDeviationDeg": -10.018379748149425,
+        "skinElbowInteriorDeg": 165.75199208769124,
+        "simElbowInteriorDeg": 165.75199208769112,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.25889077559511114,
+        "skinForearmLengthM": 0.2672026170348526,
+        "mcp3Deg": 61.54725125252427,
+        "pip3Deg": 71.76472930743228,
+        "dip3Deg": 39.557583578167865,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 0.7515695557551467,
+        "thumbOppositionDeg": 44.697529739939654,
+        "thumbMcpDeg": 40.0374180277396,
+        "thumbIpDeg": -10.70495633993463,
+        "thumbIndexContactM": 0.007470473072692641
+      },
+      {
+        "time": 1.8,
+        "hand": [
+          -0.025541643053293275,
+          1.3736969772771894,
+          0.5261588454246524
+        ],
+        "pronationDeg": -28.1629821839634,
+        "wristFlexionDeg": 21.206412316190608,
+        "wristDeviationDeg": -10.025598404328482,
+        "skinElbowInteriorDeg": 165.64309374195727,
+        "simElbowInteriorDeg": 165.64309374195727,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.2588907755951111,
+        "skinForearmLengthM": 0.26720261703485243,
+        "mcp3Deg": 71.39820769619105,
+        "pip3Deg": 77.4473988855587,
+        "dip3Deg": 42.02240418923412,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 0.4505341256874784,
+        "thumbOppositionDeg": 44.68310438041259,
+        "thumbMcpDeg": 40.15536514942197,
+        "thumbIpDeg": -12.210998537770456,
+        "thumbIndexContactM": 0.007470473072692721
+      },
+      {
+        "time": 1.9,
+        "hand": [
+          -0.027366804331540977,
+          1.3743391577199995,
+          0.5238326847553256
+        ],
+        "pronationDeg": -31.093339951121262,
+        "wristFlexionDeg": 6.531037983423594,
+        "wristDeviationDeg": -10.02781309316686,
+        "skinElbowInteriorDeg": 165.40223507485976,
+        "simElbowInteriorDeg": 165.4022350748598,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.25889077559511103,
+        "skinForearmLengthM": 0.2672026170348524,
+        "mcp3Deg": 82.06953816106807,
+        "pip3Deg": 83.20423065769312,
+        "dip3Deg": 45.33575969145857,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 2.5181524577683976,
+        "thumbOppositionDeg": 44.122383415594975,
+        "thumbMcpDeg": 40.189362416015705,
+        "thumbIpDeg": -3.3996581440387352,
+        "thumbIndexContactM": 0.007470473072692989
+      },
+      {
+        "time": 1.975,
+        "hand": [
+          -0.03289422430098044,
+          1.3723397795156538,
+          0.5219277203083043
+        ],
+        "pronationDeg": -35.551247328037675,
+        "wristFlexionDeg": -2.8234697889588065,
+        "wristDeviationDeg": -10.009925681504242,
+        "skinElbowInteriorDeg": 165.1842054501356,
+        "simElbowInteriorDeg": 165.18420545013555,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.2588907755951111,
+        "skinForearmLengthM": 0.2672026170348525,
+        "mcp3Deg": 85.8434020926077,
+        "pip3Deg": 86.13634890610955,
+        "dip3Deg": 48.56834479165303,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 3.248430444244932,
+        "thumbOppositionDeg": 43.58726541488116,
+        "thumbMcpDeg": 40.28122504525779,
+        "thumbIpDeg": 5.187202106204993,
+        "thumbIndexContactM": 0.007470473072692628
+      },
+      {
+        "time": 2.175,
+        "hand": [
+          -0.07477623447777137,
+          1.3361457530454717,
+          0.5098579883575447
+        ],
+        "pronationDeg": -48.19179987780482,
+        "wristFlexionDeg": -20.622393576114085,
+        "wristDeviationDeg": -9.993625435050006,
+        "skinElbowInteriorDeg": 164.216026756887,
+        "simElbowInteriorDeg": 164.2160267568872,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.2588907755951111,
+        "skinForearmLengthM": 0.2672026170348526,
+        "mcp3Deg": 86.52381187734603,
+        "pip3Deg": 86.70768056980278,
+        "dip3Deg": 55.388596036423415,
+        "skinMcp3Deg": 72,
+        "skinPip3Deg": 90,
+        "skinDip3Deg": 58.00000000000002,
+        "skinWristBendFromRestDeg": 5.248430444244879,
+        "thumbOppositionDeg": 43.131917193483915,
+        "thumbMcpDeg": 40.292163593213566,
+        "thumbIpDeg": 24.47303395656654,
+        "thumbIndexContactM": 0.0074704730726928145
+      },
+      {
+        "time": 2.3,
+        "hand": [
+          -0.1859888941049875,
+          1.4095657412008735,
+          0.48659754395482924
+        ],
+        "pronationDeg": -50.693824529280135,
+        "wristFlexionDeg": -26.679094558474155,
+        "wristDeviationDeg": -10.00589245479935,
+        "skinElbowInteriorDeg": 145.60283175135092,
+        "simElbowInteriorDeg": 145.60283175135092,
+        "armDirectionErrorDeg": 0,
+        "skinUpperArmLengthM": 0.2588907755951111,
+        "skinForearmLengthM": 0.2672026170348525,
+        "mcp3Deg": 79.87561309776827,
+        "pip3Deg": 78.46602597761772,
+        "dip3Deg": 47.50847360229089,
+        "skinMcp3Deg": 58.08398437500007,
+        "skinPip3Deg": 73.7646484375001,
+        "skinDip3Deg": 46.86718750000008,
+        "skinWristBendFromRestDeg": 5.248430444244879,
+        "thumbOppositionDeg": 44.75586980073532,
+        "thumbMcpDeg": 39.77902172615426,
+        "thumbIpDeg": 9.652957797364573,
+        "thumbIndexContactM": 0.007267559966035226
+      },
+      {
+        "time": 2.575,
+        "hand": [
+          -0.4645684868097637,
+          1.5930033270315112,
+          0.23632630556818346
+        ],
+        "pronationDeg": -29.175071077439426,
+        "wristFlexionDeg": -16.521505309756115,
+        "wristDeviationDeg": 13.477710053315388,
+        "skinElbowInteriorDeg": 118.55657319225114,
+        "simElbowInteriorDeg": 118.55657319225111,
+        "armDirectionErrorDeg": 8.537736462515939e-7,
+        "skinUpperArmLengthM": 0.2588907755951112,
+        "skinForearmLengthM": 0.26720261703485254,
+        "mcp3Deg": 84.3612578729041,
+        "pip3Deg": 58.303273396794225,
+        "dip3Deg": 9.303239305255227,
+        "skinMcp3Deg": 12.000000000000052,
+        "skinPip3Deg": 20.000000000000025,
+        "skinDip3Deg": 9.999999999999984,
+        "skinWristBendFromRestDeg": 5.248430444244879,
+        "thumbOppositionDeg": 44.306740466577374,
+        "thumbMcpDeg": 39.173037097706974,
+        "thumbIpDeg": -16.334385447254448,
+        "thumbIndexContactM": 0.07183007515536795
+      }
+    ],
+    "skin": {
+      "indexMcp": 68.00000000000003,
+      "middlePip": 90,
+      "middleDip": 58.00000000000002,
+      "upperArmLengthM": 0.2588907755951111,
+      "forearmLengthM": 0.2672026170348525
+    }
+  },
+  "punchHandClose": "punch-fist-close.png",
+  "punchExtension": "punch-extension.png",
+  "punchFistHold": "punch-fist-hold.png",
+  "errors": [],
+  "warnings": [
+    "[.WebGL-0x11400ab3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[.WebGL-0x11400ab3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[.WebGL-0x11400ab3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
+    "[.WebGL-0x11400ab3800]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
+  ]
+}
