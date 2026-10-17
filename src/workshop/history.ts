@@ -38,3 +38,19 @@ export class HistoryBook{
   of(id:string){let h=this.books.get(id);if(!h){h=new DocHistory();this.books.set(id,h);}return h;}
   drop(id:string){this.books.delete(id);}
 }
+/** Merge window for consecutive edits: rapid changes on the SAME document
+ * share one undo step (a slider drag is one step, not fifty). An edit on a
+ * different document, or after the window elapsed, always starts a new step —
+ * merging across documents would leave the second document's pre-edit state
+ * unrecorded and unreachable via undo. */
+export class RecordGate{
+  private t=-Infinity;private id='';
+  constructor(private windowMs=600){}
+  /** True when this edit needs a fresh pre-edit snapshot. */
+  should(docId:string,now:number){const fresh=this.id!==docId||now-this.t>this.windowMs;this.t=now;this.id=docId;return fresh;}
+  /** Mark an edit recorded through another path (e.g. drag begin) so the next
+   * edit on this document still merges into it. */
+  touch(docId:string,now:number){this.t=now;this.id=docId;}
+  /** Next edit always records — call after undo/redo restores a document. */
+  reset(){this.t=-Infinity;this.id='';}
+}

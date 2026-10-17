@@ -4,9 +4,9 @@ import {Activity,ArrowLeft,Camera,Check,Download,Film,Pause,Play,Plus,Redo2,Rota
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
-import {defaultDocument,ensureKey,keyAt,loopBlockers,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
+import {contactStartKey,defaultDocument,ensureKey,keyAt,loopBlockers,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
 import {MotionLibrary} from './library';
-import {HistoryBook} from './history';
+import {HistoryBook,RecordGate} from './history';
 import {clampDuration,WORKSHOP_LIMITS} from './limits';
 import {ankleYForLift,footLift,type Side} from './foot';
 import {rotateHandFrame} from './solver';
@@ -67,7 +67,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const [info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState('');
  const [frame,setFrame]=useState<WorkshopFrame>({time:0,duration:.8,playing:true,label:''});
  const [view,setView]=useState<ViewId>('threeQuarter');
- const books=useRef(new HistoryBook()),lastRecord=useRef(0),shortcuts=useRef<{undo:()=>void;redo:()=>void}>({undo:()=>{},redo:()=>{}});
+ const books=useRef(new HistoryBook()),gate=useRef(new RecordGate()),wristEpoch=useRef(0),shortcuts=useRef<{undo:()=>void;redo:()=>void}>({undo:()=>{},redo:()=>{}});
+ const [hint,setHint]=useState('');
+ useEffect(()=>{if(!hint)return;const t=setTimeout(()=>setHint(''),6000);return()=>clearTimeout(t);},[hint]);
  const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true});
  const [videoUrl,setVideoUrl]=useState('');const [sync,setSync]=useState(false);const syncOffset=useRef(0);const [videoPlaying,setVideoPlaying]=useState(false);
  useEffect(()=>{
@@ -87,9 +89,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    e.onBeginEdit=(time,prefer)=>{
     const d=lib.current!.active();
     // Snapshot before any key is inserted, so one drag is one undo step.
-    books.current.of(d.id).record(d);lastRecord.current=performance.now();
+    books.current.of(d.id).record(d);gate.current.touch(d.id,performance.now());
     if(prefer){const k=keyAt(d,prefer);if(k)return k;}
-    const k=ensureKey(d,time);lib.current!.save();bump(v=>v+1);return k;
+    const k=ensureKey(d,time);
+    if(!k){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限：先删除不需要的帧，或在时间轴上选中既有帧再编辑。`);return null;}
+    lib.current!.save();bump(v=>v+1);return k;
    };
    void e.load();
    if(import.meta.env.DEV)(window as unknown as {__WS__:WorkshopEngine}).__WS__=e;
@@ -104,10 +108,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   else if(Math.abs(el.currentTime-target)>.05)el.currentTime=target;
  },[frame,sync]);
  const L=lib.current!;
- /** Snapshot before an edit. Edits within 600 ms of each other (a slider drag) share one undo step. */
- const recordBefore=(doc:WorkshopDoc)=>{const now=performance.now();if(now-lastRecord.current>600)books.current.of(doc.id).record(doc);lastRecord.current=now;};
+ /** Snapshot before an edit. Edits within 600 ms on the SAME document (a slider
+  * drag) share one undo step; another document or a gap always starts a new one. */
+ const recordBefore=(doc:WorkshopDoc)=>{if(gate.current.should(doc.id,performance.now()))books.current.of(doc.id).record(doc);};
  const edit=(fn:(d:WorkshopDoc)=>void)=>{recordBefore(L.active());fn(L.active());L.save();engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
- const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return;L.docs[i]=next;L.save();lastRecord.current=0;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);};
+ const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return;L.docs[i]=next;L.save();gate.current.reset();wristEpoch.current++;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);};
  const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(prev)applyDoc(prev);};
  const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(next)applyDoc(next);};
  shortcuts.current={undo,redo};
@@ -135,7 +140,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const createDoc=()=>{const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
  const removeDoc=(id:string)=>{const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
- const addKey=()=>{recordBefore(d);const k=ensureKey(d,frame.time);setSelected(k.id);edit(()=>{});};
+ const addKey=()=>{
+  if(d.keys.length>=WORKSHOP_LIMITS.maxKeys&&!nearestKey(d,frame.time)){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，请先删除不再需要的关键帧。`);return;}
+  recordBefore(d);const k=ensureKey(d,frame.time);if(!k){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，请先删除不再需要的关键帧。`);return;}
+  setSelected(k.id);edit(()=>{});
+ };
  const delKey=()=>{if(d.keys.length<=2||!sel)return;edit(dd=>{dd.keys=dd.keys.filter(k=>k.id!==sel.id);});setSelected(sortedKeys(d)[0].id);};
  const exportDoc=()=>{const blob=new Blob([serializeDoc(d)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${d.id}.workshop.json`;a.click();URL.revokeObjectURL(a.href);};
  const importDoc=async(f:File)=>{try{const next=parseDoc(await f.text());const added=L.add(next);selectDoc(added.id);}catch(e){setError(e instanceof Error?e.message:String(e));}};
@@ -234,15 +243,26 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <Slider label="骨盆前后" value={sel.pose.root.z} min={-.4} max={.4} step={.005} unit="m" onChange={v=>editSelected(k=>{k.pose.root.z=v;})}/>
        <Slider label="骨盆左右" value={sel.pose.root.x} min={-.4} max={.4} step={.005} unit="m" onChange={v=>editSelected(k=>{k.pose.root.x=v;})}/>
       </div>
-      <WristPanel key={`${sel.id}-L`} side="L" k={sel} edit={editSelected}/>
-      <WristPanel key={`${sel.id}-R`} side="R" k={sel} edit={editSelected}/>
+      <WristPanel key={`${d.id}:${sel.id}:L:${wristEpoch.current}`} side="L" k={sel} edit={editSelected}/>
+      <WristPanel key={`${d.id}:${sel.id}:R:${wristEpoch.current}`} side="R" k={sel} edit={editSelected}/>
       <div className="ws-sub"><h3>脚部姿态 <small>离地帧的抬升高度即摆动路径点</small></h3>
-       <Slider label="左脚抬升高度（脚底离地）" value={liftOf('L',sel)} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantL} onChange={v=>setLift('L',v)}/>
-       <Slider label="左脚俯仰" value={sel.pose.footL.pitch} min={-40} max={40} step={1} onChange={v=>editSelected(k=>{k.pose.footL.pitch=v;})}/>
-       <Slider label="右脚抬升高度（脚底离地）" value={liftOf('R',sel)} min={0} max={.8} step={.005} unit="m" disabled={sel.constraints.plantR} onChange={v=>setLift('R',v)}/>
-       <Slider label="右脚俯仰" value={sel.pose.footR.pitch} min={-40} max={40} step={1} onChange={v=>editSelected(k=>{k.pose.footR.pitch=v;})}/>
-       <Slider label="左脚朝向" value={sel.pose.footL.yaw} min={-90} max={90} step={1} onChange={v=>editSelected(k=>{k.pose.footL.yaw=v;})}/>
-       <Slider label="右脚朝向" value={sel.pose.footR.yaw} min={-90} max={90} step={1} onChange={v=>editSelected(k=>{k.pose.footR.yaw=v;})}/>
+       {(['L','R']as const).map(side=>{
+        const planted=sel.constraints[side==='L'?'plantL':'plantR'],cn=side==='L'?'左':'右';
+        // A contact holds (target, yaw, pitch) from the run's first key; a
+        // release key inherits them at its instant too. Stored values on
+        // locked keys are dead data — show and edit the owning key instead.
+        const ks=sortedKeys(d),si=ks.findIndex(k=>k.id===sel.id);
+        let owner=contactStartKey(d,side,sel.time);
+        if(!owner)for(let s=1;s<ks.length;s++){const j=si-s<0&&!d.loop?-1:((si-s)%ks.length+ks.length)%ks.length;if(j<0)break;if(ks[j].constraints[side==='L'?'plantL':'plantR']){owner=contactStartKey(d,side,ks[j].time)??ks[j];break;}}
+        owner??=sel;
+        const foot=side==='L'?owner.pose.footL:owner.pose.footR;
+        return <div key={side}>
+         <Slider label={`${cn}脚抬升高度（脚底离地）`} value={liftOf(side,planted?owner:sel)} min={0} max={.8} step={.005} unit="m" disabled={planted} onChange={v=>setLift(side,v)}/>
+         <Slider label={`${cn}脚俯仰`} value={foot.pitch} min={-40} max={40} step={1} onChange={v=>edit(()=>{foot.pitch=v;})}/>
+         <Slider label={`${cn}脚朝向`} value={foot.yaw} min={-90} max={90} step={1} onChange={v=>edit(()=>{foot.yaw=v;})}/>
+         {owner!==sel?<p className="ws-note" style={{color:'#8a6d1f'}}>{cn}脚此帧由 {owner.time.toFixed(2)}s 的支撑开始帧锁定：俯仰与朝向的修改写入该帧。</p>:null}
+        </div>;
+       })}
       </div>
       <button className="ws-mini danger" onClick={delKey} disabled={d.keys.length<=2}><Trash2 size={12}/>删除此关键帧</button>
      </>:<p className="ws-note">时间轴上选择或新建关键帧。</p>}
@@ -270,6 +290,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <div className="ws-actions">
     <button onClick={addKey}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>
+    {hint?<p className="ws-note" style={{color:'#c0392b'}}>{hint}</p>:null}
    </div>
   </footer>
  </div>;

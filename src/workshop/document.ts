@@ -321,10 +321,14 @@ export function nearestKey(doc:WorkshopDoc,time:number,eps=.02){
   for(const k of doc.keys){const d=Math.abs(k.time-time);if(d<bd){bd=d;best=k;}}
   return bd<=eps?best:undefined;
 }
-/** Auto-key: reuse the key at this time or sample the live pose into a new one. */
-export function ensureKey(doc:WorkshopDoc,time:number):WorkshopKey{
+/** Auto-key: reuse the key at this time or sample the live pose into a new one.
+ * Returns undefined at the maxKeys limit — inserting anyway would produce a
+ * document the validator quarantines on next load, so callers must refuse the
+ * edit and say so. */
+export function ensureKey(doc:WorkshopDoc,time:number):WorkshopKey|undefined{
   const existing=nearestKey(doc,time);
   if(existing)return existing;
+  if(doc.keys.length>=WORKSHOP_LIMITS.maxKeys)return undefined;
   const frame=frameAt(doc,time);
   const ceiling=doc.duration-(doc.loop?WORKSHOP_LIMITS.loopGap:0);
   const key:WorkshopKey={id:`k${Math.random().toString(36).slice(2,8)}`,time:Math.max(0,Math.min(ceiling,time)),label:'',pose:frame.pose,constraints:frame.constraints};
@@ -436,17 +440,20 @@ export function parseDoc(text:string):WorkshopDoc{return normalizeDoc(JSON.parse
 
 /** Retiming rule: scaling duration preserves phase proportions and strict
  * ordering — never clamps times onto duplicates (repeated times would leave
- * zero-length intervals and NaN Hermite tangents). Loops keep their anchor. */
+ * zero-length intervals and NaN Hermite tangents). Keys live inside the valid
+ * span [0, span] where span is `duration` (or `duration − loopGap` for loops,
+ * which reserve the tail seam); scaling that span keeps the last key above its
+ * predecessor, where clamping only the last key could drop it below. Loops
+ * keep their anchor. */
 export function retimeKeys(doc:WorkshopDoc,newDuration:number){
  const old=doc.duration;
  doc.duration=Math.max(.01,newDuration);
  const keys=sortedKeys(doc);
- if(old>1e-9){for(const k of keys)k.time=Math.min(doc.duration,k.time*doc.duration/old);}
- else keys.forEach((k,i)=>{k.time=keys.length>1?i/(keys.length-1)*doc.duration:0;});
- if(doc.loop&&keys.length){
-  keys[0].time=0;
-  keys[keys.length-1].time=Math.min(keys[keys.length-1].time,doc.duration-WORKSHOP_LIMITS.loopGap);
- }
+ const gap=doc.loop?WORKSHOP_LIMITS.loopGap:0;
+ const from=old-gap,to=Math.max(1e-9,doc.duration-gap);
+ if(from>1e-9){const s=to/from;for(const k of keys)k.time=Math.max(0,Math.min(to,k.time*s));}
+ else keys.forEach((k,i)=>{k.time=keys.length>1?i/(keys.length-1)*to:0;});
+ if(doc.loop&&keys.length)keys[0].time=0;
  doc.keys=keys;
 }
 /** Single-key retime: stay strictly between neighbours (a shared timestamp is

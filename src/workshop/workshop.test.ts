@@ -5,9 +5,10 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '../core/rig';
 import {attachRacket,gripFrame} from '../core/racket';
 import {angleAt} from '../core/kinematics';
-import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,toV,unflattenPose,validateDocShape} from './document';
+import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,toV,unflattenPose,validateDocShape,type WorkshopKey} from './document';
 import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
-import {DocHistory,HistoryBook} from './history';
+import {DocHistory,HistoryBook,RecordGate} from './history';
+import {WORKSHOP_LIMITS} from './limits';
 import {analyzePose,rotateHandFrame,solvePose,supportPolygon} from './solver';
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
@@ -121,6 +122,28 @@ describe('workshop document',()=>{
   for(let i=1;i<times.length;i++)expect(times[i]).toBeGreaterThan(times[i-1]);
   for(let i=0;i<=50;i++)expect(flattenPose(samplePose(doc,i/50*.4)).every(Number.isFinite)).toBe(true);
  });
+ it('keeps loop keys strictly increasing when shrinking duration into the seam',()=>{
+  // Repro from review: 0, .98, .99 at 1.0s retimed to 0.2s — clamping only the
+  // last key into the seam gap used to drop it below its predecessor.
+  const doc=blankDocument(rig.rest,'循环','loop-retime');
+  doc.keys[1].time=.98;
+  const tail=JSON.parse(JSON.stringify(doc.keys[1])) as WorkshopKey;tail.id='k-tail';tail.time=.99;
+  doc.keys.push(tail);doc.loop=true;
+  retimeKeys(doc,.2);
+  const times=sortedKeys(doc).map(k=>k.time);
+  expect(times[0]).toBe(0);
+  for(let i=1;i<times.length;i++)expect(times[i]).toBeGreaterThan(times[i-1]);
+  expect(Math.max(...times)).toBeLessThanOrEqual(doc.duration-WORKSHOP_LIMITS.loopGap+1e-9);
+  expect(validateDocShape(doc)).toEqual([]);
+ });
+ it('keeps loop keys ordered when duration grows too',()=>{
+  const doc=blankDocument(rig.rest,'循环','loop-grow');
+  doc.keys[1].time=.98;doc.duration=1;doc.loop=true;
+  retimeKeys(doc,5);
+  const times=sortedKeys(doc).map(k=>k.time);
+  expect(times[0]).toBe(0);expect(times[1]).toBeCloseTo(.98*(5-WORKSHOP_LIMITS.loopGap)/.99,9);
+  expect(validateDocShape(doc)).toEqual([]);
+ });
  it('keeps single-key retiming strictly inside neighbour bounds',()=>{
   const doc=defaultDocument(rig.rest),keys=sortedKeys(doc);
   setKeyTime(doc,keys[2],99);
@@ -143,11 +166,24 @@ describe('workshop document',()=>{
  });
  it('auto-keys by sampling the live pose at insert time',()=>{
   const doc=defaultDocument(rig.rest);
-  const k=ensureKey(doc,.35);
+  const k=ensureKey(doc,.35)!;
   expect(doc.keys.length).toBe(6);expect(k.time).toBe(.35);
   const expected=samplePose(doc,.35);
   for(let i=0;i<flattenPose(expected).length;i++)expect(flattenPose(k.pose)[i]).toBeCloseTo(flattenPose(expected)[i],6);
-  expect(ensureKey(doc,.35).id).toBe(k.id);
+  expect(ensureKey(doc,.35)!.id).toBe(k.id);
+ });
+ it('refuses a new key at the maxKeys limit instead of saving an invalid doc',()=>{
+  const doc=blankDocument(rig.rest,'满','full');
+  doc.duration=WORKSHOP_LIMITS.maxDuration;
+  doc.keys.forEach((k,i)=>{k.time=i*doc.duration/WORKSHOP_LIMITS.maxKeys;});
+  while(doc.keys.length<WORKSHOP_LIMITS.maxKeys){const k=JSON.parse(JSON.stringify(doc.keys[1])) as WorkshopKey;k.id=`kf${doc.keys.length}`;k.time=doc.keys.length*doc.duration/WORKSHOP_LIMITS.maxKeys;doc.keys.push(k);}
+  expect(validateDocShape(doc)).toEqual([]);
+  // A time between existing keys cannot take a new key; the doc stays valid.
+  expect(ensureKey(doc,.045)).toBeUndefined();
+  expect(doc.keys.length).toBe(WORKSHOP_LIMITS.maxKeys);
+  expect(validateDocShape(doc)).toEqual([]);
+  // Reusing an existing key still works at the limit.
+  expect(ensureKey(doc,doc.keys[3].time)!.id).toBe(doc.keys[3].id);
  });
 });
 describe('workshop solver',()=>{
@@ -189,7 +225,7 @@ describe('workshop solver',()=>{
   expect(a.items.every(i=>i.ok)).toBe(true);
  });
  it('flags balance when the root is dragged far off the feet',()=>{
-  const doc=defaultDocument(rig.rest),k=ensureKey(doc,0);
+  const doc=defaultDocument(rig.rest),k=ensureKey(doc,0)!;
   k.pose.root.z=.6;
   const f=frameAt(doc,0);solvePose(rig,f.pose,f.constraints);
   const a=analyzePose(rig,f.pose,f.constraints,racket);
@@ -234,6 +270,18 @@ describe('undo and redo',()=>{
  it('keeps a separate history per motion', ()=>{
   const book=new HistoryBook(),a=blankDocument(rig.rest,'a','a'),b=blankDocument(rig.rest,'b','b');
   book.of('a').record(a);expect(book.of('b').canUndo()).toBe(false);
+ });
+ it('merges rapid edits only inside one document and one transaction',()=>{
+  const g=new RecordGate(600);
+  expect(g.should('a',1000)).toBe(true);
+  expect(g.should('a',1200)).toBe(false); // same doc, inside the window → one step
+  expect(g.should('b',1300)).toBe(true);  // a different doc always gets a snapshot
+  expect(g.should('b',1400)).toBe(false);
+  expect(g.should('a',1500)).toBe(true);  // switching back is a new transaction
+  g.reset();
+  expect(g.should('a',1600)).toBe(true);  // after undo/redo the next edit records
+  expect(g.should('a',1700)).toBe(false);
+  expect(g.should('a',2400)).toBe(true);  // window elapsed
  });
 });
 describe('motion library',()=>{
@@ -289,6 +337,39 @@ describe('motion library',()=>{
   const l=lib(failing);
   expect(l.lastError).toBe('quota');
   l.create('X');expect(l.lastError).toBe('quota');
+ });
+ it('round-trips boundary documents through save and reload without quarantine',()=>{
+  const store=memStorage(),l=lib(store);
+  // A document at the key limit…
+  const full=l.create('满'),tmpl=JSON.parse(JSON.stringify(full.keys[0])) as WorkshopKey;
+  full.duration=WORKSHOP_LIMITS.maxDuration;
+  full.keys.forEach((k,i)=>{k.time=i*full.duration/WORKSHOP_LIMITS.maxKeys;});
+  while(full.keys.length<WORKSHOP_LIMITS.maxKeys){const k=JSON.parse(JSON.stringify(tmpl)) as WorkshopKey;k.id=`kf${full.keys.length}`;k.time=full.keys.length*full.duration/WORKSHOP_LIMITS.maxKeys;full.keys.push(k);}
+  // …and a loop document retimed down to the shortest duration.
+  const looped=l.create('循环');
+  looped.keys[1].time=.98;looped.duration=1;looped.loop=true;
+  retimeKeys(looped,.2);
+  for(const d of [full,looped])expect(validateDocShape(d)).toEqual([]);
+  l.save();
+  const back=new MotionLibrary(rig.rest,store).load();
+  expect(back.quarantine.length).toBe(0);
+  expect(back.docs.find(d=>d.id===full.id)?.keys.length).toBe(WORKSHOP_LIMITS.maxKeys);
+  expect(back.docs.find(d=>d.id===looped.id)?.loop).toBe(true);
+ });
+ it('keeps an unreadable library file in quarantine instead of overwriting it',()=>{
+  const store=memStorage();
+  // Unparseable JSON: preserved verbatim, storage untouched.
+  store.map.set(LIBRARY_KEY,'{"schemaVersion":2,"docs":[{broken');
+  const l=lib(store);
+  expect(l.docs.length).toBe(1); // a usable seed document in memory
+  expect(l.quarantine.length).toBe(1);
+  expect(l.quarantine[0].raw).toBe('{"schemaVersion":2,"docs":[{broken');
+  expect(store.map.get(LIBRARY_KEY)).toBe('{"schemaVersion":2,"docs":[{broken');
+  // Parseable but unknown schemaVersion (e.g. a future format): same rule.
+  store.map.set(LIBRARY_KEY,JSON.stringify({schemaVersion:9,docs:[]}));
+  const l2=new MotionLibrary(rig.rest,store).load();
+  expect(l2.quarantine.length).toBe(1);
+  expect(JSON.parse(store.map.get(LIBRARY_KEY)!).schemaVersion).toBe(9);
  });
  it('quarantines deeply-invalid stored docs with a reason instead of dropping them',()=>{
   const store=memStorage(),doc=JSON.parse(serializeDoc(defaultDocument(rig.rest)));

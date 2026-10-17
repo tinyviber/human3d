@@ -26,12 +26,13 @@ export class MotionLibrary{
   lastError='';
   constructor(private rest:ReadonlyMap<string,Vector3>,private store?:StorageLike|null){}
   load(){
-    let parsed:Partial<LibraryFile>|undefined;
-    try{const raw=this.store?.getItem(LIBRARY_KEY);if(raw)parsed=JSON.parse(raw) as Partial<LibraryFile>;}catch{/* corrupted storage → reseed */}
+    let parsed:Partial<LibraryFile>|undefined,rawText:string|null=null,corrupt=false;
+    try{rawText=this.store?.getItem(LIBRARY_KEY)??null;if(rawText!=null)parsed=JSON.parse(rawText) as Partial<LibraryFile>;}catch{corrupt=true;}
     const version=(parsed as {schemaVersion?:number}|undefined)?.schemaVersion;
-    if((version===1||version===2)&&parsed&&Array.isArray(parsed.docs)){
-      this.docs=[];this.quarantine=Array.isArray(parsed.quarantine)?parsed.quarantine.filter(q=>q&&typeof q==='object'):[];
-      for(const raw of parsed.docs){
+    const file=(!corrupt&&(version===1||version===2)&&parsed&&Array.isArray(parsed.docs))?parsed:undefined;
+    if(file){
+      this.docs=[];this.quarantine=Array.isArray(file.quarantine)?file.quarantine.filter(q=>q&&typeof q==='object'):[];
+      for(const raw of file.docs!){
         try{
           const doc=normalizeDoc(raw);
           if(docIdTaken(this.docs,doc.id))throw new Error(`重复的动作编号 ${doc.id}`);
@@ -43,10 +44,16 @@ export class MotionLibrary{
       // Stored docs predate the orthonormal hand-frame contract — normalize on
       // rehydrate so sampled poses reproduce stored keys exactly.
       for(const d of this.docs)for(const k of d.keys)canonicalizeHands(k.pose);
-      this.activeId=this.docs.some(d=>d.id===parsed.activeId)?parsed.activeId!:this.docs[0]?.id??'';
+      this.activeId=this.docs.some(d=>d.id===file.activeId)?file.activeId!:this.docs[0]?.id??'';
+    }else if(rawText){
+      // The stored file isn't a readable v1/v2 library (corrupt JSON or an
+      // unknown/future schemaVersion). Keep the raw string in quarantine and
+      // skip the auto-save below — overwriting storage would destroy the only
+      // copy of the user's data. It is rewritten only by an explicit save.
+      this.quarantine=[{id:'library-file',name:'动作库文件',reason:corrupt?'动作库文件 JSON 无法解析':'无法识别的动作库格式（schemaVersion 不受支持）',raw:rawText}];
     }
     if(!this.docs.length){this.docs=[defaultDocument(this.rest)];this.activeId=this.docs[0].id;}
-    this.save();
+    if(file||!rawText)this.save();
     return this;
   }
   save(){
@@ -55,7 +62,7 @@ export class MotionLibrary{
     try{this.store.setItem(LIBRARY_KEY,JSON.stringify(file));this.lastError='';}catch(err){this.lastError=err instanceof Error?err.message:String(err);}
   }
   /** Export one quarantined document as JSON text, so it can be repaired by hand or re-imported. */
-  quarantineText(index:number){const q=this.quarantine[index];return q?JSON.stringify(q.raw,null,2):'';}
+  quarantineText(index:number){const q=this.quarantine[index];return q?typeof q.raw==='string'?q.raw:JSON.stringify(q.raw,null,2):'';}
   /** Remove a quarantined entry after the user has exported or repaired it. */
   discardQuarantine(index:number){if(index>=0&&index<this.quarantine.length){this.quarantine.splice(index,1);this.save();}}
   active(){return this.docs.find(d=>d.id===this.activeId)??this.docs[0];}
