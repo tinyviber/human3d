@@ -1,7 +1,8 @@
 import {AnimationClip,QuaternionKeyframeTrack,VectorKeyframeTrack,Vector3,Quaternion} from 'three';
 import {HumanRig} from './rig';
 import {applyGrip} from './racket';
-import {DEG,solveTwoBone} from './kinematics';
+import {DEG,pelvisDorsiCorrection} from './kinematics';
+import {footRotation} from '../workshop/foot';
 import {AUTHORED_KEYFRAMED_IDS,authoredMotionById,type AuthoredKeyframedId} from './authored-motions';
 type KeyframedMotionId=AuthoredKeyframedId;
 type V=[number,number,number];
@@ -57,16 +58,12 @@ export function poseAt(rig:HumanRig,id:KeyframedMotionId,time:number){
  const world=(v:V)=>new Vector3(...v).sub(origin).applyQuaternion(yaw).add(root.position);
  const legInputs=(['L','R'] as const).map(side=>{
   const sign=side==='L'?1:-1;
-  return {side,hip:rig.point(`upperleg01_${side}`),target:new Vector3(sign*p.stance,rig.rest.get(`foot_${side}`)!.y,.018+(id==='ready'||id==='forehand'?sign*.045:0)),pole:new Vector3(sign*.22,.5,1),footQ:new Quaternion().setFromAxisAngle(new Vector3(0,1,0),sign*7*DEG),a:rig.rest.get(`upperleg01_${side}`)!.distanceTo(rig.rest.get(`lowerleg01_${side}`)!),b:rig.rest.get(`lowerleg01_${side}`)!.distanceTo(rig.rest.get(`foot_${side}`)!)};
+  return {side,hip:rig.point(`upperleg01_${side}`),target:new Vector3(sign*p.stance,rig.rest.get(`foot_${side}`)!.y,.018+(id==='ready'||id==='forehand'?sign*.045:0)),pole:new Vector3(sign*.22,.5,1),footQ:footRotation(sign*7,0),a:rig.rest.get(`upperleg01_${side}`)!.distanceTo(rig.rest.get(`lowerleg01_${side}`)!),b:rig.rest.get(`lowerleg01_${side}`)!.distanceTo(rig.rest.get(`foot_${side}`)!)};
  });
- // Solve a posterior pelvis correction if a planted foot would exceed 20°
- // dorsiflexion. This is a geometric constraint search, not a hand-tuned angle.
- const maxDorsi=(bias:number)=>Math.max(...legInputs.map(l=>{
-  const s=solveTwoBone(l.hip.clone().add(new Vector3(0,0,-bias)),l.target,l.pole,l.a,l.b,135);
-  const shank=s.end.clone().sub(s.mid).applyQuaternion(l.footQ.clone().invert());
-  return Math.atan2(-shank.z,-shank.y)/DEG;
- }));
- if(maxDorsi(0)>20){let lo=0,hi=.15;for(let i=0;i<14;i++){const mid=(lo+hi)/2;if(maxDorsi(mid)>20)lo=mid;else hi=mid;}root.position.z-=hi;rig.model.updateMatrixWorld(true);}
+ // Posterior pelvis correction against ankle dorsiflexion: the same helper the
+ // workshop solver uses, with both legs fully weighted (authored stances are planted).
+ const correction=pelvisDorsiCorrection(legInputs.map(l=>({hip:l.hip,target:l.target,pole:l.pole,upper:l.a,lower:l.b,footQ:l.footQ,weight:1})));
+ if(correction.shift>0){root.position.z-=correction.shift;rig.model.updateMatrixWorld(true);}
  for(const l of legInputs){rig.limb(l.side,'leg',l.target,l.pole);rig.worldRotation(`foot_${l.side}`,l.footQ);}
  // A modest clavicle elevation shares shoulder movement during reaching.
  if(id==='reach'){

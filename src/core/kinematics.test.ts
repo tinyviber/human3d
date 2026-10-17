@@ -4,9 +4,9 @@ import {Vector3,Quaternion,AnimationClip,AnimationMixer,SkinnedMesh,Mesh} from '
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {handFrame} from './hand-frame';
 import {HumanRig,mapMyoSimThumbToSkin} from './rig';
-import {solveTwoBone,angleAt,frameRotation,clampJoint,hingedArmRotations,DEG} from './kinematics';
+import {solveTwoBone,angleAt,frameRotation,clampJoint,hingedArmRotations,forearmTwist,DEG} from './kinematics';
 import {buildAuthoredClips} from './authoring';
-import {attachRacket,gripFrame} from './racket';
+import {attachRacket,gripFrame,blendGrip} from './racket';
 import type {MotionId} from './types';
 let rig:HumanRig,clips:Map<MotionId,AnimationClip>,racket:ReturnType<typeof attachRacket>;
 beforeAll(async()=>{
@@ -199,5 +199,32 @@ describe('real authored asset and animation data',()=>{
    const dip=angleAt(rig.point(`finger${f}-2_R`),rig.point(n),tail);expect(dip).toBeLessThanOrEqual(75.1);
   }
   cleanup();
+ });
+});
+
+describe('forearm twist and grip blend are continuous',()=>{
+ it('maps palm roll to an odd, bounded, continuous twist across the atan2 wrap at ±π',()=>{
+  const cap=.65*80*DEG;
+  let prev=forearmTwist(-Math.PI),worst=0,peak=0;
+  for(let a=-Math.PI+1e-3;a<=Math.PI+1e-9;a+=1e-3){const g=forearmTwist(a);worst=Math.max(worst,Math.abs(g-prev));peak=Math.max(peak,Math.abs(g));prev=g;}
+  // The slope never exceeds ~0.82 rad/rad, so a 1 mrad roll step moves the twist by under 1 mrad.
+  expect(worst).toBeLessThan(1e-3);
+  expect(peak).toBeLessThanOrEqual(cap+1e-12);
+  for(const a of [.3,1,1.4,2.2,3])expect(forearmTwist(-a)).toBeCloseTo(-forearmTwist(a),12);
+  expect(Math.abs(forearmTwist(Math.PI-1e-6)-forearmTwist(-Math.PI+1e-6))).toBeLessThan(1e-5);
+ });
+ it('moves every right-hand finger joint by a bounded angle per 1% of grip amount',()=>{
+  const names:string[]=[];
+  for(let f=1;f<=5;f++)for(let j=1;j<=3;j++)names.push(`finger${f}-${j}_R`);
+  let prev:Quaternion[]|undefined,worst=0;
+  for(let a=0;a<=1+1e-9;a+=.01){
+   // The solver resets the rig before every frame's blend; mirror that here so the
+   // wrap is solved from the rest finger pose at each amount.
+   rig.reset();blendGrip(rig,a);
+   const now=names.map(n=>rig.bone(n).quaternion.clone());
+   if(prev)now.forEach((q,i)=>{worst=Math.max(worst,q.angleTo(prev![i]));});
+   prev=now;
+  }
+  expect(worst).toBeLessThan(.05);
  });
 });

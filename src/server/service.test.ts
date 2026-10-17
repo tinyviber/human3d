@@ -3,7 +3,7 @@ import http from 'node:http';
 import path from 'node:path';
 import zlib from 'node:zlib';
 import {spawn} from 'node:child_process';
-import {createService,handleRequest,actionCatalog,artifactId,SERVICE_VERSION,LIMITS_SVC,type ServiceContext} from './service';
+import {createService,handleRequest,actionCatalog,artifactId,normalizedRequest,SERVICE_VERSION,LIMITS_SVC,type ServiceContext} from './service';
 import {validatePosePackage} from './validate';
 import {canonical,sha256} from './rig-manifest';
 import {keyframedDefinition} from '../core/authoring';
@@ -71,8 +71,10 @@ describe('POST /v1/motions — keyframed actions',()=>{
  it('reports per-frame quality checks and the documented forehand defect',()=>{
   const pkg=post({action:{id:'forehand'}}).body as PosePackage;
   expect(pkg.quality.warnings[0]).toContain('穿插');
-  const ids=pkg.quality.checks.map(c=>c.id);
-  for(const s of ['L','R'])expect(ids).toEqual(expect.arrayContaining([`knee-flexion-${s}`,`elbow-flexion-${s}`,`shoulder-elevation-${s}`,`foot-clearance-${s}`]));
+  const ids=pkg.quality.checks.map(c=>c.code);
+  for(const s of ['L','R'])expect(ids).toEqual(expect.arrayContaining([`knee-flexion-${s}`,`elbow-flexion-${s}`,`shoulder-elevation-${s}`,`foot-depth-${s}`,`ankle-dorsiflexion-${s}`]));
+  // Codes are stable machine identifiers: lower-case, hyphenated, side-suffixed.
+  for(const c of pkg.quality.checks)expect(c.code).toMatch(/^[a-z0-9]+(-[a-z0-9]+)*(-[LR])?$/);
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
  });
  it('honors requested sample fps',()=>{
@@ -104,7 +106,7 @@ describe('POST /v1/motions — workshop-doc action',()=>{
   const pkg=r.body as PosePackage;
   expect(pkg.events.some(e=>e.type==='contact')).toBe(true);
   expect(pkg.events.some(e=>e.type==='support-start')).toBe(true);
-  expect(pkg.quality.checks.some(c=>c.id.startsWith('keyframe:'))).toBe(true);
+  expect(pkg.quality.checks.some(c=>c.code.startsWith('com-support'))).toBe(true);
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
  });
  it('emits support events only at interval boundaries, one pair per contact',()=>{
@@ -114,7 +116,7 @@ describe('POST /v1/motions — workshop-doc action',()=>{
   doc.keys[1].constraints.plantL=false;
   doc.keys.push({...doc.keys[1],id:'replant',time:2,constraints:{...doc.keys[1].constraints,plantL:true}});
   doc.duration=2;
-  const pkg=post({action:{id:'workshop-doc',parameters:{document:doc},sampleHz:20}}).body as PosePackage;
+  const pkg=post({action:{id:'workshop-doc',parameters:{document:doc}},sample:{fps:20}}).body as PosePackage;
   const starts=pkg.events.filter(e=>e.type==='support-start'),ends=pkg.events.filter(e=>e.type==='support-end');
   expect(starts.length).toBe(3); // L@0, R@0, L@2 — not one per planted key
   expect(ends.length).toBe(1);   // L@1
@@ -168,6 +170,30 @@ describe('request semantics',()=>{
   expect(fresh.status).toBe(200);
  });
 });
+describe('preconditions, parameters and idempotency keys',()=>{
+ it('enforces a pinned revision or definition hash with 409',()=>{
+  const cat=handleRequest(ctx,'GET','/v1/actions/idle').body as {revision:string;definitionSHA256:string};
+  expect(cat.revision).toMatch(/^keyframed-[0-9a-f]{12}$/);
+  expect(post({action:{id:'idle',revision:cat.revision,definitionSHA256:cat.definitionSHA256}}).status).toBe(200);
+  const stale=post({action:{id:'idle',revision:'keyframed-000000000000'}});
+  expect(stale.status).toBe(409);
+  expect((stale.body as {error:{code:string}}).error.code).toBe('precondition_failed');
+  expect(post({action:{id:'idle',definitionSHA256:'0'.repeat(64)}}).status).toBe(409);
+  // Workshop documents are pinned by the workshop revision.
+  const doc=blankDocument(ctx.rig.rest,'pin','pinned');
+  expect(post({action:{id:'workshop-doc',revision:'workshop-doc/v1',parameters:{document:doc}}}).status).toBe(409);
+ });
+ it('rejects parameters a keyframed action does not declare',()=>{
+  const r=post({action:{id:'idle',parameters:{speed:2}}});
+  expect(r.status).toBe(400);
+  expect((r.body as {error:{code:string}}).error.code).toBe('invalid_request');
+ });
+ it('bounds Idempotency-Key length and alphabet',()=>{
+  expect(post({action:{id:'idle'}},{'idempotency-key':'k'.repeat(LIMITS_SVC.idempotencyKeyMaxLength+1)}).status).toBe(400);
+  expect(post({action:{id:'idle'}},{'idempotency-key':'has space'}).status).toBe(400);
+  expect(post({action:{id:'idle'}},{'idempotency-key':'k'.repeat(LIMITS_SVC.idempotencyKeyMaxLength)}).status).toBe(200);
+ });
+});
 describe('artifact identity and definition hashing',()=>{
  it('ties definitionSHA256 to the real keyframe data, not just id+revision',()=>{
   const h=(x:unknown)=>sha256(canonical(x));
@@ -196,7 +222,12 @@ describe('artifact identity and definition hashing',()=>{
   // The id is NOT the bare request fingerprint — it also covers the
   // definition, rig manifest and solver version.
   expect(a.id).not.toBe('mot_'+sha256(canonical(req)).slice(0,16));
-  expect(a.provenance.requestFingerprint).toBe(sha256(canonical(req)));
+  // The fingerprint covers the normalized request, so spelling out the
+  // defaults (empty parameters, the default output) does not change it.
+  const fp=sha256(canonical(normalizedRequest('idle',undefined,5)));
+  expect(a.provenance.requestFingerprint).toBe(fp);
+  const spelled=post({action:{id:'idle',parameters:{}},outputs:[{kind:'motion',format:'pose-json'}],sample:{fps:5}}).body as PosePackage;
+  expect(spelled.id).toBe(a.id);
   const doc=blankDocument(ctx.rig.rest,'v','doc-a');
   const c=post({action:{id:'workshop-doc',parameters:{document:doc}}}).body as PosePackage;
   const changed=blankDocument(ctx.rig.rest,'v','doc-a');changed.keys[0].pose.lean=7;
@@ -207,7 +238,7 @@ describe('artifact identity and definition hashing',()=>{
  it('yields a new artifact id when the solver, rig or definition changes',()=>{
   const req={action:{id:'idle'},sample:{fps:5}};
   const served=post(req).body as PosePackage;
-  const fp=sha256(canonical(req)),def=served.action.definitionSHA256;
+  const fp=sha256(canonical(normalizedRequest('idle',undefined,5))),def=served.action.definitionSHA256;
   expect(artifactId(fp,def,ctx,'keyframe-hermite-ik')).toBe(served.id);
   expect(artifactId(fp,def,ctx,'keyframe-hermite-ik-v2')).not.toBe(served.id);
   expect(artifactId(fp,'0'.repeat(64),ctx,'keyframe-hermite-ik')).not.toBe(served.id);
@@ -227,13 +258,23 @@ describe('HTTP transport smoke',()=>{
    for(let i=0;i<300&&!up;i++){try{up=(await fetch(`http://127.0.0.1:${port}/v1/capabilities`)).ok;}catch{await new Promise(r=>setTimeout(r,200));}}
    expect(up,bootLog).toBe(true);
    const call=(body:Buffer,enc?:string)=>fetch(`http://127.0.0.1:${port}/v1/motions`,
-    {method:'POST',headers:{'content-type':'application/json',...(enc?{'content-encoding':enc}:{})},body});
+    {method:'POST',headers:{'content-type':'application/json',...(enc?{'content-encoding':enc}:{})},body:Uint8Array.from(body)});
    const ok=await call(zlib.gzipSync(JSON.stringify({action:{id:'idle'},sample:{fps:2}})),'gzip');
    expect(ok.status).toBe(200);
    expect(((await ok.json()) as PosePackage).kind).toBe('pose-package');
    expect((await call(Buffer.from('definitely not gzip'),'gzip')).status).toBe(400);
    expect((await call(zlib.gzipSync(JSON.stringify({action:{id:'idle'},pad:'x'.repeat(1.5*1024*1024)})),'gzip')).status).toBe(413);
    expect((await call(Buffer.from('{}'),'br')).status).toBe(400);
+   // Guards against DNS rebinding and cross-site POSTs. node:http is used so
+   // the Host header can be set explicitly (fetch treats it as forbidden).
+   const raw=(headers:Record<string,string>,method='GET',p='/v1/capabilities',body?:string)=>new Promise<number>((resolve,reject)=>{
+    const rq=http.request({host:'127.0.0.1',port,path:p,method,headers},rs=>{rs.resume();rs.on('end',()=>resolve(rs.statusCode??0));});
+    rq.on('error',reject);rq.end(body);
+   });
+   expect(await raw({host:'evil.example:8788'})).toBe(403);
+   expect(await raw({host:`127.0.0.1:${port}`,origin:'http://evil.example'})).toBe(403);
+   expect(await raw({host:`127.0.0.1:${port}`,origin:`http://127.0.0.1:${port}`})).toBe(200);
+   expect(await raw({host:`127.0.0.1:${port}`,'content-type':'text/plain'},'POST','/v1/motions','{}')).toBe(415);
   }finally{proc.kill('SIGTERM');}
  },60000);
  it('serves capabilities and a motion over a real socket on an ephemeral port',async()=>{

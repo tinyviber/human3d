@@ -41,7 +41,8 @@ export function attachRacket(rig:HumanRig){
 }
 /** Circumscribed phalanx segments: each bone approaches a tangent to the
  * grip cylinder plus a 5mm finger pad allowance. No random per-frame angles. */
-export function applyGrip(rig:HumanRig,amount=1){
+/** Wrap the right hand's fingers around the handle, solved from the current finger pose. */
+export function applyGrip(rig:HumanRig){
   const {axis,normal,forward,center}=gripFrame(rig);
   const wrist=rig.bone('wrist_R'),wq=wrist.getWorldQuaternion(new Quaternion());
   const contactRadius=.022;
@@ -62,9 +63,24 @@ export function applyGrip(rig:HumanRig,amount=1){
       const bi=rig.info.bones.find(b=>b.name===name)!;
       const restDir=new Vector3().fromArray(bi.tail).sub(rig.rest.get(name)!);
       const target=wq.clone().multiply(frameRotation(restDir,axis,desired,axis));
-      const current=bone.getWorldQuaternion(new Quaternion());
-      current.slerp(target,amount);rig.worldRotation(name,current);
+      rig.worldRotation(name,target);
     }
   }
+  rig.model.updateMatrixWorld(true);
+}
+
+/** Right-hand grip at `amount` in [0,1]: relaxed fingers at 0, full wrap at 1.
+ * The wrap is solved once, from the rest finger pose (as the authored grip
+ * poses are), and each finger joint is then blended from its relaxed local
+ * rotation to its grip local rotation. Blending inside the sequential wrap
+ * solve made the result jump as the amount approached 1, because each joint's
+ * wrap geometry depends on the joints solved before it. */
+export function blendGrip(rig:HumanRig,amount:number){
+  const names:string[]=[];
+  for(let finger=1;finger<=5;finger++)for(let joint=1;joint<=3;joint++)names.push(`finger${finger}-${joint}_R`);
+  applyGrip(rig);
+  const grip=names.map(n=>rig.bone(n).quaternion.clone());
+  rig.relaxHand('R');
+  names.forEach((n,i)=>rig.bone(n).quaternion.slerp(grip[i],amount));
   rig.model.updateMatrixWorld(true);
 }
