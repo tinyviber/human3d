@@ -1,11 +1,11 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import fs from 'node:fs';
-import {Quaternion,Vector3} from 'three';
+import {Matrix4,Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '../core/rig';
 import {attachRacket,gripFrame} from '../core/racket';
-import {angleAt} from '../core/kinematics';
-import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,TANGENT_SECANT_CAP,toV,unflattenPose,validateDocShape,type WorkshopKey} from './document';
+import {angleAt,DEG} from '../core/kinematics';
+import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,TANGENT_SECANT_CAP,toV,unflattenPose,validateDocShape,type PoseParams,type WorkshopDoc,type WorkshopKey} from './document';
 import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from './limits';
@@ -473,5 +473,126 @@ describe('motion library',()=>{
   const l=new MotionLibrary(rig.rest,store).load();
   expect(l.docs[0].schemaVersion).toBe(2);expect(l.docs[0].loop).toBe(false);
   expect(l.docs[0].handFrames).toEqual({L:'world',R:'world'});expect(l.quarantine.length).toBe(0);
+ });
+});
+
+describe('document.interpolate hand frame cubic (WP-C squad)',()=>{
+ // Rebuild the frame quaternion from a sampled pose the same way
+ // interpolate() emits it (orthonormal basis u=f×n), so every check below
+ // measures the real output product through the shared sampling path.
+ const frameQ=(p:PoseParams,side:'L'|'R')=>{
+  const h=side==='L'?p.handL:p.handR,f=toV(h.forward).normalize(),
+    n=toV(h.normal).addScaledVector(f,-toV(h.normal).dot(f)).normalize();
+  return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(f,n,new Vector3().crossVectors(f,n)));
+ };
+ const relLn=(a:Quaternion,b:Quaternion)=>{
+  const d=a.clone().invert().multiply(b);
+  if(d.w<0)d.set(-d.x,-d.y,-d.z,-d.w);
+  const s=Math.hypot(d.x,d.y,d.z);
+  return s<1e-15?new Vector3():new Vector3(d.x,d.y,d.z).multiplyScalar(Math.atan2(s,d.w)/s);
+ };
+ // One-sided hand-frame angular velocities (rad/s) bracketing t, finite-
+ // differenced on the sampled path — no access to private internals.
+ const omegaAround=(doc:WorkshopDoc,t:number,e:number,side:'L'|'R')=>{
+  const q=frameQ(samplePose(doc,t,origin()),side);
+  return {left:relLn(frameQ(samplePose(doc,t-e,origin()),side),q).multiplyScalar(1/e),
+    right:relLn(q,frameQ(samplePose(doc,t+e,origin()),side)).multiplyScalar(1/e)};
+ };
+ const setFrame=(k:WorkshopKey,f:[number,number,number],n:[number,number,number])=>{
+  k.pose.handR.forward={x:f[0],y:f[1],z:f[2]};k.pose.handR.normal={x:n[0],y:n[1],z:n[2]};
+ };
+
+ it('reproduces stored hand frames at every key instant',()=>{
+  const doc=defaultDocument(rig.rest);let err=0;
+  for(const k of doc.keys){
+   const p=samplePose(doc,k.time,origin());
+   for(const s of ['L','R']as const){
+    const h=s==='L'?k.pose.handL:k.pose.handR,ph=s==='L'?p.handL:p.handR;
+    err=Math.max(err,toV(h.forward).distanceTo(toV(ph.forward)),toV(h.normal).distanceTo(toV(ph.normal)));
+   }
+  }
+  expect(err).toBeLessThan(1e-9); // measured ≤7.3e-16 — exact key pass-through
+ });
+ it('keeps hand-frame angular velocity continuous through keys (finite difference)',()=>{
+  // e=1e-4s 校准:defaultDocument(骨盆系,非均匀键距)实测最大 |ωL−ωR|=0.017 rad/s;
+  // 旧逐段 slerp 同一探针测得 ~10 rad/s(键时刻 C0 跳变)。阈值取 3×实测、远低于
+  // 缺陷量级——测的是轨迹形态,不是实现细节(learning[1])。
+  const doc=defaultDocument(rig.rest),e=1e-4;
+  for(const s of ['L','R']as const)
+   for(const k of doc.keys.slice(1,-1)){
+    const{left,right}=omegaAround(doc,k.time,e,s);
+    expect(left.distanceTo(right)).toBeLessThan(.05);
+   }
+ });
+ it('holds the same C¹ on a sparse world-frame document',()=>{
+  const doc=blankDocument(rig.rest,'world-c1','world-c1');
+  doc.handFrames={L:'world',R:'world'};
+  ensureKey(doc,.4,origin());
+  rotateHandFrame(doc.keys[1].pose.handR,'flex',90);
+  rotateHandFrame(doc.keys[2].pose.handR,'twist',120);
+  const{left,right}=omegaAround(doc,.4,1e-4,'R');
+  expect(left.distanceTo(right)).toBeLessThan(.05);
+ });
+ it('keeps adjacent same-pose keys still — no special-casing needed',()=>{
+  // k0 and k1 share the same hand frame, k2 turns: the secant cap reads a
+  // zero adjacent secant at k1, so the still interval gets zero tangents on
+  // both ends naturally. Asserting the trajectory shape, not the code path.
+  const doc=blankDocument(rig.rest,'still','still');
+  doc.handFrames={L:'world',R:'world'};
+  ensureKey(doc,.5,origin());
+  rotateHandFrame(doc.keys[2].pose.handR,'flex',60);
+  const q0=frameQ(samplePose(doc,0,origin()),'R');
+  for(const t of [.125,.25,.375,.5])
+   expect(frameQ(samplePose(doc,t,origin()),'R').angleTo(q0)).toBeLessThan(1e-9); // measured exactly 0
+  const{left,right}=omegaAround(doc,.5,1e-4,'R');
+  expect(left.length()).toBeLessThan(1e-9);
+  expect(right.length()).toBeLessThan(1e-3); // T at k1 is exactly 0; finite-diff residual only
+ });
+ it('holds value and angular-velocity continuity across the loop seam',()=>{
+  const doc=blankDocument(rig.rest,'loop-seam','loop-seam');
+  doc.handFrames={L:'world',R:'world'};
+  doc.loop=true;doc.duration=1.2;doc.keys[1].time=.6;
+  rotateHandFrame(doc.keys[1].pose.handR,'flex',70);
+  const e=1e-4,q0=frameQ(samplePose(doc,0,origin()),'R'),qD=frameQ(samplePose(doc,doc.duration,origin()),'R');
+  expect(qD.angleTo(q0)).toBeLessThan(1e-9); // wrap value is the same rotation
+  const wl=relLn(frameQ(samplePose(doc,doc.duration-e,origin()),'R'),qD).multiplyScalar(1/e);
+  const wr=relLn(q0,frameQ(samplePose(doc,e,origin()),'R')).multiplyScalar(1/e);
+  expect(wl.distanceTo(wr)).toBeLessThan(.05); // measured 0.001 rad/s
+ });
+ it('interpolates hand frames in pelvis coordinates when handFrames=pelvis',()=>{
+  // Both keys store the SAME pelvis-relative frame (world f/n = yaw_j·const):
+  // any in-between must read yaw(t)·const — i.e. the cubic ran on the pelvis
+  // conversion, before the yaw(t) re-rotation, not on the world values.
+  const doc=blankDocument(rig.rest,'pelvis','pelvis');
+  doc.keys[0].pose.yaw=0;doc.keys[1].pose.yaw=60;
+  const yq=(deg:number)=>new Quaternion().setFromAxisAngle(new Vector3(0,1,0),deg*DEG);
+  const cf=new Vector3(1,0,0),cn=new Vector3(0,1,0);
+  for(const k of doc.keys){
+   const r=yq(k.pose.yaw),f=cf.clone().applyQuaternion(r),n=cn.clone().applyQuaternion(r);
+   k.pose.handR.forward={x:f.x,y:f.y,z:f.z};k.pose.handR.normal={x:n.x,y:n.y,z:n.z};
+  }
+  const qc=new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(cf,cn,new Vector3().crossVectors(cf,cn)));
+  for(const t of [.2,.5,.8]){
+   const p=samplePose(doc,t,origin());
+   expect(frameQ(p,'R').angleTo(yq(p.yaw).multiply(qc))).toBeLessThan(1e-9);
+  }
+ });
+ it('unwraps the frame chain to one hemisphere so antipodal reps take the short arc',()=>{
+  // This key1 frame is a 155° rotation from key0's, but setFromRotationMatrix
+  // emits its quat in the opposite hemisphere (dot<0). Without the chain-wide
+  // unwrap the tangent logs would steer the segment down the ~205° arc.
+  const doc=blankDocument(rig.rest,'hemi','hemi');
+  doc.handFrames={L:'world',R:'world'};doc.duration=1;
+  setFrame(doc.keys[0],[1,0,0],[0,1,0]);
+  setFrame(doc.keys[1],[-0.8503,0.5215,0.0706],[-0.0671,0.0256,-0.9974]);
+  const q0=frameQ(samplePose(doc,0,origin()),'R'),q1=frameQ(samplePose(doc,1,origin()),'R');
+  let maxA=0,maxW=0,prev=q0;
+  for(let i=1;i<=400;i++){
+   const q=frameQ(samplePose(doc,i/400,origin()),'R');
+   maxA=Math.max(maxA,q.angleTo(q0));maxW=Math.max(maxW,q.angleTo(prev)*400);prev=q;
+  }
+  expect(q1.angleTo(q0)).toBeCloseTo(2.704,2);    // the 155° key lands exactly
+  expect(maxA).toBeLessThan(3.1);                  // stays on the 155° arc, never near ~205°
+  expect(maxW).toBeLessThan(12);                   // no residual branch jump
  });
 });

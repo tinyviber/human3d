@@ -122,8 +122,8 @@ const unwrapAngle=(prev:number,v:number)=>v+360*Math.round((prev-v)/360);
 const yawQuat=(deg:number)=>new Quaternion().setFromAxisAngle(new Vector3(0,1,0),deg*DEG);
 const vecAt=(a:number[],i:number)=>new Vector3(a[i],a[i+1],a[i+2]);
 function setVecAt(a:number[],i:number,v:Vector3){a[i]=v.x;a[i+1]=v.y;a[i+2]=v.z;}
-/** Orthonormal frame quaternion from a forward/normal pair; slerp of these
- * keeps every in-between a valid frame (never a scalar lerp of directions). */
+/** Orthonormal frame quaternion from a forward/normal pair; squads of these
+ * keep every in-between a valid frame (never a scalar lerp of directions). */
 function frameQuat(fw:Vector3,nm:Vector3){
   const f=fw.clone();if(f.lengthSq()<1e-10)f.set(0,0,1);f.normalize();
   const n=nm.clone();n.addScaledVector(f,-n.dot(f));
@@ -132,6 +132,29 @@ function frameQuat(fw:Vector3,nm:Vector3){
   return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(f,n,new Vector3().crossVectors(f,n)));
 }
 const basisVec=(q:Quaternion,x:number,y:number,z:number)=>new Vector3(x,y,z).applyQuaternion(q);
+/** Unit-quaternion log: q ↦ axis·(θ/2) as a pure-vector quaternion (a Vector3
+ * carrier), the inverse of quatExp. This is the convention in which
+ * slerp(a,b,u) = a·(a⁻¹b)^u = a·exp(u·ln(a⁻¹b)), so logs compose/scale like
+ * tangent-space vectors and d/du exp(uL) = exp(uL)·L. */
+const quatLn=(q:Quaternion)=>{
+  const s=Math.hypot(q.x,q.y,q.z);
+  if(s<1e-15)return new Vector3();
+  const h=Math.atan2(s,q.w); // θ/2 ∈ [0,π]
+  return new Vector3(q.x,q.y,q.z).multiplyScalar(h/s);
+};
+/** Quaternion exponential of a pure-vector quaternion v ↦ [v̂·sin|v|, cos|v|];
+ * quatLn's inverse. */
+const quatExp=(v:Vector3)=>{
+  const h=v.length();
+  if(h<1e-15)return new Quaternion();
+  const s=Math.sin(h)/h;
+  return new Quaternion(v.x*s,v.y*s,v.z*s,Math.cos(h));
+};
+/** One key's squad data on the chain: `q` is the hemisphere-continued frame
+ * quaternion; `T` its body-frame angular-velocity tangent (rad/s, shared by
+ * the intervals on both sides → C¹); `b` the outgoing secant log
+ * ln(q⁻¹q_next) — undefined on the last chain entry. */
+interface SquadKey{q:Quaternion;T:Vector3;b?:Vector3}
 
 /** Contact plan for one foot over the real keys. A run of planted keys holds
  * the contact (target, yaw, pitch) of its first key; the first unplanted key
@@ -160,7 +183,10 @@ function contactPlan(keys:WorkshopKey[],side:Side,loop:boolean,raw:number[][]):C
  * applied; `interp` is what Hermite runs over (pelvis-frame hands converted,
  * angles unwrapped along the chain). */
 interface Entry{time:number;real:number;flat:number[];interp:number[];plant:Record<Side,boolean>;grip:boolean;rest:Record<Side,boolean>}
-interface Model{keys:WorkshopKey[];entries:Entry[];chain:Entry[];duration:number;handFrames:Record<Side,HandFrame>;origin:Vector3}
+interface Model{keys:WorkshopKey[];entries:Entry[];chain:Entry[];duration:number;handFrames:Record<Side,HandFrame>;origin:Vector3;
+ /** Per-side SO(3) cubic keys aligned to `chain` (index-for-index): hand
+  * forward/normal frames as quaternions plus their per-key tangents. */
+ squad:Record<Side,SquadKey[]>}
 
 /** Build the sampling model once per evaluation. For loops the chain is
  * [last−D, …keys…, first+D] so the seam uses real neighbours on both sides. */
@@ -204,7 +230,56 @@ function buildModel(doc:DocLike,origin:V3|Vector3):Model{
     }
   }
   for(const c of ANGLE_CHANNELS)for(let j=1;j<chain.length;j++)chain[j].interp[c]=unwrapAngle(chain[j-1].interp[c],chain[j].interp[c]);
-  return {keys,entries,chain,duration:doc.duration,handFrames:doc.handFrames,origin:o};
+  /* Hand direction frames: quaternion chain + per-key tangents for the
+   * SO(3) cubic in interpolate(). The frames live in the same coordinates
+   * interpolate() samples — the `interp` arrays, already pelvis-rotated
+   * where handFrames says so — so world and pelvis hands share this code
+   * (learning[16]). */
+  const squad:Record<Side,SquadKey[]>={L:[],R:[]};
+  for(const s of ['L','R']as const){
+    const b=HAND_CH[s],len=chain.length;
+    const qs=chain.map(e=>frameQuat(vecAt(e.interp,b+6),vecAt(e.interp,b+9)));
+    /* Hemisphere continuity along the WHOLE chain — the same contract
+     * unwrapAngle gives ANGLE_CHANNELS. A sign flip mid-chain is the same
+     * rotation, but it turns the log maps' short arcs into spurious ~360°
+     * excursions in every tangent the pair feeds; per-segment dot<0 repair
+     * (the old slerp path) fixed only the endpoint pair. Loop ghosts unwrap
+     * with the chain, so their q can sit antipodal to the real key's — the
+     * sampled ROTATIONS and their derivatives are unaffected either way. */
+    for(let j=1;j<len;j++)if(qs[j-1].dot(qs[j])<0)qs[j].set(-qs[j].x,-qs[j].y,-qs[j].z,-qs[j].w);
+    const sq=qs.map((q,j)=>{
+      const inv=q.clone().invert();
+      const lPrev=j>0?quatLn(inv.clone().multiply(qs[j-1])):undefined;   // a = ln(q_j⁻¹q_{j−1})
+      const lNext=j<len-1?quatLn(inv.clone().multiply(qs[j+1])):undefined; // b = ln(q_j⁻¹q_{j+1})
+      /* Interior key: body-frame angular-velocity tangent T_j = (b−a)/
+       * (t_{j+1}−t_{j−1}) — the exact quaternion analogue of the centre
+       * difference tan() uses for the scalar channels, so the curve is C¹
+       * in TIME through non-uniform keys (solving the per-segment
+       * derivatives for a shared per-key tangent, not just the per-unit-u
+       * match the standard s_i formula gives). Magnitude-capped at
+       * κ·min adjacent secant rate — the same TANGENT_SECANT_CAP contract
+       * as tan(), read on |a|/dt_L and |b|/dt_R.
+       * Endpoint convention: zero tangent — the same rest tangent the
+       * scalar tan() assigns to chain ends, so a document starts and stops
+       * rotating. Loop real keys always take this interior branch; the
+       * ghost copies get their source key's tangent below. */
+      let T=new Vector3();
+      if(lPrev&&lNext){
+        const dtL=chain[j].time-chain[j-1].time,dtR=chain[j+1].time-chain[j].time;
+        T=lNext.clone().sub(lPrev).multiplyScalar(1/(dtL+dtR));
+        const cap=TANGENT_SECANT_CAP*Math.min(lPrev.length()/dtL,lNext.length()/dtR);
+        if(T.length()>cap)T.multiplyScalar(cap/T.length());
+      }
+      return {q,T,b:lNext};
+    });
+    /* Loop ghosts wrap the real keys — copy their source key's tangent too,
+     * or the seam interval would relax into the ghost's endpoint rest
+     * tangent and hand ω would jump at the wrap. Same periodic-copy rule
+     * tan()/chain already apply to the scalar channels. */
+    if(doc.loop&&len>2){sq[0].T.copy(sq[len-2].T);sq[len-1].T.copy(sq[1].T);}
+    squad[s]=sq;
+  }
+  return {keys,entries,chain,duration:doc.duration,handFrames:doc.handFrames,origin:o,squad};
 }
 
 /** Support weight of one foot over the interval starting at chain index i.
@@ -296,10 +371,31 @@ function interpolate(m:Model,time:number):Interpolated{
   for(const s of ['L','R']as const){
     const hand=s==='L'?pose.handL:pose.handR,b=HAND_CH[s],pelvis=m.handFrames[s]==='pelvis';
     if(pelvis)hand.target=fromV(vecAt(out,b).applyQuaternion(Rt).add(o).add(root));
-    const q0=frameQuat(vecAt(chain[i].interp,b+6),vecAt(chain[i].interp,b+9));
-    const q1=frameQuat(vecAt(chain[i+1].interp,b+6),vecAt(chain[i+1].interp,b+9));
-    if(q0.dot(q1)<0)q1.set(-q1.x,-q1.y,-q1.z,-q1.w);
-    const q=q0.clone().slerp(q1,u);
+    /* SO(3) cubic through the key frames — a corrected-slerp form of squad:
+     *   q(u) = slerp(q_i, q_{i+1}, u) · exp( u(1−u)·(d0 + u·d1) )
+     *   d0 = T_i·dt − b,  d1 = 2b − (T_i + T_{i+1})·dt
+     * where b = ln(q_i⁻¹q_{i+1}) is the segment's secant log and T_j the
+     * per-key body tangent. The right-multiplied correction vanishes at both
+     * ends (the curve passes through q_i, q_{i+1} exactly) and produces the
+     * key tangents: q⁻¹q'(0)/dt = T_i, q⁻¹q'(1)/dt = T_{i+1} — C¹ in time
+     * for ANY T_j, including the capped/endpoint values chosen in
+     * buildModel. Chosen over the literal Shoemake double-slerp: with the
+     * sparse large-rotation keys this document family produces (≥90° between
+     * 0.15 s keys), Shoemake's inner slerp s_i→s_{i+1} walks ~180° off the
+     * chord (dot(A,B)→0), the outer slerp's hemisphere choice flips and the
+     * OUTPUT rotation jumps — a C0 defect worse than the one being fixed
+     * (measured: ~120° sampled jump on defaultDocument handR, solved
+     * wrist_R 101.7 rad/s). The correction form can never go antipodal: it
+     * is a bounded relative-rotation bump, max measured deviation 0.11 rad
+     * off the chord on defaultDocument; the per-segment slerp it replaces
+     * held a constant angular rate inside each interval, so its direction
+     * changed stepwise at every key — a C⁰ velocity the 0.61 m racket lever
+     * turned into measured tip kicks. */
+    const k0=m.squad[s][i],k1=m.squad[s][i+1],b2=k0.b!;
+    const d0=k0.T.clone().multiplyScalar(dt).sub(b2);
+    const d1=b2.clone().multiplyScalar(2).sub(k0.T.clone().add(k1.T).multiplyScalar(dt));
+    const e=d0.add(d1.multiplyScalar(u)).multiplyScalar(u*(1-u));
+    const q=k0.q.clone().slerp(k1.q,u).multiply(quatExp(e));
     const f=basisVec(q,1,0,0),nn=basisVec(q,0,1,0);
     if(pelvis){f.applyQuaternion(Rt);nn.applyQuaternion(Rt);}
     hand.forward=fromV(f);hand.normal=fromV(nn);

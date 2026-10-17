@@ -335,3 +335,95 @@ per-motion 汇总（163 骨 × 41–57 时刻；root 行为根骨平移差 mm）
 | tip 折返>25° | 2 → 1 | 1 → 2 |
 
 **诚实结论**：钳制界住的是样条通道过冲（过冲和 12620→8527mm −32%，最差通道 97.7→76.8mm −21%；探针报告的求解骨峰值不降、个别微升）。若 WP-C 的验收口径是"求解侧 wrist_R 峰值降到密集文档量级"，本实现不满足——钉住的语义是评审原案的切线限界本身，通道层过冲才是它的直接对象。
+
+# WP-C(续)— 手部朝向 slerp→SO(3) 三次插值:键时刻角速度 C⁰ 跳变修复
+
+## 缺陷与定界
+
+- 原实现:`interpolate()` 对 `hand.forward`/`hand.normal` 逐段 `Quaternion.slerp`。段内角速度恒定、键时刻方向阶跃——角速度是 C⁰ 的;0.61m 球拍杆臂把每个键的 ω 跳变放大成拍头速度 kick(修前实测:defaultDocument tip kick>0.1m/s 共 191 帧、forehand 62 帧,且集中贴键:forehand 键时刻 ±20ms 内占 44 帧)。
+- 实测:defaultDocument handR 键时刻有限差分 |ωL−ωR| 最差 10.29 rad/s(ε=1e-3);ε 缩小不收敛——真 C⁰ 跳变不随 dt 缩放(对照:探针同口径 240fps 7.45° vs 60fps 27.35° 单帧转角)。
+
+## 实现:corrected-slerp 形式的 SO(3) 三次曲线(squad 族)
+
+`interpolate()` 段内姿态:
+
+```
+q(u) = slerp(q_i, q_{i+1}, u) · exp( u(1−u)·(d0 + u·d1) )
+d0 = T_i·Δt − b          (把左端导数从割线修正到 T_i)
+d1 = 2b − (T_i + T_{i+1})·Δt   (同时满足右端导数 T_{i+1})
+b  = ln(q_i⁻¹q_{i+1})  —— 段割线对数(体坐标)
+```
+
+右乘修正项在两端消失 → **过每个键帧逐位精确**(实测键时刻 f/n 误差 ≤7.3e-16);对任意 T_j 恒有 q⁻¹q'(0)/Δt=T_i、q⁻¹q'(1)/Δt=T_{i+1} → **角速度 C¹**(对截幅/端点取值同样成立)。
+
+**与字面 Shoemake 双 slerp squad 的偏离(诚实记录)**:评审原案允许"正确实现 squad 或用近似实现"。字面形式 `slerp(slerpAB(u), slerpCD(u), 2u(1−u))` 在本仓库文档族上实测崩溃:defaultDocument 稀疏大旋转键(≥90°/0.15s)下,内控制链 s_i→s_{i+1} 与弦几乎反向(dot 最深 −0.925),外层 slerp 的逐对半球选择中途切换 → 输出旋转真实跳变,采样 ω 峰 ~6275 rad/s、服务语义门拒件(wrist_R 101.7 rad/s)——比被修的缺陷更糟的 C⁰。修正式不可能反极:修正是有界相对旋转增量(defaultDocument 实测最大偏离弦 0.11rad)。语义等价:squad 要求的"过键、C¹、SO(3) 三次"三条契约全部由测试钉死。
+
+**切线构造(非均匀键距处理)**:T_j = (b−a)/(t_{j+1}−t_{j−1}),a/b 为相邻割线对数——与标量通道 `tan()` 的中心差分同一构造,按**时间**而非 u 参数匹配 → 非均匀键下仍 C¹(标准 s_i 公式只匹配 per-u 导数,均匀键距才等价)。|T| 截幅 κ·min(|a|/dt_L,|b|/dt_R),κ=TANGENT_SECANT_CAP=2,同 tan() 契约——相邻同姿键割线为 0 → T=0,静止区间天然静止,无特判(测试断言逐位不动)。
+
+**端点约定**:T=0(与 tan() 链端 rest 切线一致;文档起止静止)。
+
+**半球链**:log/割线计算前对**整条链**(含 loop 幻影拷贝)做 dot<0 符号连续——同 `unwrapAngle` 之于 `ANGLE_CHANNELS` 的契约,而非旧代码逐段修端点符号。
+
+**loop**:幻影链 `[last−D,…keys…,first+D]` 与 tan() 完全同构;幻影端点额外**回拷**其源键的 T(否则接缝段末端松成端点 rest 切线、接缝 ω 跳变)。实测接缝值差 0、ω 差 0.001 rad/s(ε=1e-4)。
+
+**pelvis 系**:四元数链建在 `interp` 数组上——即已经骨盆旋转后的坐标,world/pelvis 两手同一套代码,转换时点不变(Rt(out yaw) 左乘,learning[16])。
+
+## 键时刻角速度连续(有限差分,rad/s)
+
+| 文档 | 指标 | 修前(slerp) | 修后(cubic) |
+|---|---|---|---|
+| defaultDocument | worst |ωL−ωR| @ε=1e-3 | handR 10.2939 | handL 0.0387 · handR 0.1692 |
+| defaultDocument | worst |ωL−ωR| @ε=1e-4 | ~10(不收敛) | 0.01698 |
+| forehand | worst |ωL−ωR| @ε=1e-3 | handR 0.9459 | handL 0.0024 · handR 0.0140 |
+| forehand | worst |ωL−ωR| @ε=1e-4 | ~0.95(不收敛) | 0.00141 |
+
+ε 缩小残差 ~线性收敛 → 有限差分截断,不是跳变;旧 slerp 残差不随 ε 缩小——跳变本体。
+
+键时刻 f/n 逐位误差:default 5.09e-16 · forehand 7.31e-16。
+
+## 身份与 golden 语义
+
+- 求解运动语义变化 → `SERVICE_VERSION` `0.2.0`→`0.3.0`。`spec/examples/idle.pose.json` 重生成:artifact id `mot_85e6387dda9682db`→`mot_a9edd1d24e21d202`,轨迹逐位不变(idle 手帧各键不动,下表全零行)。
+- `spec/migration/*.golden.json` 走既有 `recapture-migration-goldens.mts` 重捕获,容差 1e-3°/1e-3mm 不变。
+
+## 旧↔新迁移 delta(本次 squad;golden 网格,求解骨局部四元数角差,度)
+
+per-motion 汇总(163 骨 × 41–57 时刻):
+
+| motion | max | p95 | mean | root max | bones touched(>0.0005°) |
+|---|---|---|---|---|---|
+| idle | 0.000 | 0.000 | 0.000 | 0.00 | 0 |
+| reach | 0.614 | 0.000 | 0.001 | 0.00 | 73 |
+| squat | 0.288 | 0.000 | 0.001 | 0.00 | 148 |
+| ready | 0.000 | 0.000 | 0.000 | 0.00 | 0 |
+| forehand | 1.443 | 0.000 | 0.002 | 0.00 | 75 |
+
+p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同。per-bone 表(任一 motion >0.0005° 的骨):
+
+| bone | idle | reach | squat | ready | forehand |
+|---|---|---|---|---|---|
+| lowerarm02_L | 0.000 | 0.000 | 0.025 | 0.000 | 0.000 |
+| lowerarm02_R | 0.000 | 0.049 | 0.027 | 0.000 | 0.438 |
+| wrist_L | 0.000 | 0.000 | 0.288 | 0.000 | 0.000 |
+| wrist_R | 0.000 | 0.614 | 0.287 | 0.000 | 1.443 |
+
+差异全部集中在 wrist/lowerarm02——正是手帧朝向驱动的骨;躯干腿逐位不变。
+
+## 回归
+
+- `workshop.test.ts` 新增 `hand frame cubic (WP-C squad)` 七项:①键时刻逐位复现(<1e-9)②键时刻角速度左右有限差分连续(ε=1e-4,|ωL−ωR|<0.05 rad/s;实测 0.017,旧 slerp 同口径 ~10)③稀疏世界系文档 C¹ ④相邻同姿键逐位静止+ω≈0(截幅自然结果,无特判)⑤loop 接缝值逐位相等+ω 连续 ⑥handFrames=pelvis 下立方在骨盆系运行(定姿相对骨盆→世界输出逐位跟随 yaw(t))⑦反极 quat 表示的键取短弧(max<3.1rad,不触 ~205° 长弧)。
+- `quality.test.ts` 新增 kick 断言(共享 `probeDocument` 真实求解路径):forehand tip kicks<40(实测 26,修前 62);defaultDocument atKey 步长中位<interior×0.5(实测 0.17°/1.47°,修前 1.38°/1.50°)、tip accelTop<1500 m/s²(实测 1169,修前 2463@keyΔ0ms)。
+- `migration.test.ts` 沿用重捕获机制;`evidence/quality-probe-*.json` 全部重生成。
+
+## 探针前后对照(240fps,`evidence/quality-probe-{default,forehand}.json`)
+
+| 指标 | default 修前 → 修后 | forehand 修前 → 修后 |
+|---|---|---|
+| tip 速度 kick>0.1m/s | 191 → 191(物理下限,见下) | 62 → **26**(其中键±20ms 44 → 9) |
+| tip accelTop m/s² | 2463 @0.500 keyΔ0ms → 1169 @0.563 keyΔ63ms | 320 @2.163 → 326 @2.163 |
+| tip vmax m/s | 18.96 → 24.19 | 4.23 → 4.25 |
+| wristStep @key 中位 | 1.38° → 0.17°(interior 1.50°→1.47°) | 0.21° → 0.21°(interior 0.20°→0.21°) |
+| hand 链峰 rad/s | 22.6 → 31.2 | 5.8 → 5.9 |
+| tip 折返>25° | 1(130°@0.5) → 0 | 2 → 1(40°@2.163) |
+
+**诚实结论**:① kick 阈值 0.1m/s 对 defaultDocument 已到下限——0.8s 挥拍 tip 合法速度 ~24m/s,|Δv|>0.1 几乎每帧成立,真正消失的是键邻域 C⁰ kick(最差单帧 Δv 10.26→4.87,且时间从 keyΔ0ms 挪到 keyΔ63ms)。② tip vmax 上升 28%:slerp 在键时刻的方向阶跃等效于每键一次刹车,平滑后能量不再被人为吃掉——这是物理上更诚实的轨迹,hand 链峰 31.2 rad/s 仍低于 40 rad/s 语义门。③ forehand 是 kick 指标真正能区分的文档:62→26,且残余集中在 keyΔ13ms 的接触区物理挥速,不是朝向插值缺陷。
