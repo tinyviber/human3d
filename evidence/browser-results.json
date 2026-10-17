@@ -418,6 +418,7 @@
     "posePackage": true,
     "workshopDragPersist": true,
     "workshopPackageExport": true,
+    "workshopGlbExport": true,
     "workshopFootHeight": true,
     "workshopWaypointDrag": true
   },

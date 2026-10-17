@@ -1,6 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
-import {Activity,ArrowLeft,Camera,Check,Download,Film,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
@@ -12,6 +13,8 @@ import {ankleYForLift,footLift,type Side} from './foot';
 import {rotateHandFrame} from './solver';
 import {unwrapMotionFile} from '../core/motion-file';
 import {buildManifestLocal,buildPosePackageLocal} from '../core/package-export';
+import {exportGlb,posePackageToClip} from '../core/glb-export';
+import type {PosePackage} from '../core/pose-package';
 import type {RigManifest} from '../core/protocol';
 import type {RigInfo,ViewId} from '../core/types';
 
@@ -164,29 +167,51 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // POST /v1/motions {workshop-doc}, so the downloaded bytes equal the service
  // response for this document. The builder snapshots the doc itself, but the
  // playhead is paused first so a playing frame can't move the read pose.
- const exportPackage=async()=>{
+ // Shared by every package-derived export; returns the artifact on success and
+ // reports otherwise (422 problems persist on the card until the next attempt).
+ const solvePackage=async():Promise<PosePackage|null>=>{
   const e=engine.current;
-  if(!e?.rig){setHint('模型尚未加载完成，无法导出姿态包。');return;}
+  if(!e?.rig){setHint('模型尚未加载完成，无法导出。');return null;}
   e.setPlaying(false);
+  manifestRef.current??=await buildManifestLocal(rigInfo);
+  const res=await buildPosePackageLocal(d,exportFps,{rig:e.rig,manifest:manifestRef.current});
+  if(res.status===200){setPkgProblems(null);return res.body;}
+  if(res.status===422){
+   // Rejected artifacts do not exist — nothing downloads. The validator's
+   // problems stay listed in the card until the next export attempt.
+   setPkgProblems({doc:d.id,items:res.body.error.details??[res.body.error.message]});
+  }else{setPkgProblems(null);setHint(res.body.error.message);}
+  return null;
+ };
+ const download=(name:string,blob:Blob)=>{
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=name;a.click();URL.revokeObjectURL(a.href);
+ };
+ const exportPackage=async()=>{
   setExporting(true);
   try{
-   manifestRef.current??=await buildManifestLocal(rigInfo);
-   const res=await buildPosePackageLocal(d,exportFps,{rig:e.rig,manifest:manifestRef.current});
-   if(res.status===200){
-    const blob=new Blob([JSON.stringify(res.body)],{type:'application/json'});
-    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
-    // Content-addressed name: the doc and the artifact id both address content.
-    a.download=`${d.id}.${res.body.id}.pose.json`;a.click();URL.revokeObjectURL(a.href);
-    setPkgProblems(null);
-    setHint(`已导出姿态包 ${res.body.id}（${exportFps} fps · ${res.body.timeline.count} 帧）`);
-   }else if(res.status===422){
-    // Rejected artifacts do not exist — nothing downloads. The validator's
-    // problems stay listed in the card until the next export attempt.
-    setPkgProblems({doc:d.id,items:res.body.error.details??[res.body.error.message]});
-   }else{
-    setPkgProblems(null);
-    setHint(res.body.error.message);
-   }
+   const pkg=await solvePackage();if(!pkg)return;
+   // Content-addressed name: the doc and the artifact id both address content.
+   download(`${d.id}.${pkg.id}.pose.json`,new Blob([JSON.stringify(pkg)],{type:'application/json'}));
+   setHint(`已导出姿态包 ${pkg.id}（${exportFps} fps · ${pkg.timeline.count} 帧）`);
+  }catch(err){setHint(err instanceof Error?err.message:String(err));}
+  finally{setExporting(false);}
+ };
+ // GLB is a DERIVED view of the same artifact: the bytes never carry the
+ // artifact id, so the filename borrows it for correspondence only.
+ const exportGlbFile=async()=>{
+  setExporting(true);
+  try{
+   const pkg=await solvePackage();if(!pkg)return;
+   // Clean re-parse of the shipped model — the live rig wears the racket prop
+   // and swapped materials, so exporting it would bake editor state into the
+   // file (node TRS, extra meshes). GLTFExporter itself stays out of the
+   // bundle: exportGlb dynamic-imports it on demand.
+   const resp=await fetch('/models/human.glb');
+   if(!resp.ok)throw new Error(`模型请求失败：${resp.status}`);
+   const gltf=await new GLTFLoader().parseAsync(await resp.arrayBuffer(),'');
+   const glb=await exportGlb(gltf.scene,posePackageToClip(pkg));
+   download(`${d.id}.${pkg.id}.glb`,new Blob([glb],{type:'model/gltf-binary'}));
+   setHint(`已导出 GLB（${exportFps} fps · ${pkg.timeline.count} 帧）——派生文件不内嵌制品 id，身份以同名 ${pkg.id} 姿态包为准`);
   }catch(err){setHint(err instanceof Error?err.message:String(err));}
   finally{setExporting(false);}
  };
@@ -238,8 +263,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <label className="ws-field"><span>采样率 fps</span><input type="number" min={1} max={60} step={1} value={exportFps} disabled={!subtleOk||exporting} onChange={e=>setExportFps(Math.max(1,Math.min(60,Math.round(Number(e.target.value)||40))))}/></label>
       <div className="ws-row">
        <button onClick={()=>void exportPackage()} disabled={!subtleOk||!info||exporting} title={subtleOk?'求解并校验当前文档，下载 .pose.json':'姿态包导出需 https 或 localhost 打开'}><Package size={13}/>{exporting?'求解中…':'导出姿态包'}</button>
+       <button onClick={()=>void exportGlbFile()} disabled={!subtleOk||!info||exporting} title={subtleOk?'同一求解结果烘焙成 glTF 动画，干净模型重新解析后导出':'GLB 导出需 https 或 localhost 打开'}><FileBox size={13}/>{exporting?'导出中…':'导出 GLB'}</button>
       </div>
-      <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
+      <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
       {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'#c0392b'}}>上一次导出被语义校验拒绝，未生成文件：</p>
        <ul>{pkgProblems.items.map((p,i)=><li key={i}>{p}</li>)}</ul></div>:null}
      </div>

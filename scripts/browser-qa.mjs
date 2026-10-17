@@ -181,6 +181,26 @@ svc?.kill();svc=undefined; // every service-dependent assertion is done
 await page.goto('http://127.0.0.1:5173/workshop.html');
 await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
 assert((await page.evaluate(()=>window.__WS__.getDoc().name)).includes('QA 测试动作'),'QA doc lost the active selection across navigation');
+// --- Workshop GLB export: the derived binary download. Assert the container
+// (magic, version, one animation, channel count matching the package's
+// tracks) and a size floor — no in-browser decode, that path is covered by
+// src/core/glb-export.test.ts's mixer↔FK roundtrip on the real GLB.
+const [glbDownload]=await Promise.all([
+ page.waitForEvent('download'),
+ page.getByRole('button',{name:'导出 GLB',exact:true}).click(),
+]);
+assert.equal(glbDownload.suggestedFilename(),`${wsDoc.id}.${exported.id}.glb`,'GLB filename is not <docId>.<artifactId>.glb');
+const glbBuf=fs.readFileSync(await glbDownload.path());
+assert.equal(glbBuf.readUInt32LE(0),0x46546C67,'GLB magic mismatch'); // 'glTF'
+assert.equal(glbBuf.readUInt32LE(4),2,'GLB version is not 2');
+assert(glbBuf.length>3_000_000,`GLB suspiciously small for a skinned model + clip: ${glbBuf.length}B`);
+const glbJsonLen=glbBuf.readUInt32LE(12);
+assert.equal(glbBuf.readUInt32LE(16),0x4E4F534A,'GLB first chunk is not JSON');
+const glbJson=JSON.parse(glbBuf.subarray(20,20+glbJsonLen).toString('utf8'));
+assert.equal(glbJson.animations.length,1,'exported GLB should carry exactly one animation');
+const glbRotCh=glbJson.animations[0].channels.filter(c=>c.target.path==='rotation').length;
+assert.equal(glbRotCh,exported.tracks.rotations.length,'GLB rotation channels differ from the package tracks');
+result.checks.workshopGlbExport=true;
 // Foot-height editing through the real UI: add a mid key, unplant the left
 // foot on it — the key then starts a swing interval and its stored target is
 // the mid-swing waypoint — then set the lift slider and confirm the solved

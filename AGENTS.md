@@ -15,6 +15,7 @@
 - `npm run build` — 生产构建（CI 门禁）
 - `npm run qa` — 浏览器 E2E（需先 `npm run dev`；无本地 Playwright 浏览器时用 `QA_BROWSER_CHANNEL=chrome npm run qa` 走系统 Chrome；未进 CI）
 - `npm run protocol:example` — 重生成 `spec/examples/idle.pose.json`
+- `npm run package-to-glb -- <in.pose.json> [out.glb]` — 姿态包转二进制 glTF（与浏览器「导出 GLB」共用 `src/core/glb-export.ts`）
 - `npm run service` — 本地 Motion Protocol v1 服务（127.0.0.1:8788）
 - `npm run dynamics:validate`、`npm run dynamics:test` — 动力学资产与物理记录校验，需要 Python 3.13 与 `scripts/requirements-dynamics.txt`（CI 门禁）
 - `npx tsx scripts/measure-motions.mts` — 测量内置动作的语义峰值，用于阈值校准（见 `docs/validation.md`）
