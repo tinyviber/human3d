@@ -3,8 +3,8 @@ import {HumanRig} from '../core/rig';
 import {frameAt,sortedKeys,type WorkshopDoc} from '../workshop/document';
 import {analyzePose,solveEffectiveFrame,type CheckItem} from '../workshop/solver';
 import {canonical,sha256} from './rig-manifest';
-export const POSE_PACKAGE_KIND='pose-package';
-export const POSE_PACKAGE_SCHEMA_VERSION=2;
+import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from '../core/package-const';
+export {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION};
 
 /** One aggregated quality check. `value` is the worst sample observed and
  * `worstTime` is when it occurred; `ok` holds only if every sample passed.

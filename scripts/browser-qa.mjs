@@ -2,6 +2,7 @@ import {chromium} from 'playwright';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 const browser=await chromium.launch({headless:true,...(process.env.QA_BROWSER_CHANNEL?{channel:process.env.QA_BROWSER_CHANNEL}:{})});
+let svc; // spawned pose service (if not already running); killed in finally
 try {
 const page=await browser.newPage({viewport:{width:1536,height:1024},deviceScaleFactor:1});
 const errors=[],warnings=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());if(m.type()==='warning')warnings.push(m.text());});
@@ -25,21 +26,21 @@ await page.getByRole('switch',{name:'人体表面',exact:true}).click();await pa
 assert.equal(await page.evaluate(()=>{let visible=false;window.__LAB__.model.traverse(o=>{if(o.isSkinnedMesh&&o.visible)visible=true;});return visible;}),false);
 for(const label of ['人体表面','骨骼与关节','关节坐标轴','IK 端点'])await page.getByRole('switch',{name:label,exact:true}).click();
 result.checks.debug=true;
-await choose('idle',0,'front');await page.getByRole('button',{name:'播放',exact:true}).click();await page.waitForTimeout(300);assert((await page.evaluate(()=>window.__LAB__.active.time))>.1);
-await page.getByRole('button',{name:'暂停',exact:true}).click();const before=await page.evaluate(()=>window.__LAB__.active.time);await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>window.__LAB__.active.time),before);result.checks.pause=true;
+await choose('idle',0,'front');await page.getByRole('button',{name:'播放',exact:true}).click();await page.waitForTimeout(300);assert((await page.evaluate(()=>window.__LAB__.time))>.1);
+await page.getByRole('button',{name:'暂停',exact:true}).click();const before=await page.evaluate(()=>window.__LAB__.time);await page.waitForTimeout(200);assert.equal(await page.evaluate(()=>window.__LAB__.time),before);result.checks.pause=true;
 await page.getByLabel('播放速度',{exact:true}).fill('1.75');assert.equal(await page.evaluate(()=>window.__LAB__.speed),1.75);result.checks.speed=true;
-await page.getByLabel('动作进度',{exact:true}).fill('2.4');assert(Math.abs((await page.evaluate(()=>window.__LAB__.active.time))-2.4)<.001);result.checks.seek=true;
+await page.getByLabel('动作进度',{exact:true}).fill('2.4');assert(Math.abs((await page.evaluate(()=>window.__LAB__.time))-2.4)<.001);result.checks.seek=true;
 // The reset starts playing immediately; allow automation/render latency, while
 // requiring a clear reset from the previous 2.4s position.
-await page.getByRole('button',{name:'重播',exact:true}).click();assert((await page.evaluate(()=>window.__LAB__.active.time))<1);result.checks.replay=true;
-await page.getByRole('switch',{name:'循环播放',exact:true}).click();await page.evaluate(()=>{const e=window.__LAB__;e.speed=1;e.seek(4.7);e.setPlaying(true);});await page.waitForTimeout(400);assert.equal(await page.evaluate(()=>window.__LAB__.playing),false);assert((await page.evaluate(()=>window.__LAB__.active.time))>4.79);result.checks.singlePlayback=true;
+await page.getByRole('button',{name:'重播',exact:true}).click();assert((await page.evaluate(()=>window.__LAB__.time))<1);result.checks.replay=true;
+await page.getByRole('switch',{name:'循环播放',exact:true}).click();await page.evaluate(()=>{const e=window.__LAB__;e.speed=1;e.seek(4.7);e.setPlaying(true);});await page.waitForTimeout(400);assert.equal(await page.evaluate(()=>window.__LAB__.playing),false);assert((await page.evaluate(()=>window.__LAB__.time))>4.79);result.checks.singlePlayback=true;
 await page.getByRole('switch',{name:'循环播放',exact:true}).click();await page.getByLabel('播放速度',{exact:true}).fill('1');
 // Real pointer orbit and wheel zoom, while preserving animation time.
 await choose('idle',0,'front');const canvas=page.locator('canvas'),bounds=await canvas.boundingBox();const oldCam=await page.evaluate(()=>window.__LAB__.camera.position.toArray());
 await page.mouse.move(bounds.x+bounds.width*.5,bounds.y+bounds.height*.5);await page.mouse.down();await page.mouse.move(bounds.x+bounds.width*.6,bounds.y+bounds.height*.53,{steps:12});await page.mouse.up();await page.mouse.wheel(0,-170);await page.waitForTimeout(300);assert.notDeepEqual(await page.evaluate(()=>window.__LAB__.camera.position.toArray()),oldCam);result.checks.orbitZoom=true;
 await page.getByRole('button',{name:'资料与许可'}).click();assert(await page.locator('dialog').isVisible());assert.match(await page.locator('dialog').innerText(),/CC0/);await page.getByRole('button',{name:'关闭',exact:true}).click();result.checks.sources=true;
-// Sample real mixer state (including interpolation) for numerical review.
-result.samples=await page.evaluate(()=>{const e=window.__LAB__,out={};for(const id of ['idle','walk','reach','squat','ready','forehand']){e.setMotion(id,false);e.setPlaying(false);const d=e.active.getClip().duration,frames=[];for(let i=0;i<80;i++){e.seek(i/80*d);frames.push({time:i/80*d,...e.diagnostics()});}out[id]=frames;}return out;});
+// Sample the real per-source state (including interpolation) for numerical review.
+result.samples=await page.evaluate(()=>{const e=window.__LAB__,out={};for(const id of ['idle','walk','reach','squat','ready','forehand']){e.setMotion(id,false);e.setPlaying(false);const d=e.source.duration,frames=[];for(let i=0;i<80;i++){e.seek(i/80*d);frames.push({time:i/80*d,...e.diagnostics()});}out[id]=frames;}return out;});
 for(const [id,samples]of Object.entries(result.samples)){assert(samples.every(s=>s.knee<=135.1&&s.elbow<=145.1));if(id==='forehand')assert(samples.every(s=>s.gripError<1e-8));}
 result.checks.motionSamples=true;
 // Responsive surface, including controls that move below the main canvas.
@@ -50,6 +51,28 @@ await page.getByRole('switch',{name:'球拍运动轨迹',exact:true}).click();aw
 // Record the live WebGL canvas at 30fps, without synthetic frame generation.
 const recorded=await page.evaluate(async()=>{const e=window.__LAB__,stream=e.renderer.domElement.captureStream(30);const type=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';const recorder=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:4500000}),chunks=[];recorder.ondataavailable=ev=>chunks.push(ev.data);const done=new Promise(resolve=>recorder.onstop=async()=>{const data=await new Blob(chunks,{type:'video/webm'}).arrayBuffer();stream.getTracks().forEach(t=>t.stop());resolve(Array.from(new Uint8Array(data)));});recorder.start();e.replay();const poll=setInterval(()=>{if(!e.playing){clearInterval(poll);setTimeout(()=>recorder.stop(),200);}},50);setTimeout(()=>{if(recorder.state==='recording'){clearInterval(poll);recorder.stop();}},15000);return done;});
 fs.writeFileSync('evidence/forehand.webm',Buffer.from(recorded));result.checks.liveVideo=true;
+// --- Pose-package E2E: the real service solves a real package, delivered
+// through the real file input, decoded by the lab's PosePackageSource.
+try{await fetch('http://127.0.0.1:8788/v1/capabilities');}
+catch{
+ const {spawn}=await import('node:child_process');
+ svc=spawn('npx',['tsx','src/server/serve.ts'],{stdio:'ignore'});
+ for(let i=0;i<100;i++){try{await fetch('http://127.0.0.1:8788/v1/capabilities');break;}catch{await new Promise(r=>setTimeout(r,300));if(i===99){svc.kill();throw new Error('motion service did not start on 127.0.0.1:8788');}}}
+}
+const pkgResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'idle'}})});
+assert.equal(pkgResponse.status,200,'POST /v1/motions should return a pose package');
+const pkg=await pkgResponse.json();
+assert.equal(pkg.kind,'pose-package');assert.equal(pkg.rig.bones,163);
+await page.locator('input[type=file]').setInputFiles({name:'idle.pose.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pkg))});
+await page.waitForTimeout(300);
+// The temp entry joins the list: 8 bundled motions + the opened package.
+assert.equal(await page.locator('.motion-row').count(),9);
+assert.equal(await page.locator('.viewport-heading h2').textContent(),'idle');
+const pkgDiag=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(1.2);return {diagnostics:e.diagnostics(),status:e.source.status,error:e.source.error};});
+assert.equal(pkgDiag.status,'ready');assert.equal(pkgDiag.diagnostics.bones,163);assert(pkgDiag.diagnostics.root.every(Number.isFinite),'pose-package root must be finite');
+await page.screenshot({path:'evidence/pose-package.png'});result.checks.posePackage=true;
+await choose('idle',0,'front'); // restore a bundled motion before the workshop section
+svc?.kill();svc=undefined; // package delivered; the service is no longer needed
 // --- Workshop E2E: real pointer drag → save → reload keeps the edited pose.
 await page.goto('http://127.0.0.1:5173/workshop.html');
 await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
@@ -136,4 +159,4 @@ result.checks.workshopWaypointDrag=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 
-} finally {await browser.close();}
+} finally {svc?.kill();await browser.close();}

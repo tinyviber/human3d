@@ -1,5 +1,6 @@
 import {Quaternion,Vector3} from 'three';
-import {POSE_PACKAGE_SCHEMA_VERSION,type PosePackage} from './pose-package';
+import {POSE_PACKAGE_SCHEMA_VERSION} from '../core/package-const';
+import type {PosePackage} from './pose-package';
 import type {RigManifest} from './rig-manifest';
 
 /** Semantic limits enforced by the validator. A package beyond one of them is
