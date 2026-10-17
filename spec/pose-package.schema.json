@@ -95,7 +95,8 @@
           "type": "string"
         },
         "parameters": {
-          "type": "object"
+          "type": "object",
+          "description": "Echo of the resolved action parameters; the artifact hash binds action.definitionSHA256, not this field. Bundled actions ship {} — the action id is the whole parameterization. Ad-hoc 'workshop-doc' packages carry {documentName, presentation}: documentName is the submitted document's display name, and presentation records display hints the trajectory itself cannot express — presentation.prop ('racket') marks that the document solved with grip constraints so a consumer may mount the prop (v2 carries no per-frame grip channel; the prop is either constantly present or absent), and presentation.loop mirrors the document's authored loop flag (consumers should treat loop:false as one-shot). Fields beyond these are per-action and not interpreted here."
         },
         "definitionSHA256": {
           "type": "string",

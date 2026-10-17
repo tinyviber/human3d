@@ -6,11 +6,13 @@ import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
 // Type-only: the decoder never runs the capture path, so a value import would
 // just add solver/sampler weight to the lab bundle.
 import type {PosePackage} from './pose-package';
+import type {MotionCapabilities} from './motion-file';
+import {motionFileById} from './motion-files';
 import {frameAt,type WorkshopDoc} from '../workshop/document';
 import {solveEffectiveFrame} from '../workshop/solver';
 import type {DynamicsCase,DynamicsReplay} from './dynamics';
 import type {MuscleActionFile} from './motions';
-import type {DebugOptions} from './types';
+import type {DebugOptions,MotionId,MotionSpec} from './types';
 
 /** Per-frame measurements for the inspector/QA: joint angles from FK points,
  * the racket grip offset, and anchor positions. */
@@ -139,7 +141,11 @@ export class PosePackageSource implements MotionSource{
   status:SourceStatus='ready';error?:string;
   private ts:number[]=[0];private rootValues:number[]=[0,0,0];private _duration=0;
   private rotations:{bone:Bone;values:number[]}[]=[];
-  constructor(private rig:HumanRig,pkg:unknown){
+  /** @param prop Package-level prop hint (the derived spec's
+   * capabilities.prop). v2 packages carry no per-frame grip channel, so the
+   * prop is either constantly present or absent — `wantsProp` returns the
+   * constant. The spec description records this ceiling. */
+  constructor(private rig:HumanRig,pkg:unknown,private prop?:MotionCapabilities['prop'],private racket?:{getWorldPosition(v:Vector3):Vector3}){
     const problems=checkPosePackageShape(pkg,new Set(rig.bones.keys()));
     // Loud refusal: a malformed package must surface as an error state, never
     // silently decode into garbage poses.
@@ -168,10 +174,59 @@ export class PosePackageSource implements MotionSource{
     }
     this.rig.model.updateMatrixWorld(true);
   }
-  wantsProp(){return false;}
+  wantsProp(){return this.status==='ready'&&!!this.prop;}
   rootPoint(){return this.rig.point('root');}
   point(name:string){return this.rig.bones.has(name)?this.rig.point(name):undefined;}
-  diagnostics(){return rigReadout(this.rig);}
+  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined);}
+}
+
+/** Derive the lab's MotionSpec for a delivered pose package — the inverse of
+ * what solveWorkshop + workshopMeta stamped at solve time. Field priority:
+ * the bundled envelope (`action.id` matching motionFileById) > the ad-hoc
+ * `action.parameters` channel (`documentName` + `presentation.{prop,loop}`,
+ * written by both builders — see core/protocol.ts) > the bare action id.
+ * `phases` always come from the package's own events: 'phase' events first,
+ * else 'keyframe' events as timeline markers, so markers reflect delivered
+ * data rather than whatever the action id claims. The description is the
+ * honesty surface: solver provenance, the quality warnings the package
+ * carries, and the constant-prop caveat (a v2 package cannot express the
+ * document's per-frame grip ramp, so the prop is constantly shown). */
+export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
+ const actionId=typeof p.action?.id==='string'&&p.action.id?p.action.id:'pose-package';
+ const envelope=motionFileById(actionId);
+ const params=isObj(p.action?.parameters)?p.action.parameters:{};
+ const pres=isObj(params.presentation)?params.presentation:{};
+ // 'racket' is the only prop kind the lab can mount — the ad-hoc hint maps to
+ // the same capability record the bundled racket envelopes declare. When an
+ // envelope exists it is authoritative: its absence of a prop is also truth,
+ // so a forged presentation channel cannot add a prop to a bundled id.
+ const prop=envelope?envelope.capabilities?.prop
+  :(pres.prop==='racket'?{kind:'racket' as const,trail:true,handView:true}:undefined);
+ const capabilities:MotionCapabilities|undefined=envelope?envelope.capabilities:(prop?{prop}:undefined);
+ // Loop semantics are authored in the document, not the package: bundled
+ // envelopes carry the document, ad-hoc packages carry presentation.loop.
+ const authoredLoop=envelope?envelope.document?.loop:(typeof pres.loop==='boolean'?pres.loop:undefined);
+ const events=Array.isArray(p.events)?p.events:[];
+ const phases=events.filter(e=>e.type==='phase').map(({time,label})=>({time,label}));
+ const keys=events.filter(e=>e.type==='keyframe').map(({time,label})=>({time,label}));
+ const warnings=(Array.isArray(p.quality?.warnings)?p.quality.warnings:[]).filter((w):w is string=>typeof w==='string');
+ const solver=typeof p.provenance?.solver==='string'?p.provenance.solver:'';
+ const solverRev=typeof p.provenance?.solverRevision==='string'&&p.provenance.solverRevision?`@${p.provenance.solverRevision}`:'';
+ const source=typeof p.provenance?.source==='string'&&p.provenance.source?`来源 ${p.provenance.source}`:'';
+ const description=[
+  '外部姿态包（pose-json）回放',
+  solver?`求解器 ${solver}${solverRev}`:'',
+  source,
+  warnings.length?`质量警告 ${warnings.length} 条：${warnings.slice(0,3).join('；')}${warnings.length>3?' …':''}`:'质量警告 0 条',
+  prop?'v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示':'',
+ ].filter(Boolean).join(' · ');
+ const documentName=typeof params.documentName==='string'&&params.documentName?params.documentName:undefined;
+ return {id,name:envelope?.name||documentName||actionId,
+  english:envelope?.english||'POSE PACKAGE',duration:p.timeline.duration,
+  description,method:envelope?.method??'服务交付轨迹 · FK 采样重放',
+  focus:envelope?.focus??['姿态包回放'],phases:phases.length?phases:keys,
+  capabilities,oneShot:authoredLoop===undefined?undefined:!authoredLoop,
+  source:{kind:'pose-package',package:p}};
 }
 
 /** Shared replay holder: one MyoSim replay per engine, reloaded per motion —

@@ -4,7 +4,7 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig} from './rig';
 import {MOTIONS,motionById,muscleActionById} from './motions';
 import {attachRacket} from './racket';
-import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,type DynamicsSession,type MotionSource} from './motion-source';
+import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,type DynamicsSession,type MotionSource} from './motion-source';
 import type {PosePackage} from './pose-package';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
 import type {DebugOptions,MotionId,MotionSpec,RigInfo,ViewId} from './types';
@@ -87,14 +87,16 @@ export class HumanEngine{
   if(!this.ready||!this.rig){this.onError?.(new Error('模型尚未就绪，无法播放姿态包'));return undefined;}
   const problems=checkPosePackageShape(pkg,new Set(this.rig.bones.keys()));
   if(problems.length){this.onError?.(new Error(`姿态包不可用：${problems[0]}${problems.length>1?`（共 ${problems.length} 处问题）`:''}`));return undefined;}
-  const p=pkg as PosePackage,actionId=typeof p.action?.id==='string'&&p.action.id?p.action.id:'pose-package';
+  const p=pkg as PosePackage;
   // Key the temp entry on the package's artifact id (content-addressed), not
   // the action id: two packages solved for the same action stay distinct
   // entries, and reopening the same package is idempotent.
   const specId=`pkg:${typeof p.id==='string'&&p.id?p.id:`unkeyed-${this.pkgSeq++}`}`;
-  const spec:MotionSpec={id:specId,name:actionId,english:'POSE PACKAGE',duration:p.timeline.duration,
-   description:'外部姿态包（pose-json）回放',method:'服务交付轨迹 · FK 采样重放',focus:['姿态包回放'],phases:[],source:{kind:'pose-package',package:p}};
-  this.specs.set(spec.id,spec);this.sources.set(spec.id,new PosePackageSource(this.rig,p));
+  // The display spec is derived from what the package carries: bundled
+  // envelopes (matched by action.id) restore capabilities/name/phases, the
+  // ad-hoc parameters channel carries documentName and presentation hints.
+  const spec=posePackageSpec(p,specId);
+  this.specs.set(spec.id,spec);this.sources.set(spec.id,new PosePackageSource(this.rig,p,spec.capabilities?.prop,this.racket));
   this.setMotion(spec.id,false);return spec;
  }
  private loadDynamics(source:DynamicsSource,profile:DynamicsCase){

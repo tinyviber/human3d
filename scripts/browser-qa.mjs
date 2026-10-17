@@ -10,7 +10,10 @@ await page.goto('http://127.0.0.1:5173/');await page.waitForFunction(()=>window.
 assert.match(await page.title(),/KINESIS/);assert.equal(await page.locator('.motion-row').count(),8);assert.equal(await page.locator('vite-error-overlay').count(),0);
 const names={idle:'自然站立',walk:'行走',reach:'抬手与转身',squat:'下蹲',ready:'持拍准备',forehand:'正手挥拍'};
 async function choose(id,t=0,view='front'){
- await page.locator('.motion-row').filter({hasText:names[id]}).click();
+ // .first(): an opened bundled package reuses the envelope name, so the
+ // motion list can hold two identically labelled rows — the bundled one
+ // always precedes the appended package entries.
+ await page.locator('.motion-row').filter({hasText:names[id]}).first().click();
  await page.evaluate(t=>{window.__LAB__.setPlaying(false);window.__LAB__.seek(t);},t);
  const views={front:'正面',side:'侧面',back:'背面',threeQuarter:'45°',hand:'手部特写'};
  if(view==='hand')await page.getByRole('button',{name:views[view],exact:true}).click();else await page.locator('.camera-toolbar').getByRole('button',{name:views[view],exact:true}).click();
@@ -67,10 +70,29 @@ await page.locator('input[type=file]').setInputFiles({name:'idle.pose.json',mime
 await page.waitForTimeout(300);
 // The temp entry joins the list: 8 bundled motions + the opened package.
 assert.equal(await page.locator('.motion-row').count(),9);
-assert.equal(await page.locator('.viewport-heading h2').textContent(),'idle');
+// Envelope derivation: a bundled idle package restores the envelope display
+// name, not the bare action id.
+assert.equal(await page.locator('.viewport-heading h2').textContent(),'自然站立');
 const pkgDiag=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(1.2);return {diagnostics:e.diagnostics(),status:e.source.status,error:e.source.error};});
 assert.equal(pkgDiag.status,'ready');assert.equal(pkgDiag.diagnostics.bones,163);assert(pkgDiag.diagnostics.root.every(Number.isFinite),'pose-package root must be finite');
 await page.screenshot({path:'evidence/pose-package.png'});result.checks.posePackage=true;
+// Envelope derivation for a prop action: a bundled forehand package must
+// remount the racket (constant display — v2 carries no per-frame grip) and
+// resurface the hand-view/trail affordances; document.loop:false → one-shot.
+const fhResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'forehand'}})});
+assert.equal(fhResponse.status,200,'POST /v1/motions {forehand} failed');
+const fhPkg=await fhResponse.json();
+await page.locator('input[type=file]').setInputFiles({name:'forehand.pose.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fhPkg))});
+await page.waitForTimeout(300);
+assert.equal(await page.locator('.motion-row').count(),10);
+assert.equal(await page.locator('.viewport-heading h2').textContent(),'正手挥拍');
+const fhState=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(2.55);return {racket:e.racket?.visible===true,prop:e.source?.kind==='pose-package'&&e.source.wantsProp()};});
+assert.equal(fhState.prop,true,'forehand package source does not want the prop');
+assert.equal(fhState.racket,true,'forehand package did not remount the racket');
+assert(await page.getByRole('button',{name:'手部特写',exact:true}).isVisible(),'hand-view affordance missing for a prop package');
+assert(await page.getByRole('switch',{name:'球拍运动轨迹',exact:true}).isVisible(),'trail affordance missing for a prop package');
+assert(await page.getByRole('switch',{name:'循环播放',exact:true}).isDisabled(),'a non-loop document should replay one-shot');
+result.checks.posePackageForehand=true;
 await choose('idle',0,'front'); // restore a bundled motion before the workshop section
 // NOTE: svc stays up — the workshop export assertions below POST the same
 // document to the real service for the byte-parity check.
@@ -174,6 +196,8 @@ await page.waitForTimeout(300);
 const roundtrip=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);return {status:e.source.status,error:e.source.error,kind:e.source.kind};});
 assert.equal(roundtrip.kind,'pose-package','exported package did not open as a pose-package source');
 assert.equal(roundtrip.status,'ready',`exported package failed to load in the lab: ${roundtrip.error??''}`);
+// The ad-hoc presentation channel surfaced: documentName becomes the entry name.
+assert.equal(await page.locator('.viewport-heading h2').textContent(),'QA 测试动作','parameters.documentName did not reach the lab entry');
 result.checks.workshopPackageExport=true;
 svc?.kill();svc=undefined; // every service-dependent assertion is done
 // Back to the workshop for the remaining pinned edits — the library

@@ -1,6 +1,6 @@
 # 跨项目人体动作协议：方案与优先级
 
-状态：MVP 已实现 v1 只读目录与同步求解接口（见文末「实现状态」）；GLB 导出、渲染请求、MCP 适配与异步任务尚未实现。此方案根据三轮独立脑暴与评审整理，目标是让项目通过经过校验的数据参数请求已支持的动作，避免为每次动作请求临时写代码或让 LLM 生成代码。
+状态：MVP 已实现 v1 只读目录与同步求解接口（见文末「实现状态」）；GLB 已作为派生导出实现（工作台按钮 + Node CLI，非服务端输出格式），渲染请求、MCP 适配与异步任务尚未实现。此方案根据三轮独立脑暴与评审整理，目标是让项目通过经过校验的数据参数请求已支持的动作，避免为每次动作请求临时写代码或让 LLM 生成代码。
 
 ## 结论与排序
 
@@ -127,7 +127,7 @@ RenderRequest 独立引用一个已完成的 motion，可包含命名相机预�
 
 ## 实现状态（MVP v1）
 
-已实现：`src/server/` 单体服务（`npm run service`，仅 loopback，`node:http` 零新增运行时依赖）+ `spec/` 契约文件。
+已实现：`src/server/` 单体服务（`npm run service`，仅 loopback，`node:http` 零新增运行时依赖）+ `spec/` 契约文件；工作台侧浏览器构建器 `src/core/package-export.ts`（`POST /v1/motions` 对等，字节级钉死）+ 姿态包/GLB 导出入口；实验室 `openPosePackage` 经 `posePackageSpec` 派生回放 spec（信封/ad-hoc presentation 通道）。
 
 | 端点 | 状态 |
 |---|---|
@@ -136,7 +136,8 @@ RenderRequest 独立引用一个已完成的 motion，可包含命名相机预�
 | `GET /v1/rigs/{id}` | ✅ rig manifest：163 骨拓扑、rest local TRS（平移=父子 head 差、旋转恒等）、VRM humanoid 语义映射（52 骨映射 / 111 extra）、manifestSHA256 + sourceSHA256 |
 | `POST /v1/motions` | ✅ 同步返回 pose-json；`Idempotency-Key` 重放 / 冲突 409（上限 256 键 / 15 分钟 TTL）；请求体支持 `Content-Encoding: gzip`（上限按解压后计）；`provenance.requestFingerprint` = 排序键 canonical JSON SHA-256（RFC 8785 JCS 待替换），包 `id` = artifact 身份（请求指纹 + 定义哈希 + rig manifest 哈希 + solver 版本联合哈希，求解器/骨架升级即变） |
 | `GET /v1/motions/{id}` | ❌ 未实现——当前全部同步完成，无异步任务 |
-| `POST .../renders`、GLB/VRMA 导出、MCP adapter | ❌ 未实现——按分阶段验收顺序后置 |
+| GLB 导出 | ⚠️ 部分实现——派生导出已落地（工作台「导出 GLB」+ `npm run package-to-glb`，共享 `src/core/glb-export.ts`；包时间轴原样入 clip，逐骨四元数 + root 位移轨）；服务端 `outputs.format:'glb'` 有意未做——GLB 是派生品不是交付格式，渲染分层属后置阶段 |
+| `POST .../renders`、VRMA 导出、MCP adapter | ❌ 未实现——按分阶段验收顺序后置 |
 
 目录诚实的边界：五个内置动作（idle/reach/squat/ready/forehand——`assets/motions/*.json` 的 `workshop-motion` 信封，内嵌规范化 WorkshopDoc，与服务端同一条求解管线）+ `workshop-doc`（提交校验过的 WorkshopDoc，≤10s/120 keys，参数即模板原语——对应第二优先的声明式模板雏形）。`walk`（CMU 动捕转换，`clip-motion` 信封指向外部片段，轨迹不进姿态管线，许可边界）、动力学动作（`punch`/`baseball-throw`，离线分钟级求解、需要记录回放→姿态包转换）均不在目录中；`shotput`/`throw` 记录无动作 spec，属陈旧资产。forehand 的「上臂与躯干穿插」在目录 notes 与 quality.warnings 中显式标注。
 
