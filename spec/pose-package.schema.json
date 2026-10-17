@@ -46,7 +46,7 @@
         "fps": {"type": "number", "exclusiveMinimum": 0, "maximum": 240, "description": "Output sample grid; the solver's internal dt is recorded separately in provenance when relevant."},
         "duration": {"type": "number", "minimum": 0},
         "count": {"type": "integer", "minimum": 2},
-        "timestamps": {"type": "array", "items": {"type": "number"}, "description": "Action-relative seconds, strictly increasing. The single time truth — no fps field is authoritative for event times."}
+        "timestamps": {"type": "array", "items": {"type": "number"}, "description": "Action-relative seconds, strictly increasing, last entry exactly equal to duration — the single time truth. Uniform 1/fps grid; the final interval may be partial when duration×fps is non-integer."}
       },
       "additionalProperties": false
     },

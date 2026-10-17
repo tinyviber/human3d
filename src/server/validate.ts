@@ -13,7 +13,7 @@ export function validatePosePackage(pkg:PosePackage,manifest:RigManifest):string
  if(timestamps.length!==count)e.push(`timeline count ${count} != timestamps ${timestamps.length}`);
  for(let i=1;i<timestamps.length;i++)if(!(timestamps[i]>timestamps[i-1]))e.push(`timestamps not strictly increasing at ${i}`);
  if(!(fps>0&&fps<=240))e.push(`fps ${fps} out of range`);
- if(Math.abs(timestamps[count-1]-pkg.timeline.duration)>1/fps+1e-6)e.push('duration mismatch');
+ if(timestamps[count-1]!==pkg.timeline.duration)e.push('last timestamp is not exactly duration');
  const bones=new Map(manifest.bones.map(b=>[b.name,b]));
  if(pkg.rig.manifestSHA256!==manifest.manifestSHA256)e.push('rig manifest hash mismatch');
  const T=pkg.tracks.translation;

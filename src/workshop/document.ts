@@ -104,9 +104,8 @@ export function samplePose(keys:WorkshopKey[],time:number):PoseParams{
   // foot-target channels to their effective values before interpolating:
   //   · a run of plant=true keys holds the run's first contact point;
   //   · the first plant=false key after a run (the lift key) inherits that
-  //     contact point — its stored target is ignored, exactly like the stored
-  //     targets inside a contact run. The swing happens over the NEXT
-  //     interval, so liftoff never teleports the foot;
+  //     contact point at the key instant — liftoff never teleports the foot;
+  //     its stored target still shapes the swing (see the waypoint pass below);
   //   · further plant=false keys are ordinary swing samples.
   // Keys flagged `rest` (planted, or a transition boundary) get zero Hermite
   // tangents so position AND velocity stay continuous across plant changes:
@@ -145,6 +144,30 @@ export function samplePose(keys:WorkshopKey[],time:number):PoseParams{
    const q=q0.clone().slerp(q1,u);
    const f=basisVec(q,1,0,0),nn=basisVec(q,0,1,0);
    hand.forward=fromV(f);hand.normal=fromV(nn);
+  }
+  // A release key (plant=false right after a plant run) marks the START of a
+  // swing: at its own time the foot is still at the inherited contact, so the
+  // key's stored target is used as a mid-swing waypoint instead. The path
+  // contact → stored waypoint (interval midpoint) → next key's effective
+  // target is C¹ throughout — a lifted pose genuinely leaves the ground
+  // rather than collapsing into a smoothstep slide along it. When the stored
+  // target is itself at ground level the authored motion IS a slide (拖步).
+  for(const [flag,foot,ch]of [['plantL','footL',31],['plantR','footR',39]]as const){
+   if(i<=0||keys[i].constraints[flag]||!keys[i-1].constraints[flag])continue;
+   const mid=t0+dt/2,rest=restAt[ch];
+   for(let c=0;c<3;c++){
+    const ax=(['x','y','z']as const)[c];
+    const a=flat[i][ch+c],cc=flat[i+1][ch+c],b=keys[i].pose[foot].target[ax];
+    // Seam tangent at the waypoint is the Catmull-Rom slope over the whole
+    // interval; the interval END tangent must match the generic rule
+    // (rest ⇒ 0, otherwise the Catmull-Rom tangent at that key) or velocity
+    // would step when the next key is a mid-swing key.
+    const chord=(cc-a)/dt,half=dt/2;
+    const end=i+1>=keys.length-1||rest?.[i+1]?0:(flat[i+2][ch+c]-flat[i][ch+c])/(keys[i+2].time-t0);
+    const h=(uu:number,v0:number,v1:number,m0:number,m1:number)=>
+     (2*uu**3-3*uu*uu+1)*v0+(uu**3-2*uu*uu+uu)*half*m0+(-2*uu**3+3*uu*uu)*v1+(uu**3-uu*uu)*half*m1;
+    pose[foot].target[ax]=time<=mid?h((time-t0)/half,a,b,0,chord):h((time-mid)/half,b,cc,chord,end);
+   }
   }
   return pose;
 }

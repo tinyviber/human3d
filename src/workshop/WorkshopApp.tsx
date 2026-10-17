@@ -182,8 +182,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <label className="ws-field"><span>标签</span><input value={sel.label} placeholder="阶段名，如 触球" onChange={e=>editSelected(k=>{k.label=e.target.value;})}/></label>
       <label className="ws-field"><span>时间 s</span><input type="number" min="0" max={d.duration} step=".02" value={sel.time} onChange={e=>edit(()=>setKeyTime(d,sel,Number(e.target.value)||0))}/></label>
       <div className="ws-sub"><h3>约束 <small>随关键帧保存，约束补间</small></h3>
-       <Row label="左脚支撑锁定" checked={sel.constraints.plantL} onChange={v=>editSelected(k=>{k.constraints.plantL=v;})}/>
-       <Row label="右脚支撑锁定" checked={sel.constraints.plantR} onChange={v=>editSelected(k=>{k.constraints.plantR=v;})}/>
+       <Row label="左脚支撑锁定" detail="离地帧的脚位会作为摆动路径点" checked={sel.constraints.plantL} onChange={v=>editSelected(k=>{k.constraints.plantL=v;})}/>
+       <Row label="右脚支撑锁定" detail="离地帧的脚位会作为摆动路径点" checked={sel.constraints.plantR} onChange={v=>editSelected(k=>{k.constraints.plantR=v;})}/>
        <Row label="右手握拍" checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>
        <Row label="触球 / 接触事件" detail="记录拍头位置为接触点" checked={sel.constraints.contact} onChange={v=>editSelected(k=>{k.constraints.contact=v;})}/>
       </div>

@@ -52,11 +52,19 @@ function mergeChecks(acc:Map<string,FrameCheck>,items:FrameCheck[]){
  }
 }
 function capture(rig:HumanRig,duration:number,fps:number,apply:(t:number)=>void,meta:CaptureMeta):PosePackage{
- const count=Math.max(2,Math.round(duration*fps)+1),timestamps:number[]=[];
+ // Sample grid: uniform 1/fps steps PLUS the exact action end — when
+ // duration×fps is non-integer the last interval is partial, but the final
+ // timestamp is always exactly `duration` so the package reproduces the
+ // terminal pose.
+ const timestamps:number[]=[0];
+ while(timestamps[timestamps.length-1]<duration-1e-9)timestamps.push(Math.min(duration,timestamps.length/fps));
+ if(timestamps.length<2)timestamps.push(duration);
+ timestamps[timestamps.length-1]=duration;
+ const count=timestamps.length;
  const rootPos:number[]=[];const rot=new Map([...rig.bones.keys()].map(n=>[n,new Float64Array(count*4)]));
  const checkAcc=new Map<string,FrameCheck>();
  for(let i=0;i<count;i++){
-  const t=Math.min(duration,i/fps);timestamps.push(t);apply(t);
+  const t=timestamps[i];apply(t);
   rootPos.push(...rig.bone('root').position.toArray());
   for(const [n,b]of rig.bones)rot.get(n)!.set(b.quaternion.toArray(),i*4);
   mergeChecks(checkAcc,jointChecks(rig));

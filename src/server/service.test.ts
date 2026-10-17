@@ -1,10 +1,13 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import http from 'node:http';
+import path from 'node:path';
+import zlib from 'node:zlib';
+import {spawn} from 'node:child_process';
 import {createService,handleRequest,actionCatalog,artifactId,SERVICE_VERSION,LIMITS_SVC,type ServiceContext} from './service';
 import {validatePosePackage} from './validate';
 import {canonical,sha256} from './rig-manifest';
 import {keyframedDefinition} from '../core/authoring';
-import {blankDocument} from '../workshop/document';
+import {blankDocument,retimeKeys} from '../workshop/document';
 import type {PosePackage} from './pose-package';
 let ctx:ServiceContext;
 beforeAll(async()=>{ctx=await createService('public');},30000);
@@ -76,6 +79,20 @@ describe('POST /v1/motions — keyframed actions',()=>{
   const pkg=post({action:{id:'idle'},sample:{fps:10}}).body as PosePackage;
   expect(pkg.timeline.fps).toBe(10);
   expect(pkg.timeline.count).toBe(Math.round(4.8*10)+1);
+ });
+ it('always ends the timeline at exactly duration, even for non-integer duration×fps',()=>{
+  const a=post({action:{id:'forehand'},sample:{fps:1}}).body as PosePackage;
+  expect(a.timeline.duration).toBe(5.2);
+  expect(a.timeline.timestamps.at(-1)).toBe(5.2);
+  expect(a.timeline.timestamps.length).toBe(a.timeline.count);
+  const b=post({action:{id:'idle'},sample:{fps:7}}).body as PosePackage;
+  expect(b.timeline.timestamps.at(-1)).toBe(4.8);
+  expect(b.timeline.timestamps.length).toBe(b.timeline.count);
+  const doc=blankDocument(ctx.rig.rest,'短','short');retimeKeys(doc,.3);
+  const c=post({action:{id:'workshop-doc',parameters:{document:doc}}}).body as PosePackage;
+  expect(c.timeline.duration).toBe(.3);
+  expect(c.timeline.timestamps.at(-1)).toBe(.3);
+  for(const p of [a,b,c])expect(validatePosePackage(p,ctx.manifest)).toEqual([]);
  });
 });
 describe('POST /v1/motions — workshop-doc action',()=>{
@@ -160,6 +177,14 @@ describe('artifact identity and definition hashing',()=>{
   const mutant2=keyframedDefinition('forehand');
   (mutant2.keys[3].controls as {y:number}).y+=.01;
   expect(h(mutant2)).not.toBe(h(keyframedDefinition('forehand')));
+  // The exported definition is a deep copy: mutating it cannot corrupt the
+  // module's authored keyframe data.
+  (mutant2.keys[3].controls as {right:number[]}).right[1]=99;
+  (mutant2.keys[0].controls as {stance:number}).stance=9;
+  const fresh=keyframedDefinition('forehand');
+  expect((fresh.keys[3].controls as {right:number[]}).right[1]).not.toBe(99);
+  expect((fresh.keys[0].controls as {stance:number}).stance).not.toBe(9);
+  expect(h(fresh)).toBe(h(keyframedDefinition('forehand')));
   const pkg=post({action:{id:'forehand'}}).body as PosePackage;
   expect(pkg.action.definitionSHA256).toMatch(/^[0-9a-f]{64}$/);
   expect(pkg.action.definitionSHA256).not.toBe((post({action:{id:'squat'}}).body as PosePackage).action.definitionSHA256);
@@ -191,6 +216,26 @@ describe('artifact identity and definition hashing',()=>{
  });
 });
 describe('HTTP transport smoke',()=>{
+ it('exercises the real serve.ts transport: gzip bodies decode, bad encodings 400, decompressed cap 413',async()=>{
+  const port=8900+Math.floor(Math.random()*400);
+  const npx=process.platform==='win32'?'npx.cmd':'npx';
+  const proc=spawn(npx,['tsx','src/server/serve.ts'],{
+   env:{...process.env,HUMAN3D_PORT:String(port),HUMAN3D_ASSETS:path.resolve('public')},stdio:['ignore','pipe','pipe']});
+  let bootLog='';proc.stdout.on('data',d=>bootLog+=d);proc.stderr.on('data',d=>bootLog+=d);
+  try{
+   let up=false;
+   for(let i=0;i<300&&!up;i++){try{up=(await fetch(`http://127.0.0.1:${port}/v1/capabilities`)).ok;}catch{await new Promise(r=>setTimeout(r,200));}}
+   expect(up,bootLog).toBe(true);
+   const call=(body:Buffer,enc?:string)=>fetch(`http://127.0.0.1:${port}/v1/motions`,
+    {method:'POST',headers:{'content-type':'application/json',...(enc?{'content-encoding':enc}:{})},body});
+   const ok=await call(zlib.gzipSync(JSON.stringify({action:{id:'idle'},sample:{fps:2}})),'gzip');
+   expect(ok.status).toBe(200);
+   expect(((await ok.json()) as PosePackage).kind).toBe('pose-package');
+   expect((await call(Buffer.from('definitely not gzip'),'gzip')).status).toBe(400);
+   expect((await call(zlib.gzipSync(JSON.stringify({action:{id:'idle'},pad:'x'.repeat(1.5*1024*1024)})),'gzip')).status).toBe(413);
+   expect((await call(Buffer.from('{}'),'br')).status).toBe(400);
+  }finally{proc.kill('SIGTERM');}
+ },60000);
  it('serves capabilities and a motion over a real socket on an ephemeral port',async()=>{
   const server=http.createServer((req,res)=>{
    let raw='';req.on('data',c=>raw+=c);req.on('end',()=>{

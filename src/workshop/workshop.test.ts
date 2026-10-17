@@ -105,8 +105,13 @@ describe('workshop document',()=>{
   const eps=1e-3,v=(t:number)=>at(t+eps).sub(at(t-eps)).length()/(2*eps);
   expect(v(1)).toBeLessThan(.05);
   expect(v(2)).toBeLessThan(.05);
-  // Mid-swing the foot is genuinely in flight.
+  // Mid-swing the foot is genuinely in flight — and genuinely OFF THE
+  // GROUND: the release key's stored pose is a waypoint the path passes
+  // through at the interval midpoint, not a smoothstep slide.
   expect(v(1.5)).toBeGreaterThan(.1);
+  expect(at(1.5).y).toBeCloseTo(.12,9);
+  expect(at(1.5).y).toBeGreaterThan(Math.max(A.y,C.y)+.05);
+  for(let s=0;s<=20;s++)expect(at(1+s/40).y).toBeGreaterThanOrEqual(-1e-9);
  });
  it('retimes duration proportionally instead of collapsing keys onto one time',()=>{
   const doc=defaultDocument(rig.rest);retimeKeys(doc,.4);

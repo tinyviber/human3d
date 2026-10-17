@@ -26,9 +26,11 @@ const seq:Record<KeyframedMotionId,Key[]>={
 /** Canonical authoring data behind a keyframed motion: the control frames
  * resolved against `base`, i.e. every number that drives the trajectory.
  * Hashing this (not the action id) is what ties a pose package to the motion
- * definition it was solved from. */
+ * definition it was solved from. The returned object is a deep copy —
+ * mutating it cannot corrupt the authored `seq`/`base` module data. */
 export function keyframedDefinition(id:AuthoredKeyframedId){
- return {format:'keyframed-controls/v1',id,keys:seq[id].map(k=>({t:k.t,controls:{...base,...k.pose}}))};
+ return {format:'keyframed-controls/v1' as const,id,
+  keys:seq[id].map(k=>({t:k.t,controls:JSON.parse(JSON.stringify({...base,...k.pose})) as Controls}))};
 }
 function sample(keys:Key[],time:number):Controls{
  const frames=keys.map(k=>({...base,...k.pose}));let i=0;while(i<keys.length-2&&time>keys[i+1].t)i++;

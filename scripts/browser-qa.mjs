@@ -69,13 +69,18 @@ await page.mouse.move(handScreen.x,handScreen.y);await page.mouse.down();
 await page.mouse.move(handScreen.x+60,handScreen.y-90,{steps:8});await page.mouse.up();
 const moved=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
 assert(Math.hypot(moved.x-seedTarget.x,moved.y-seedTarget.y,moved.z-seedTarget.z)>.005,'drag edit was not persisted to storage');
+const wristBefore=await page.evaluate(()=>window.__WS__.rig.point('wrist_R').toArray());
 await page.reload();await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
 const libNames=await page.locator('.ws-lib-row .ws-lib-name span').allTextContents();
 assert(libNames.some(n=>n.includes('QA 测试动作')));
-// Reloading must restore the dragged wrist pose, not just the motion name —
-// compare the persisted hand target numerically against the pre-reload edit.
+// Reloading must restore the dragged wrist pose, not just the motion name:
+// verify the persisted document, the live in-memory doc AND the solved bone
+// position all match the pre-reload edit.
 const persisted=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
-assert.deepEqual(persisted,moved,'handR.target changed across reload — drag edit was not persisted');
+assert.deepEqual(persisted,moved,'stored handR.target changed across reload — drag edit was not persisted');
+const live=await page.evaluate(()=>{const e=window.__WS__;return {target:e.getDoc().keys[0].pose.handR.target,wrist:e.rig.point('wrist_R').toArray()};});
+assert.deepEqual(live.target,moved,'live doc handR.target differs from the persisted edit');
+assert(live.wrist.every((v,i)=>Math.abs(v-wristBefore[i])<.01),'solved wrist position changed across reload');
 result.checks.workshopDragPersist=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
