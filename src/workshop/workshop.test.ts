@@ -69,21 +69,44 @@ describe('workshop document',()=>{
    expect(Math.abs(f.dot(n))).toBeLessThan(1e-6);
   }
  });
- it('holds a continuous foot contact across planted keys and releases on plant=false',()=>{
+ it('holds a continuous foot contact across planted keys and lifts off from the contact point',()=>{
   const doc=blankDocument(rig.rest,'换脚','contact-run');
-  const A={x:.2,y:0,z:.3},B={x:.5,y:0,z:.1},C={x:-.1,y:0,z:.4};
+  const A={x:.2,y:0,z:.3},B={x:.5,y:.12,z:.1},C={x:-.1,y:0,z:.4};
   doc.keys[0].pose.footL.target={...A};doc.keys[1].pose.footL.target={...B};
   // Second planted key mid-run: contact still holds A even though the key stores B.
   const mid=samplePose(doc.keys,.5),atKey=samplePose(doc.keys,1);
   expect(toV(mid.footL.target).distanceTo(toV(A))).toBeLessThan(1e-9);
   expect(toV(atKey.footL.target).distanceTo(toV(A))).toBeLessThan(1e-9);
-  // Release key between two contacts: B applies at the lift, C starts a new contact.
+  // Release key between two contacts: the stored (already-lifted) B is
+  // ignored — the foot lifts FROM A and swings to the replant target C.
   const lifted={...doc.keys[1],constraints:{...doc.keys[1].constraints,plantL:false}};
   const replanted={id:'k3',time:2,label:'',pose:{...doc.keys[1].pose,footL:{...doc.keys[1].pose.footL,target:{...C}}},constraints:{...doc.keys[1].constraints}};
   doc.duration=2;doc.keys=[doc.keys[0],lifted,replanted];
-  expect(toV(samplePose(doc.keys,1).footL.target).distanceTo(toV(B))).toBeLessThan(1e-9);
-  expect(toV(samplePose(doc.keys,2).footL.target).distanceTo(toV(C))).toBeLessThan(1e-9);
-  expect(toV(samplePose(doc.keys,.5).footL.target).distanceTo(toV(B))).toBeGreaterThan(.01);
+  const at=(t:number)=>toV(samplePose(doc.keys,t).footL.target);
+  expect(at(1).distanceTo(toV(A))).toBeLessThan(1e-9);
+  expect(at(2).distanceTo(toV(C))).toBeLessThan(1e-9);
+  expect(at(1.5).distanceTo(toV(A))).toBeGreaterThan(.05);
+  expect(at(1.5).distanceTo(toV(C))).toBeGreaterThan(.05);
+ });
+ it('keeps foot position AND velocity continuous across support transitions',()=>{
+  const doc=blankDocument(rig.rest,'换脚','boundary-continuity');
+  const A={x:.2,y:0,z:.3},C={x:-.1,y:0,z:.4};
+  doc.duration=2;
+  doc.keys[0].pose.footL.target={...A};
+  doc.keys[1].constraints.plantL=false;doc.keys[1].pose.footL.target={x:.5,y:.12,z:.1}; // released mid-doc, stores a lifted pose
+  doc.keys.push({id:'k3',time:2,label:'',pose:{...doc.keys[1].pose,footL:{...doc.keys[1].pose.footL,target:{...C}}},constraints:{...doc.keys[1].constraints,plantL:true}});
+  doc.keys.sort((a,b)=>a.time-b.time);
+  const at=(t:number)=>toV(samplePose(doc.keys,t).footL.target);
+  // Position: approaching the lift key from the left keeps A; at and after
+  // the key the foot departs from A — never teleports to the stored pose.
+  for(const t of [.95,.999,1,1.001])expect(at(t).distanceTo(toV(A))).toBeLessThan(.01);
+  // Velocity: both transitions move through rest — finite differences shrink
+  // to ~0 at the lift (t=1) and the replant (t=2).
+  const eps=1e-3,v=(t:number)=>at(t+eps).sub(at(t-eps)).length()/(2*eps);
+  expect(v(1)).toBeLessThan(.05);
+  expect(v(2)).toBeLessThan(.05);
+  // Mid-swing the foot is genuinely in flight.
+  expect(v(1.5)).toBeGreaterThan(.1);
  });
  it('retimes duration proportionally instead of collapsing keys onto one time',()=>{
   const doc=defaultDocument(rig.rest);retimeKeys(doc,.4);

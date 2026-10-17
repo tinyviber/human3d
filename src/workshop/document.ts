@@ -100,14 +100,38 @@ const basisVec=(q:Quaternion,x:number,y:number,z:number)=>new Vector3(x,y,z).app
 export function samplePose(keys:WorkshopKey[],time:number):PoseParams{
   const flat=keys.map(k=>flattenPose(k.pose));
   for(const c of ANGLE_CHANNELS)for(let j=1;j<flat.length;j++)flat[j][c]=unwrapAngle(flat[j-1][c],flat[j][c]);
+  // Planted feet are contact intervals, not pose samples. Rewrite the
+  // foot-target channels to their effective values before interpolating:
+  //   · a run of plant=true keys holds the run's first contact point;
+  //   · the first plant=false key after a run (the lift key) inherits that
+  //     contact point — its stored target is ignored, exactly like the stored
+  //     targets inside a contact run. The swing happens over the NEXT
+  //     interval, so liftoff never teleports the foot;
+  //   · further plant=false keys are ordinary swing samples.
+  // Keys flagged `rest` (planted, or a transition boundary) get zero Hermite
+  // tangents so position AND velocity stay continuous across plant changes:
+  // the foot leaves a contact from rest and arrives at the next one at rest.
+  const restAt:Record<number,boolean[]>={};
+  for(const [flag,ch]of [['plantL',31],['plantR',39]]as const){
+    const rest=new Array<boolean>(keys.length).fill(false);
+    let contact:[number,number,number]|undefined,prevPlant=false;
+    keys.forEach((k,j)=>{
+      const planted=k.constraints[flag];
+      if(planted&&!prevPlant)contact=[flat[j][ch],flat[j][ch+1],flat[j][ch+2]];
+      if(contact&&(planted||prevPlant)){flat[j][ch]=contact[0];flat[j][ch+1]=contact[1];flat[j][ch+2]=contact[2];rest[j]=true;}
+      prevPlant=planted;
+    });
+    for(const c of [ch,ch+1,ch+2])restAt[c]=rest;
+  }
   let i=0;while(i<keys.length-2&&time>keys[i+1].time)i++;
   const t0=keys[i].time,t1=keys[i+1].time,dt=t1-t0;
   const u=dt>1e-9?Math.max(0,Math.min(1,(time-t0)/dt)):0;
   const n=flat[0].length,out=new Array<number>(n);
   for(let c=0;c<n;c++){
     const val=(j:number)=>flat[Math.max(0,Math.min(keys.length-1,j))][c];
-    const m0=i===0?0:(val(i+1)-val(i-1))/(keys[i+1].time-keys[i-1].time);
-    const m1=i+1===keys.length-1?0:(val(i+2)-val(i))/(keys[i+2].time-keys[i].time);
+    const rest=restAt[c];
+    const tan=(j:number)=>j<=0||j>=keys.length-1||rest?.[j]?0:(val(j+1)-val(j-1))/(keys[j+1].time-keys[j-1].time);
+    const m0=tan(i),m1=tan(i+1);
     out[c]=(2*u**3-3*u*u+1)*val(i)+(u**3-2*u*u+u)*dt*m0+(-2*u**3+3*u*u)*val(i+1)+(u**3-u*u)*dt*m1;
   }
   const pose=unflattenPose(out);
@@ -121,16 +145,6 @@ export function samplePose(keys:WorkshopKey[],time:number):PoseParams{
    const q=q0.clone().slerp(q1,u);
    const f=basisVec(q,1,0,0),nn=basisVec(q,0,1,0);
    hand.forward=fromV(f);hand.normal=fromV(nn);
-  }
-  // Planted feet are contact intervals, not pose samples: a run of consecutive
-  // plant=true keys holds the foot at the run's first key. Releasing requires
-  // a plant=false key (lift) before the next plant (replant); at a released
-  // boundary the key's own pose applies.
-  let ci=0;while(ci<keys.length-1&&time>=keys[ci+1].time-1e-9)ci++;
-  for(const [flag,foot]of [['plantL','footL'],['plantR','footR']]as const){
-   if(!keys[ci].constraints[flag])continue;
-   let j=ci;while(j>0&&keys[j-1].constraints[flag])j--;
-   pose[foot].target={...keys[j].pose[foot].target};
   }
   return pose;
 }

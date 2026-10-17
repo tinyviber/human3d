@@ -72,6 +72,10 @@ assert(Math.hypot(moved.x-seedTarget.x,moved.y-seedTarget.y,moved.z-seedTarget.z
 await page.reload();await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
 const libNames=await page.locator('.ws-lib-row .ws-lib-name span').allTextContents();
 assert(libNames.some(n=>n.includes('QA 测试动作')));
+// Reloading must restore the dragged wrist pose, not just the motion name —
+// compare the persisted hand target numerically against the pre-reload edit.
+const persisted=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
+assert.deepEqual(persisted,moved,'handR.target changed across reload — drag edit was not persisted');
 result.checks.workshopDragPersist=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));

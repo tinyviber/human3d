@@ -20,7 +20,7 @@ export interface PosePackage{
  tracks:{translation:{bone:'root';values:number[]};rotations:{bone:string;values:number[]}[]};
  events:{time:number;label:string;type:string}[];
  quality:{checks:PackageCheck[];warnings:string[]};
- provenance:{solver:string;solverRevision:string;source:string;license:{motion:string;rig:string};parametersResolved:Record<string,unknown>};
+ provenance:{solver:string;solverRevision:string;source:string;requestFingerprint:string;license:{motion:string;rig:string};parametersResolved:Record<string,unknown>};
 }
 interface CaptureMeta{
  motionId:string;action:PosePackage['action'];events:PosePackage['events'];
@@ -101,11 +101,19 @@ export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,meta:Omit<
  const warnings:string[]=['engineering-approximation: 运动学求解器输出，未做动力学验证'];
  const events:{time:number;label:string;type:string}[]=[];
  const keyChecks=new Map<string,PackageCheck>();
+ // Support is an interval, not a per-key flag: emit support-start only on a
+ // false→true transition (including a doc that begins planted) and
+ // support-end on true→false, so each event pair brackets one contact.
+ const support={plantL:false,plantR:false};
  for(const k of sortedKeys(doc)){
   events.push({time:k.time,label:k.label,type:'keyframe'});
   if(k.constraints.contact)events.push({time:k.time,label:`${k.label} · 触球`,type:'contact'});
-  for(const side of ['plantL','plantR'] as const)
-   if(k.constraints[side])events.push({time:k.time,label:side==='plantL'?'左脚锁定开始':'右脚锁定开始',type:'support-start'});
+  for(const side of ['plantL','plantR'] as const){
+   const foot=side==='plantL'?'左脚':'右脚',now=k.constraints[side],was=support[side];
+   support[side]=now;
+   if(now&&!was)events.push({time:k.time,label:`${foot}支撑开始`,type:'support-start'});
+   if(!now&&was)events.push({time:k.time,label:`${foot}支撑结束`,type:'support-end'});
+  }
  }
  const pkg=capture(rig,doc.duration,fps,t=>{const f=frameAt(doc,t);solvePose(rig,f.pose,f.constraints);},{...meta,
   events,quality:{checks:[],warnings}});

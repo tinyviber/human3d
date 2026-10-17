@@ -1,7 +1,9 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import http from 'node:http';
-import {createService,handleRequest,actionCatalog,SERVICE_VERSION,type ServiceContext} from './service';
+import {createService,handleRequest,actionCatalog,artifactId,SERVICE_VERSION,LIMITS_SVC,type ServiceContext} from './service';
 import {validatePosePackage} from './validate';
+import {canonical,sha256} from './rig-manifest';
+import {keyframedDefinition} from '../core/authoring';
 import {blankDocument} from '../workshop/document';
 import type {PosePackage} from './pose-package';
 let ctx:ServiceContext;
@@ -88,6 +90,22 @@ describe('POST /v1/motions — workshop-doc action',()=>{
   expect(pkg.quality.checks.some(c=>c.id.startsWith('keyframe:'))).toBe(true);
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
  });
+ it('emits support events only at interval boundaries, one pair per contact',()=>{
+  const doc=blankDocument(ctx.rig.rest,'换脚','support-events');
+  // Both feet planted at key0; left lifts at key1 (a contact ends), then a
+  // new left contact starts at key2 — exactly one start/end pair each side.
+  doc.keys[1].constraints.plantL=false;
+  doc.keys.push({...doc.keys[1],id:'replant',time:2,constraints:{...doc.keys[1].constraints,plantL:true}});
+  doc.duration=2;
+  const pkg=post({action:{id:'workshop-doc',parameters:{document:doc},sampleHz:20}}).body as PosePackage;
+  const starts=pkg.events.filter(e=>e.type==='support-start'),ends=pkg.events.filter(e=>e.type==='support-end');
+  expect(starts.length).toBe(3); // L@0, R@0, L@2 — not one per planted key
+  expect(ends.length).toBe(1);   // L@1
+  expect(starts.filter(e=>e.time===0).length).toBe(2);
+  expect(ends[0].time).toBe(1);
+  expect(starts.filter(e=>e.time===2).length).toBe(1);
+  expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
+ });
  it('rejects malformed and oversized documents',()=>{
   expect(post({action:{id:'workshop-doc',parameters:{}}}).status).toBe(400);
   expect(post({action:{id:'workshop-doc',parameters:{document:{bogus:true}}}}).status).toBe(400);
@@ -104,6 +122,16 @@ describe('request semantics',()=>{
   expect(post({action:{id:'idle'},outputs:[{kind:'motion',format:'fbx'}]}).status).toBe(400);
   expect(post('hello').status).toBe(400);
  });
+ it('returns 400 (not 500) for structurally malformed request fields',()=>{
+  expect(post({action:{id:'idle'},outputs:'pose-json'}).status).toBe(400);
+  expect(post({action:{id:'idle'},outputs:[null,'x',5]}).status).toBe(400);
+  expect(post({action:{id:'idle'},outputs:[{kind:'render',format:'pose-json'}]}).status).toBe(400);
+  expect(post({action:{id:'idle'},sample:30}).status).toBe(400);
+  expect(post({action:{id:'idle'},sample:{fps:'fast'}}).status).toBe(400);
+  expect(post({action:{id:'idle'},rig:7}).status).toBe(400);
+  expect(post({action:{id:'idle',parameters:[]}}).status).toBe(400);
+  expect(post({action:'idle'}).status).toBe(400);
+ });
  it('replays identical responses for the same Idempotency-Key and rejects reuse with a different body',()=>{
   const key='test-key-1';
   const a=post({action:{id:'reach'}},{'idempotency-key':key});
@@ -112,6 +140,54 @@ describe('request semantics',()=>{
   const c=post({action:{id:'squat'}},{'idempotency-key':key});
   expect(c.status).toBe(409);
   expect((c.body as {error:{code:string}}).error.code).toBe('idempotency_conflict');
+ });
+ it('bounds the idempotency cache by count and TTL',()=>{
+  for(let i=0;i<LIMITS_SVC.idempotencyMaxKeys+40;i++)post({action:{id:'idle'},sample:{fps:1}},{'idempotency-key':`fill-${i}`});
+  expect(ctx.idempotent.size).toBeLessThanOrEqual(LIMITS_SVC.idempotencyMaxKeys);
+  // Expired entries no longer conflict: an aged-out key accepts a new body.
+  const stale=post({action:{id:'idle'},sample:{fps:1}},{'idempotency-key':'stale-key'});
+  ctx.idempotent.get('stale-key')!.at=Date.now()-(LIMITS_SVC.idempotencyTtlSeconds+1)*1000;
+  const fresh=post({action:{id:'squat'},sample:{fps:1}},{'idempotency-key':'stale-key'});
+  expect(fresh.status).toBe(200);
+ });
+});
+describe('artifact identity and definition hashing',()=>{
+ it('ties definitionSHA256 to the real keyframe data, not just id+revision',()=>{
+  const h=(x:unknown)=>sha256(canonical(x));
+  const mutant=keyframedDefinition('forehand');
+  mutant.keys[2].t+=.01;
+  expect(h(mutant)).not.toBe(h(keyframedDefinition('forehand')));
+  const mutant2=keyframedDefinition('forehand');
+  (mutant2.keys[3].controls as {y:number}).y+=.01;
+  expect(h(mutant2)).not.toBe(h(keyframedDefinition('forehand')));
+  const pkg=post({action:{id:'forehand'}}).body as PosePackage;
+  expect(pkg.action.definitionSHA256).toMatch(/^[0-9a-f]{64}$/);
+  expect(pkg.action.definitionSHA256).not.toBe((post({action:{id:'squat'}}).body as PosePackage).action.definitionSHA256);
+ });
+ it('derives the artifact id from request + definition + rig + solver, stable per resolved content',()=>{
+  const req={action:{id:'idle'},sample:{fps:5}};
+  const a=post(req).body as PosePackage,b=post(req).body as PosePackage;
+  expect(b.id).toBe(a.id);
+  // The id is NOT the bare request fingerprint — it also covers the
+  // definition, rig manifest and solver version.
+  expect(a.id).not.toBe('mot_'+sha256(canonical(req)).slice(0,16));
+  expect(a.provenance.requestFingerprint).toBe(sha256(canonical(req)));
+  const doc=blankDocument(ctx.rig.rest,'v','doc-a');
+  const c=post({action:{id:'workshop-doc',parameters:{document:doc}}}).body as PosePackage;
+  const changed=blankDocument(ctx.rig.rest,'v','doc-a');changed.keys[0].pose.lean=7;
+  const d=post({action:{id:'workshop-doc',parameters:{document:changed}}}).body as PosePackage;
+  expect(d.id).not.toBe(c.id);
+  expect(d.action.definitionSHA256).not.toBe(c.action.definitionSHA256);
+ });
+ it('yields a new artifact id when the solver, rig or definition changes',()=>{
+  const req={action:{id:'idle'},sample:{fps:5}};
+  const served=post(req).body as PosePackage;
+  const fp=sha256(canonical(req)),def=served.action.definitionSHA256;
+  expect(artifactId(fp,def,ctx,'keyframe-hermite-ik')).toBe(served.id);
+  expect(artifactId(fp,def,ctx,'keyframe-hermite-ik-v2')).not.toBe(served.id);
+  expect(artifactId(fp,'0'.repeat(64),ctx,'keyframe-hermite-ik')).not.toBe(served.id);
+  const otherRig={...ctx,manifest:{...ctx.manifest,manifestSHA256:'f'.repeat(64)}};
+  expect(artifactId(fp,def,otherRig,'keyframe-hermite-ik')).not.toBe(served.id);
  });
 });
 describe('HTTP transport smoke',()=>{

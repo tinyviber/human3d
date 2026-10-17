@@ -134,12 +134,12 @@ RenderRequest 独立引用一个已完成的 motion，可包含命名相机预�
 | `GET /v1/capabilities` | ✅ 服务版本、动作目录（含参数 schema、来源、缺陷 notes）、rig 摘要、资源上限 |
 | `GET /v1/actions/{id}` | ✅ 单动作描述 |
 | `GET /v1/rigs/{id}` | ✅ rig manifest：163 骨拓扑、rest local TRS（平移=父子 head 差、旋转恒等）、VRM humanoid 语义映射（52 骨映射 / 111 extra）、manifestSHA256 + sourceSHA256 |
-| `POST /v1/motions` | ✅ 同步返回 pose-json；`Idempotency-Key` 重放 / 冲突 409；指纹为排序键 canonical JSON SHA-256（RFC 8785 JCS 待替换） |
+| `POST /v1/motions` | ✅ 同步返回 pose-json；`Idempotency-Key` 重放 / 冲突 409（上限 256 键 / 15 分钟 TTL）；请求体支持 `Content-Encoding: gzip`（上限按解压后计）；`provenance.requestFingerprint` = 排序键 canonical JSON SHA-256（RFC 8785 JCS 待替换），包 `id` = artifact 身份（请求指纹 + 定义哈希 + rig manifest 哈希 + solver 版本联合哈希，求解器/骨架升级即变） |
 | `GET /v1/motions/{id}` | ❌ 未实现——当前全部同步完成，无异步任务 |
 | `POST .../renders`、GLB/VRMA 导出、MCP adapter | ❌ 未实现——按分阶段验收顺序后置 |
 
 目录诚实的边界：keyframed 五动作（idle/reach/squat/ready/forehand）+ `workshop-doc`（提交校验过的 WorkshopDoc，≤10s/120 keys，参数即模板原语——对应第二优先的声明式模板雏形）。`walk`（CMU 动捕转换，许可边界）、动力学动作（`punch`/`baseball-throw`，离线分钟级求解、需要记录回放→姿态包转换）均不在目录中；`shotput`/`throw` 记录无动作 spec，属陈旧资产。forehand 的「上臂与躯干穿插」在目录 notes 与 quality.warnings 中显式标注。
 
-姿态包约定：仅输出非恒等旋转轨道 + root 平移（共享时间戳网格）、四元数半球连续化、事件（phase/keyframe/contact/support-start）、quality（膝/肘/肩限位与足底高度逐帧聚合 + workshop 逐关键帧约束检查 + warnings）。`src/server/validate.ts` 是独立校验器（不共用求解代码），重算 FK 复查段长、范数、半球连续、时间戳；`spec/examples/idle.pose.json` 是黄金 fixture（`npm run protocol:example` 重新生成）。
+姿态包约定：仅输出非恒等旋转轨道 + root 平移（共享时间戳网格）、四元数半球连续化、事件（phase/keyframe/contact + 支撑区间事件 support-start/support-end，仅在 false↔true 转换处各发一次）、quality（膝/肘/肩限位与足底高度逐帧聚合 + workshop 逐关键帧约束检查 + warnings）。`action.definitionSHA256` 哈希的是解析后的真实动作定义（keyframed 为展开 base 后的关键帧控制量，workshop-doc 为规范化文档），不是动作名。`src/server/validate.ts` 是独立校验器（不共用求解代码），重算 FK 复查段长、范数、半球连续、时间戳；`spec/examples/idle.pose.json` 是黄金 fixture（`npm run protocol:example` 重新生成）。
 
 验证发现并已并入设计的修正：OpenAPI 锁 3.1（对齐本仓既有 draft-2020-12 schema）；语义表采用 VRM humanoid 词表而非自造命名；MuscleMimic/MyoSuite 消费的是特定 MuJoCo 骨架的 qpos 轨迹——TRS 姿态包是呈现/交付格式，未来可加 solver-native `qpos/qvel` 块而非把 TRS 当求解器输入。

@@ -93,8 +93,19 @@ paths:
         `Idempotency-Key` header associates client retries with one run:
         replaying the key with an identical canonical request body returns the
         stored response; reusing the key with a different body returns `409`.
-        Request fingerprints use sorted-key canonical JSON (see service source;
-        full RFC 8785 JCS is planned).
+        Keys are bounded (see `limits.idempotencyMaxKeys` /
+        `idempotencyTtlSeconds`); expired keys accept a new body.
+
+        Two identities are reported: `provenance.requestFingerprint` hashes
+        the canonical request (what the client sent), while the package `id`
+        is the artifact identity — it additionally covers the action
+        definition hash, rig manifest hash and solver name+revision, so a
+        solver or rig upgrade produces a new id for the same request.
+        Request fingerprints use sorted-key canonical JSON (see service
+        source; full RFC 8785 JCS is planned).
+
+        Request bodies may be sent `Content-Encoding: gzip`; the size limit
+        applies to the decompressed payload.
       parameters:
         - name: Idempotency-Key
           in: header
@@ -187,7 +198,7 @@ components:
           properties:
             code:
               type: string
-              enum: [invalid_request, invalid_json, validation_failed, unknown_action, unknown_rig, unsupported_rig, unsupported_output, idempotency_conflict, not_found, internal]
+              enum: [invalid_request, invalid_json, request_too_large, validation_failed, unknown_action, unknown_rig, unsupported_rig, unsupported_output, idempotency_conflict, not_found, internal]
             message: {type: string}
             missing: {type: array, items: {type: string}, description: Capabilities the request would need that the service does not have}
             available: {type: array}

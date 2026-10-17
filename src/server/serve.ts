@@ -1,5 +1,6 @@
 import http from 'node:http';
 import path from 'node:path';
+import zlib from 'node:zlib';
 import {fileURLToPath} from 'node:url';
 import {createService,handleRequest,LIMITS_SVC} from './service';
 // Loopback-only reference service for the v1 motion protocol. No user-supplied
@@ -15,9 +16,19 @@ const server=http.createServer((req,res)=>{
   res.end(data);
  };
  const url=new URL(req.url??'/','http://localhost');
- const chunks:Buffer[]=[];let size=0;
- req.on('data',c=>{size+=c.length;if(size>LIMITS_SVC.maxBodyBytes){res.destroy();return;}chunks.push(c);});
- req.on('end',()=>{
+ // Honour the advertised contract: bodies may arrive Content-Encoding: gzip.
+ // The byte cap applies to the DECOMPRESSED payload — compressed size says
+ // nothing about how large the request actually is.
+ const enc=(req.headers['content-encoding']??'identity').toLowerCase();
+ if(enc!=='identity'&&enc!=='gzip'){send(400,{error:{code:'invalid_request',message:`unsupported Content-Encoding '${enc}'`}});req.resume();return;}
+ const stream=enc==='gzip'?req.pipe(zlib.createGunzip()):req;
+ const chunks:Buffer[]=[];let size=0,done=false;
+ const fail=(status:number,code:string,message:string)=>{if(!done){done=true;send(status,{error:{code,message}});req.socket.end();}};
+ stream.on('data',(c:Buffer)=>{size+=c.length;if(size>LIMITS_SVC.maxBodyBytes){fail(413,'request_too_large',`body exceeds ${LIMITS_SVC.maxBodyBytes} bytes`);return;}chunks.push(c);});
+ stream.on('error',()=>fail(400,'invalid_request','request body could not be decompressed'));
+ req.on('error',()=>fail(400,'invalid_request','request stream failed'));
+ stream.on('end',()=>{
+  if(done)return;done=true;
   let body:unknown;
   if(chunks.length){
    try{body=JSON.parse(Buffer.concat(chunks).toString('utf8'));}

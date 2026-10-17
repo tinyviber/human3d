@@ -23,6 +23,13 @@ const seq:Record<KeyframedMotionId,Key[]>={
  {t:3.8,pose:{...ready,y:-.03,yaw:28,chest:18,right:[.19,1.39,.24],left:[.26,1.15,.08],rf:[-.55,.66,.30],rn:[.40,.15,.80]}},
  {t:4.6,pose:{...ready,yaw:8,chest:4,right:[-.15,1.13,.35]}},{t:5.2,pose:ready}],
 };
+/** Canonical authoring data behind a keyframed motion: the control frames
+ * resolved against `base`, i.e. every number that drives the trajectory.
+ * Hashing this (not the action id) is what ties a pose package to the motion
+ * definition it was solved from. */
+export function keyframedDefinition(id:AuthoredKeyframedId){
+ return {format:'keyframed-controls/v1',id,keys:seq[id].map(k=>({t:k.t,controls:{...base,...k.pose}}))};
+}
 function sample(keys:Key[],time:number):Controls{
  const frames=keys.map(k=>({...base,...k.pose}));let i=0;while(i<keys.length-2&&time>keys[i+1].t)i++;
  const dt=keys[i+1].t-keys[i].t,u=Math.max(0,Math.min(1,(time-keys[i].t)/dt));
