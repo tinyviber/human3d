@@ -3,9 +3,9 @@ import {angleAt} from './kinematics';
 import {gripFrame} from './racket';
 import type {HumanRig} from './rig';
 import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
-// Type-only: PosePackage's module imports the rig manifest's node:crypto chain —
-// a value import would drag node builtins into the lab bundle.
-import type {PosePackage} from '../server/pose-package';
+// Type-only: the decoder never runs the capture path, so a value import would
+// just add solver/sampler weight to the lab bundle.
+import type {PosePackage} from './pose-package';
 import {frameAt,type WorkshopDoc} from '../workshop/document';
 import {solveEffectiveFrame} from '../workshop/solver';
 import type {DynamicsCase,DynamicsReplay} from './dynamics';

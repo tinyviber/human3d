@@ -9,7 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createService,handleRequest} from '../src/server/service';
 import {blankDocument,serializeDoc,type WorkshopDoc,type WorkshopKey} from '../src/workshop/document';
-import type {PosePackage} from '../src/server/pose-package';
+import type {PosePackage} from '../src/core/pose-package';
 
 const [seed0=1,count=8]=process.argv.slice(2,4).map(Number);
 const saveDir=process.argv[4];

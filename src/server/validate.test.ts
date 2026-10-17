@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createService,handleRequest,type ServiceContext} from './service';
 import {measurePackage,validatePosePackage,VALIDATION_LIMITS} from './validate';
-import type {PosePackage} from './pose-package';
+import type {PosePackage} from '../core/pose-package';
 
 let ctx:ServiceContext;
 beforeAll(async()=>{ctx=await createService('public');},30000);

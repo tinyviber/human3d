@@ -7,7 +7,7 @@ import path from 'node:path';
 import {createService,handleRequest} from '../src/server/service';
 import {measurePackage,validatePosePackage} from '../src/server/validate';
 import {defaultDocument,serializeDoc} from '../src/workshop/document';
-import type {PosePackage} from '../src/server/pose-package';
+import type {PosePackage} from '../src/core/pose-package';
 
 const fps=Number(process.argv[2]??40);
 const ctx=await createService(path.resolve('public'));

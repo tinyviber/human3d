@@ -5,7 +5,7 @@ import {HumanRig} from './rig';
 import {MOTIONS,motionById,muscleActionById} from './motions';
 import {attachRacket} from './racket';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,type DynamicsSession,type MotionSource} from './motion-source';
-import type {PosePackage} from '../server/pose-package';
+import type {PosePackage} from './pose-package';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
 import type {DebugOptions,MotionId,MotionSpec,RigInfo,ViewId} from './types';
 export interface FrameState{time:number;duration:number;phase:string;playing:boolean;knee:number;elbow:number;gripError:number;dynamics?:DynamicsReadout}

@@ -7,7 +7,7 @@ import {attachRacket} from './racket';
 import {checkPosePackageShape,ClipSource,DocumentSource,PosePackageSource} from './motion-source';
 import {normalizeMotionFile} from './motion-file';
 import {buildRigManifest,sha256,type RigManifest} from '../server/rig-manifest';
-import type {PosePackage} from '../server/pose-package';
+import type {PosePackage} from './pose-package';
 
 /* MotionSource coverage: the package shape gate on the golden artifact and on
  * broken copies, the reference decoder cross-proved against an independent
