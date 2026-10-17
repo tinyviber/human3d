@@ -4,12 +4,13 @@ import {Activity,ArrowLeft,Camera,Check,Download,Film,Pause,Play,Plus,Redo2,Rota
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
-import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
+import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,nearestKey,normalizeDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
 import {MotionLibrary} from './library';
 import {HistoryBook,RecordGate} from './history';
 import {clampDuration,WORKSHOP_LIMITS} from './limits';
 import {ankleYForLift,footLift,type Side} from './foot';
 import {rotateHandFrame} from './solver';
+import {unwrapMotionFile} from '../core/motion-file';
 import type {RigInfo,ViewId} from '../core/types';
 
 const fmt=(t:number)=>`${Math.floor(t/60)}:${(Math.floor(t%60)).toString().padStart(2,'0')}.${Math.floor(t*100%100).toString().padStart(2,'0')}`;
@@ -147,7 +148,10 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  };
  const delKey=()=>{if(d.keys.length<=2||!sel)return;edit(dd=>{dd.keys=dd.keys.filter(k=>k.id!==sel.id);});setSelected(sortedKeys(d)[0].id);};
  const exportDoc=()=>{const blob=new Blob([serializeDoc(d)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${d.id}.workshop.json`;a.click();URL.revokeObjectURL(a.href);};
- const importDoc=async(f:File)=>{try{const next=parseDoc(await f.text());const added=L.add(next);selectDoc(added.id);}catch(e){setError(e instanceof Error?e.message:String(e));}};
+ // Motion-file envelopes unwrap to their embedded WorkshopDoc first —
+ // a bare envelope's schemaVersion:1 would otherwise be misread as a v1 doc;
+ // clip-motion envelopes carry no document and unwrap throws a readable error.
+ const importDoc=async(f:File)=>{try{const next=normalizeDoc(unwrapMotionFile(JSON.parse(await f.text())));const added=L.add(next);selectDoc(added.id);}catch(e){setError(e instanceof Error?e.message:String(e));}};
  const loadVideo=(f:File)=>{if(videoUrl)URL.revokeObjectURL(videoUrl);setVideoUrl(URL.createObjectURL(f));};
  const alignVideo=()=>{if(video.current)syncOffset.current=video.current.currentTime-frame.time;};
  const stampVideo=()=>{if(video.current)editSelected(k=>{k.videoTime=video.current!.currentTime;});};

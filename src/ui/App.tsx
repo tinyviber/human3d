@@ -42,7 +42,7 @@ export function App(){
  const [id,setId]=useState<MotionId>('idle'),[info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState(''),[view,setView]=useState<ViewId>('front');
  const [frame,setFrame]=useState<FrameState>({time:0,duration:4.8,phase:'呼气',playing:true,knee:0,elbow:0,gripError:0});
  const [debug,setDebug]=useState<DebugOptions>({surface:true,skeleton:false,axes:false,targets:false,trail:false,muscles:false}),[speed,setSpeed]=useState(1),[loop,setLoop]=useState(true),[dialog,setDialog]=useState<'guide'|'sources'|'kinetics'|null>(null);
- const spec=motionById(id),racket=id==='ready'||id==='forehand',physics=!!spec.physics;
+ const spec=motionById(id),racket=id==='ready'||id==='forehand',physics=spec.source?.kind==='dynamics';
  useEffect(()=>{
   if(!mount.current)return;let e:HumanEngine;
   try{e=new HumanEngine(mount.current);engine.current=e;e.onFrame=setFrame;e.onView=setView;e.onReady=setInfo;e.onError=err=>setError(err.message);void e.load();}

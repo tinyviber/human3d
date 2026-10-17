@@ -171,10 +171,11 @@ components:
               type: object
               description: |
                 Per-action parameters, checked against that action's own schema
-                (`parameters` in GET /v1/actions/{actionId}). Keyframed actions
+                (`parameters` in GET /v1/actions/{actionId}). Bundled actions
                 accept only `{}`. `workshop-doc` requires `document`: WorkshopDoc
                 JSON (named keyframes with pose targets and plant/grip/contact
-                constraints; at most 10 s and 120 keys). Documents with
+                constraints; optional document flags such as `clavicleLift`;
+                at most 10 s and 120 keys). Documents with
                 schemaVersion 1 are upgraded on input.
         rig:
           type: string
@@ -203,13 +204,13 @@ components:
         id: {type: string}
         revision:
           type: string
-          description: "keyframed-<first 12 hex digits of definitionSHA256> for keyframed actions; workshop-doc/v2 for documents."
+          description: "workshop-doc-<first 12 hex digits of definitionSHA256> for bundled actions; workshop-doc/v2 for the client-supplied document action."
         definitionSHA256:
           type: [string, 'null']
           description: Hash of the resolved action definition; null for client-supplied documents, whose hash is computed per request.
         title: {type: string}
         english: {type: string}
-        kind: {enum: [keyframed, workshop-doc]}
+        kind: {enum: [workshop-doc]}
         durationSeconds: {type: [number, 'null']}
         parameters: {type: object, description: JSON Schema for action.parameters}
         outputs: {type: array, items: {type: object}}

@@ -2,12 +2,12 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '../core/rig';
-import {authoredMotionById,isKeyframedId} from '../core/authored-motions';
-import {keyframedDefinition} from '../core/authoring';
+import {MOTION_FILES} from '../core/motion-files';
+import {motionDefinitionPayload} from '../core/motion-file';
 import {parseDoc,type WorkshopDoc} from '../workshop/document';
 import {WORKSHOP_LIMITS} from '../workshop/limits';
 import {buildRigManifest,RIG_ID,canonical,sha256,type RigManifest} from './rig-manifest';
-import {actionDefinitionHash,solveKeyframed,solveWorkshop,type PosePackage} from './pose-package';
+import {actionDefinitionHash,solveWorkshop,type PosePackage} from './pose-package';
 import {createContract,describeErrors,type Contract} from './contract';
 import {validatePosePackage} from './validate';
 import type {ErrorCode} from './errors';
@@ -32,44 +32,44 @@ export async function createService(assetDir:string):Promise<ServiceContext>{
 }
 
 interface ActionDescriptor{
- id:string;revision:string;title:string;english:string;kind:'keyframed'|'workshop-doc';
+ id:string;revision:string;title:string;english:string;kind:'workshop-doc';
  /** Hash of the resolved action definition; null for client-supplied documents (their hash is per request). */
  definitionSHA256:string|null;
  durationSeconds:number|null;parameters:Record<string,unknown>;outputs:{kind:string;format:string}[];
  phases?:{time:number;label:string}[];provenance:{source:string;license:string;upstreamLicense?:string};
  notes?:string[];
+ /** Bundled actions carry their normalized document; ad-hoc 'workshop-doc'
+  * requests supply it via action.parameters.document. */
+ bundledDocument?:WorkshopDoc;
 }
 
-const KEYFRAMED_IDS=['idle','reach','squat','ready','forehand'] as const;
-const KEYFRAMED_PARAMS={type:'object',additionalProperties:false,properties:{}};
-/** Format revision of the workshop document contract. Bumped with the schema, not per document. */
+const BUNDLED_PARAMS={type:'object',additionalProperties:false,properties:{}};
+/** Format revision of the ad-hoc workshop document contract. Bumped with the
+ * schema, not per document; bundled actions get a content-derived revision. */
 const WORKSHOP_REVISION='workshop-doc/v2';
 const WORKSHOP_DOC_PARAMS={
  type:'object',additionalProperties:false,required:['document'],
- properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact). Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. Documents with schemaVersion 1 are upgraded on input.`}},
+ properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); optional document flags such as clavicleLift. Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. Documents with schemaVersion 1 are upgraded on input.`}},
 };
 const IDEMPOTENCY_KEY=new RegExp(`^[!-~]{1,${LIMITS_SVC.idempotencyKeyMaxLength}}$`);
-
-/** Keyframed revision is content-derived: any change to the authored keys
- * changes it. The hash covers the definition only, never the revision string. */
-function keyframedInfo(id:(typeof KEYFRAMED_IDS)[number]){
- const spec=authoredMotionById(id)!;
- const definitionSHA256=actionDefinitionHash({schema:'keyframed-definition/v2',id,duration:spec.duration,phases:spec.phases,
-  definition:keyframedDefinition(id)});
- return {definitionSHA256,revision:`keyframed-${definitionSHA256.slice(0,12)}`};
-}
 
 let CATALOG:ActionDescriptor[]|undefined;
 export function actionCatalog():ActionDescriptor[]{
  if(CATALOG)return CATALOG;
- const keyframed:ActionDescriptor[]=KEYFRAMED_IDS.map(id=>{
-  const spec=authoredMotionById(id)!,info=keyframedInfo(id);
-  return {id,revision:info.revision,title:spec.name,english:spec.english,kind:'keyframed',definitionSHA256:info.definitionSHA256,
-   durationSeconds:spec.duration,parameters:KEYFRAMED_PARAMS,outputs:[{kind:'motion',format:'pose-json'}],phases:spec.phases,
-   provenance:{source:'authored-keyframes',license:'MIT (project-authored motion data)'},
-   notes:id==='forehand'?['documented-defect: upper arm/torso interpenetration in strike zone']:[]};
+ // Bundled descriptors are built from the motion-file envelopes. The
+ // definition hash covers only the output-bearing payload (document,
+ // phases, notes, license) — display metadata and `order` can never move it.
+ // Clip envelopes are not servable: their trajectory lives outside the
+ // pose pipeline, so they never appear in the catalog.
+ const bundled:ActionDescriptor[]=MOTION_FILES.filter(f=>f.kind==='workshop-motion').map(f=>{
+  const definitionSHA256=actionDefinitionHash(motionDefinitionPayload(f));
+  return {id:f.id,kind:'workshop-doc' as const,revision:`workshop-doc-${definitionSHA256.slice(0,12)}`,
+   title:f.name,english:f.english,definitionSHA256,durationSeconds:f.duration,
+   parameters:BUNDLED_PARAMS,outputs:[{kind:'motion',format:'pose-json'}],phases:f.phases,
+   provenance:{source:'motion-file',license:f.license??'MIT (project-authored motion data)'},
+   notes:f.notes??[],bundledDocument:f.document};
  });
- CATALOG=[...keyframed,{id:'workshop-doc',revision:WORKSHOP_REVISION,title:'自定义动作文档',english:'CUSTOM WORKSHOP DOCUMENT',kind:'workshop-doc',
+ CATALOG=[...bundled,{id:'workshop-doc',revision:WORKSHOP_REVISION,title:'自定义动作文档',english:'CUSTOM WORKSHOP DOCUMENT',kind:'workshop-doc',
   definitionSHA256:null,durationSeconds:null,parameters:WORKSHOP_DOC_PARAMS,
   outputs:[{kind:'motion',format:'pose-json'}],
   provenance:{source:'client-supplied WorkshopDoc',license:'caller-owned; service asserts no rights'},
@@ -93,14 +93,17 @@ export function handleRequest(ctx:ServiceContext,method:string,route:string,body
  if(method==='GET'&&route==='/v1/capabilities')return json({
   service:{name:'human3d-motion',version:SERVICE_VERSION,protocol:'v1'},
   rigs:[{id:RIG_ID,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,height:ctx.manifest.height,semantics:ctx.manifest.semantics}],
-  actions:actionCatalog().map(({phases,...a})=>({...a,phaseCount:phases?.length??0})),
+  // bundledDocument is server-side resolution data — never on the wire.
+  actions:actionCatalog().map(({phases,bundledDocument:_bundled,...a})=>({...a,phaseCount:phases?.length??0})),
   limits:{...LIMITS_SVC,maxTracks:164,payload:'gzip accepted (Content-Encoding: gzip)'},
   endpoints:['GET /v1/capabilities','GET /v1/actions/{actionId}','GET /v1/rigs/{rigId}','POST /v1/motions'],
  });
  if(method==='GET'&&route.startsWith('/v1/actions/')){
   const id=decodeURIComponent(route.slice('/v1/actions/'.length));
   const a=actionCatalog().find(x=>x.id===id);
-  return a?json(a):err(404,'unknown_action',`no action '${id}'`,{available:actionCatalog().map(x=>x.id)});
+  if(!a)return err(404,'unknown_action',`no action '${id}'`,{available:actionCatalog().map(x=>x.id)});
+  const {bundledDocument:_bundled,...pub}=a;
+  return json(pub);
  }
  if(method==='GET'&&route.startsWith('/v1/rigs/')){
   const id=decodeURIComponent(route.slice('/v1/rigs/'.length));
@@ -163,17 +166,20 @@ function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,strin
   return err(400,'invalid_request',`action.parameters do not match '${actionId}': ${details[0]}`,{details});
  }
 
- let doc:WorkshopDoc|undefined;
- if(descriptor.kind==='workshop-doc'){
-  try{doc=parseDoc(JSON.stringify(params.document));}
+ // Every servable action resolves to a WorkshopDoc: bundled descriptors carry
+ // their envelope document; ad-hoc requests parse and normalize theirs here.
+ let requestDoc:WorkshopDoc|undefined;
+ if(!descriptor.bundledDocument){
+  try{requestDoc=parseDoc(JSON.stringify(params.document));}
   catch(e){return err(400,'validation_failed',`document rejected: ${e instanceof Error?e.message:String(e)}`);}
-  if(doc.duration>LIMITS_SVC.maxWorkshopDuration)return err(400,'validation_failed',`document duration ${doc.duration}s exceeds ${LIMITS_SVC.maxWorkshopDuration}s`);
-  if(doc.keys.length>LIMITS_SVC.maxWorkshopKeys)return err(400,'validation_failed',`document has ${doc.keys.length} keys > ${LIMITS_SVC.maxWorkshopKeys}`);
  }
- const revision=descriptor.kind==='keyframed'?descriptor.revision:WORKSHOP_REVISION;
- const definitionSHA256=descriptor.kind==='keyframed'
-  ?descriptor.definitionSHA256!
-  :actionDefinitionHash({schema:WORKSHOP_REVISION,document:doc});
+ const doc=descriptor.bundledDocument??requestDoc;
+ if(!doc)return err(400,'validation_failed','document rejected: no document supplied');
+ if(doc.duration>LIMITS_SVC.maxWorkshopDuration)return err(400,'validation_failed',`document duration ${doc.duration}s exceeds ${LIMITS_SVC.maxWorkshopDuration}s`);
+ if(doc.keys.length>LIMITS_SVC.maxWorkshopKeys)return err(400,'validation_failed',`document has ${doc.keys.length} keys > ${LIMITS_SVC.maxWorkshopKeys}`);
+ const revision=descriptor.revision;
+ const definitionSHA256=descriptor.definitionSHA256
+  ??actionDefinitionHash({schema:WORKSHOP_REVISION,document:doc});
  // Preconditions: the client may pin the revision or definition it expects.
  if(req.action.revision!==undefined&&req.action.revision!==revision)
   return err(409,'precondition_failed',`action.revision '${req.action.revision}' does not match '${revision}'`,{expected:{revision}});
@@ -182,7 +188,7 @@ function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,strin
 
  // Resolve the request identity from the normalized form, so the key and the
  // artifact id ignore spelling differences (defaults written out or not).
- const fp=sha256(canonical(normalizedRequest(actionId,doc,fps)));
+ const fp=sha256(canonical(normalizedRequest(actionId,requestDoc,fps)));
  const key=headers['idempotency-key'];
  if(key!==undefined&&!IDEMPOTENCY_KEY.test(key))
   return err(400,'invalid_request',`Idempotency-Key must be 1..${LIMITS_SVC.idempotencyKeyMaxLength} visible ASCII characters`);
@@ -193,14 +199,17 @@ function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,strin
   if(seen)forgetIdempotent(ctx,key);
  }
 
- const solver=descriptor.kind==='keyframed'?'keyframe-hermite-ik':'workshop-hermite-fk-ik';
+ const solver='workshop-hermite-fk-ik';
  const motionId=artifactId(fp,definitionSHA256,ctx,solver);
  const meta=(id:string)=>({motionId:id,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,
-  action:{id:actionId,revision,parameters:doc?{documentName:doc.name}:{},definitionSHA256},
+  action:{id:actionId,revision,parameters:requestDoc?{documentName:requestDoc.name}:{},definitionSHA256},
   provenance:{solver,solverRevision:SERVICE_VERSION,source:descriptor.provenance.source,requestFingerprint:fp,
    license:{motion:descriptor.provenance.license,rig:'CC0'},
-   parametersResolved:doc?{fps,duration:doc.duration,keys:doc.keys.length}:{fps}}});
- const pkg=doc?solveWorkshop(ctx.rig,doc,fps,meta(motionId)):solveKeyframed(ctx.rig,authoredMotionById(actionId)!,fps,meta(motionId));
+   parametersResolved:{fps,duration:doc.duration,keys:doc.keys.length}},
+  // Descriptor notes become package warnings; the kinematic-only caveat applies
+  // to every served motion (documented defects like forehand's stay first).
+  warnings:[...(descriptor.notes??[]),'engineering-approximation: 运动学求解器输出，未做动力学验证']});
+ const pkg=solveWorkshop(ctx.rig,doc,fps,meta(motionId),descriptor.phases);
 
  // Two gates before anything leaves the service: the package must satisfy the
  // published schema (a failure here is a service bug, hence 500), and the

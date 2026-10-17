@@ -1,10 +1,7 @@
 import {Quaternion} from 'three';
 import {HumanRig} from '../core/rig';
-import {poseAt} from '../core/authoring';
-import type {AuthoredKeyframedId} from '../core/authored-motions';
-import type {MotionSpec} from '../core/types';
 import {frameAt,sortedKeys,type WorkshopDoc} from '../workshop/document';
-import {analyzePose,limitItems,solveEffectiveFrame,type CheckItem} from '../workshop/solver';
+import {analyzePose,solveEffectiveFrame,type CheckItem} from '../workshop/solver';
 import {canonical,sha256} from './rig-manifest';
 export const POSE_PACKAGE_KIND='pose-package';
 export const POSE_PACKAGE_SCHEMA_VERSION=2;
@@ -95,17 +92,14 @@ function capture(rig:HumanRig,duration:number,fps:number,sample:Sampler,meta:Cap
   provenance:meta.provenance,
  };
 }
-export function solveKeyframed(rig:HumanRig,spec:MotionSpec,fps:number,meta:Omit<CaptureMeta,'events'|'quality'>):PosePackage{
- const id=spec.id as AuthoredKeyframedId;
- const warnings:string[]=[];
- if(id==='forehand')warnings.push('documented-defect: 已知上臂与躯干穿插（研究姿态，未修复）');
- // Authored motions carry no contact flags, so only the joint and sole limits apply.
- return capture(rig,spec.duration,fps,t=>{poseAt(rig,id,t);return limitItems(rig);},{...meta,
-  events:spec.phases.map(p=>({time:p.time,label:p.label,type:'phase' as const})),
-  quality:{warnings}});
-}
-export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,meta:Omit<CaptureMeta,'events'|'quality'>):PosePackage{
- const warnings:string[]=['engineering-approximation: 运动学求解器输出，未做动力学验证'];
+/** The single solve path: every servable action resolves to a WorkshopDoc and
+ * comes through here. `phases` are the envelope's editorial phase labels —
+ * emitted as 'phase' events and merge-sorted with the document's own
+ * keyframe/contact/support events (stable: doc events keep their order at
+ * equal times). `meta.warnings` lands in quality.warnings verbatim. */
+export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,
+ meta:Omit<CaptureMeta,'events'|'quality'>&{warnings?:string[]},
+ phases:{time:number;label:string}[]=[]):PosePackage{
  const events:PackageEvent[]=[];
  // Support is an interval, not a per-key flag: emit support-start only on a
  // false→true transition (including a doc that begins planted) and
@@ -121,6 +115,8 @@ export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,meta:Omit<
    if(!now&&was)events.push({time:k.time,label:`${foot}支撑结束`,type:'support-end',side});
   }
  }
+ for(const p of phases)events.push({time:p.time,label:p.label,type:'phase'});
+ events.sort((a,b)=>a.time-b.time);
  const origin=rig.rest.get('root')!;
  const sample:Sampler=t=>{
   const f=frameAt(doc,t,origin);
@@ -128,7 +124,8 @@ export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,meta:Omit<
   return analyzePose(rig,f.pose,f.constraints).items;
  };
  const keyTimes=sortedKeys(doc).map(k=>k.time);
- const pkg=capture(rig,doc.duration,fps,sample,{...meta,events,quality:{warnings}},keyTimes);
+ const {warnings=[],...rest}=meta;
+ const pkg=capture(rig,doc.duration,fps,sample,{...rest,events,quality:{warnings}},keyTimes);
  rig.reset();
  return pkg;
 }

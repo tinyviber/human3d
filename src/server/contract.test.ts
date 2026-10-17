@@ -1,7 +1,9 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import fs from 'node:fs';
 import path from 'node:path';
+import Ajv2020 from 'ajv/dist/2020.js';
 import {createContract,readSpec,type Contract} from './contract';
+import {normalizeMotionFile} from '../core/motion-file';
 import {load as loadYaml} from 'js-yaml';
 import {createService,handleRequest,LIMITS_SVC,type ServiceContext} from './service';
 import {ERROR_CODES} from './errors';
@@ -51,11 +53,26 @@ describe('golden examples',()=>{
   expect(contract.posePackage(pkg),JSON.stringify(contract.posePackage.errors)).toBe(true);
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
  });
- it('every served keyframed action matches the published package schema',()=>{
+ it('every served bundled action matches the published package schema',()=>{
   for(const id of ['idle','reach','squat','ready','forehand']){
    const r=handleRequest(ctx,'POST','/v1/motions',{action:{id}},{});
    expect(r.status).toBe(200);
    expect(contract.posePackage(r.body),id).toBe(true);
+  }
+ });
+});
+
+describe('motion file envelopes',()=>{
+ it('every assets/motions/*.json satisfies its published schema and normalizes',()=>{
+  const dir=path.resolve('assets/motions');
+  const ajv=new Ajv2020({allErrors:true,strict:true});
+  const check=ajv.compile(JSON.parse(fs.readFileSync(path.join(dir,'motion.schema.json'),'utf8')));
+  const files=fs.readdirSync(dir).filter(n=>n.endsWith('.json')&&n!=='motion.schema.json').sort();
+  expect(files).toEqual(['forehand.json','idle.json','reach.json','ready.json','squat.json','walk.json']);
+  for(const name of files){
+   const raw=JSON.parse(fs.readFileSync(path.join(dir,name),'utf8'));
+   expect(check(raw),`${name}: ${JSON.stringify(check.errors)}`).toBe(true);
+   expect(()=>normalizeMotionFile(raw),name).not.toThrow();
   }
  });
 });

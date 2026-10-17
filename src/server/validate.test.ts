@@ -15,13 +15,13 @@ function solve(body:unknown):PosePackage{
 }
 
 describe('semantic validator — shipped motions',()=>{
- it('accepts every shipped keyframed motion at the default rate',()=>{
+ it('accepts every bundled motion at the default rate',()=>{
   for(const id of ['idle','reach','squat','ready','forehand']){
    const pkg=solve({action:{id}});
    expect(validatePosePackage(pkg,ctx.manifest),id).toEqual([]);
   }
  });
- it('measures the shipped forehand well inside every speed limit',()=>{
+ it('measures the bundled forehand well inside every speed limit',()=>{
   const m=measurePackage(solve({action:{id:'forehand'}}),ctx.manifest);
   expect(m.angularSpeed.value).toBeLessThan(VALIDATION_LIMITS.angularSpeedRadPerS);
   expect(m.rootSpeed.value).toBeLessThan(VALIDATION_LIMITS.rootSpeedMPerS);

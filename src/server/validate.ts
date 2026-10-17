@@ -7,7 +7,7 @@ import type {RigManifest} from './rig-manifest';
  * were calibrated against are recorded in docs/validation.md. */
 export const VALIDATION_LIMITS={
  /** Worst local rotation rate of any bone between consecutive samples (rad/s).
-  * Shipped peak 7.5 (forehand); default workshop flick 29; the pre-fix forehand
+  * Shipped peak 6.8 (forehand); default workshop flick 29; the pre-fix forehand
   * popped at 60–72. */
  angularSpeedRadPerS:40,
  /** Worst root translation rate between consecutive samples (m/s). Shipped peak 0.4. */

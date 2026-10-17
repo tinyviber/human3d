@@ -1,14 +1,31 @@
-import {AmbientLight,AnimationAction,AnimationClip,AnimationMixer,AxesHelper,Bone,Box3,BufferGeometry,Color,DirectionalLight,Float32BufferAttribute,GridHelper,Group,HemisphereLight,Line,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,PerspectiveCamera,PlaneGeometry,Quaternion,Scene,SkinnedMesh,SphereGeometry,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,LoopOnce,LoopRepeat} from 'three';
+import {AmbientLight,AnimationAction,AnimationClip,AnimationMixer,AxesHelper,Bone,Box3,BufferGeometry,Color,DirectionalLight,Float32BufferAttribute,GridHelper,Group,HemisphereLight,Line,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,PerspectiveCamera,PlaneGeometry,Quaternion,QuaternionKeyframeTrack,Scene,SkinnedMesh,SphereGeometry,Vector3,VectorKeyframeTrack,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,LoopOnce,LoopRepeat} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig} from './rig';
-import {buildAuthoredClips} from './authoring';
+import {MOTION_FILES} from './motion-files';
+import {frameAt,type WorkshopDoc} from '../workshop/document';
+import {solveEffectiveFrame} from '../workshop/solver';
 import {attachRacket,gripFrame} from './racket';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
 import {isDynamicsMotion,motionById,muscleActionById} from './motions';
 import {angleAt} from './kinematics';
 import type {DebugOptions,MotionId,RigInfo,ViewId} from './types';
 export interface FrameState{time:number;duration:number;phase:string;playing:boolean;knee:number;elbow:number;gripError:number;dynamics?:DynamicsReadout}
+/** Bake a workshop-motion document into a mixer clip at 40 fps — the same
+ * sample density the pose-package builder uses, so the lab viewer and the
+ * service share one trajectory source (envelope → frameAt → solveEffectiveFrame). */
+function bakeDocumentClip(rig:HumanRig,id:string,doc:WorkshopDoc,fps=40){
+ const times:number[]=[],positions:number[]=[],rot=new Map([...rig.bones.keys()].map(n=>[n,[] as number[]]));
+ const frames=Math.ceil(doc.duration*fps),origin=rig.rest.get('root')!;
+ for(let i=0;i<=frames;i++){
+  const t=i/frames*doc.duration;solveEffectiveFrame(rig,frameAt(doc,t,origin));
+  times.push(t);positions.push(...rig.bone('root').position.toArray());
+  for(const [n,b]of rig.bones)rot.get(n)!.push(...b.quaternion.toArray());
+ }
+ const tracks=[...rot].map(([n,v])=>new QuaternionKeyframeTrack(n+'.quaternion',times,v));
+ rig.reset();
+ return new AnimationClip(id,doc.duration,[...tracks,new VectorKeyframeTrack('root.position',times,positions)]);
+}
 export class HumanEngine{
  scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
  model?:Group;rig?:HumanRig;mixer?:AnimationMixer;clips=new Map<MotionId,AnimationClip>();actions=new Map<MotionId,AnimationAction>();
@@ -50,7 +67,9 @@ export class HumanEngine{
     const eye=this.rig.bone(`eye_${side}`);const sclera=new Mesh(new SphereGeometry(.0105,20,12),new MeshStandardMaterial({color:0xbdcbd2,roughness:.5}));eye.add(sclera);
    }
    this.racket=attachRacket(this.rig);this.racket.visible=false;
-   this.clips=buildAuthoredClips(this.rig);this.clips.set('walk',AnimationClip.parse(walk));this.stride.fromArray(walkMeta.stride);
+   this.clips=new Map();
+   for(const f of MOTION_FILES)if(f.kind==='workshop-motion')this.clips.set(f.id,bakeDocumentClip(this.rig,f.id,f.document!));
+   this.clips.set('walk',AnimationClip.parse(walk));this.stride.fromArray(walkMeta.stride);
    this.mixer=new AnimationMixer(this.model);
    for(const [id,clip]of this.clips)this.actions.set(id,this.mixer.clipAction(clip));
    this.makeDebug();this.ready=true;this.setMotion('idle',false);this.setView('front');this.onReady?.(info);

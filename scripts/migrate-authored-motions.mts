@@ -11,7 +11,7 @@ import {HumanRig} from '../src/core/rig';
 import {applyGrip} from '../src/core/racket';
 import {DEG,pelvisDorsiCorrection} from '../src/core/kinematics';
 import {footRotation} from '../src/workshop/foot';
-import {authoredMotionById} from '../src/core/authored-motions';
+import {motionFileById} from '../src/core/motion-files';
 import {controlsToPoseParams,frameAt,validateDocShape,type KeyConstraints,type WorkshopDoc,type WorkshopKey} from '../src/workshop/document';
 import {solveEffectiveFrame,solvePose} from '../src/workshop/solver';
 import {normalizeMotionFile,type MotionCapabilities,type MotionFile} from '../src/core/motion-file';
@@ -162,7 +162,7 @@ const keyTimesFor=(id:string)=>{
 const footFor=(id:string)=>id==='ready'||id==='forehand'?{zBase:.018,zStep:.045}:{zBase:.018,zStep:0};
 
 const buildDoc=(id:string):WorkshopDoc=>{
- const spec=authoredMotionById(id)!,grip=id==='ready'||id==='forehand';
+ const spec=motionFileById(id)!,grip=id==='ready'||id==='forehand';
  const keys:WorkshopKey[]=keyTimesFor(id).map((t,i)=>{
   const c=sample(seq[id],t);c.y=Math.min(base.y,c.y); // the same clamp poseAt applies to its controls
   const pose=controlsToPoseParams(rest,c,footFor(id));
@@ -213,7 +213,7 @@ const report:string[]=['# Authored → workshop-motion migration report',''];
 const goldens=new Map<string,Golden>();
 
 for(const id of IDS){
- const spec=authoredMotionById(id)!;
+ const spec=motionFileById(id)!;
  const g=captureGolden(id,spec.duration);goldens.set(id,g);
  write(path.join(goldenDir,`${id}.golden.json`),{schema:'migration-golden/v1',id,times:g.times,root:g.root,bones,quats:g.quats});
  const doc=buildDoc(id);
@@ -224,7 +224,7 @@ for(const id of IDS){
  write(path.join(motionsDir,`${id}.json`),env);
 }
 {
- const w=authoredMotionById('walk')!;
+ const w=motionFileById('walk')!;
  write(path.join(motionsDir,'walk.json'),{schemaVersion:1,kind:'clip-motion',id:'walk',order:ORDER.indexOf('walk'),
   name:w.name,english:w.english,duration:w.duration,description:w.description,method:w.method,focus:w.focus,phases:w.phases,
   clip:{url:'/models/walk.json',meta:'/models/walk-meta.json'},capabilities:{locomotion:'follow'}} satisfies MotionFile);
@@ -238,7 +238,7 @@ for(const id of IDS){
 const stats=(a:number[])=>{const s=[...a].sort((x,y)=>x-y),mean=a.reduce((x,y)=>x+y,0)/a.length;
  return {max:s[s.length-1],p95:s[Math.floor(.95*(s.length-1))],mean};};
 for(const id of IDS){
- const spec=authoredMotionById(id)!,g=goldens.get(id)!,{times}=g;
+ const spec=motionFileById(id)!,g=goldens.get(id)!,{times}=g;
  const env=normalizeMotionFile(JSON.parse(fs.readFileSync(path.join(motionsDir,`${id}.json`),'utf8')));
  const doc=env.document!,origin=rest.get('root')!;
  const qd:number[]=[],pd:number[]=[];
