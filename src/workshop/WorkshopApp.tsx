@@ -86,7 +86,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // crypto.subtle exists only on secure origins (https / localhost); without it
  // the digest would have to be fabricated, so the export degrades instead.
  const subtleOk=typeof globalThis.crypto?.subtle?.digest==='function';
- const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true});
+ // Session-only display toggles (never persisted) — same convention as the
+ // engine's WorkshopOptions defaults.
+ const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys' as 'keys'|'step',onionStep:.1});
  const [videoUrl,setVideoUrl]=useState('');const [sync,setSync]=useState(false);const syncOffset=useRef(0);const [videoPlaying,setVideoPlaying]=useState(false);
  useEffect(()=>{
   if(!mount.current)return;let e:WorkshopEngine;
@@ -368,6 +370,12 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <Row label="编辑手柄" checked={opts.handles} onChange={v=>{setOpts(o=>({...o,handles:v}));engine.current?.setOptions({handles:v});}}/>
      <Row label="运动轨迹线" checked={opts.trajectories} onChange={v=>{setOpts(o=>({...o,trajectories:v}));engine.current?.setOptions({trajectories:v});}}/>
      <Row label="重心 / 支撑" checked={opts.balance} onChange={v=>{setOpts(o=>({...o,balance:v}));engine.current?.setOptions({balance:v});}}/>
+     <Row label="洋葱皮" detail="叠加前后姿态的幽灵骨架线框" checked={opts.onion} onChange={v=>{setOpts(o=>({...o,onion:v}));engine.current?.setOptions({onion:v});}}/>
+     {opts.onion?<>
+      <label className="ws-field"><span>数量</span><input type="number" min={1} max={3} step={1} value={opts.onionCount} onChange={e=>{const v=Math.max(1,Math.min(3,Math.round(Number(e.target.value)||1)));setOpts(o=>({...o,onionCount:v}));engine.current?.setOptions({onionCount:v});}}/></label>
+      <label className="ws-field"><span>模式</span><select value={opts.onionMode} onChange={e=>{const v=e.target.value as 'keys'|'step';setOpts(o=>({...o,onionMode:v}));engine.current?.setOptions({onionMode:v});}}><option value="keys">相邻关键帧</option><option value="step">固定步长</option></select></label>
+      {opts.onionMode==='step'?<label className="ws-field"><span>步长 s</span><input type="number" min={.02} max={1} step={.02} value={opts.onionStep} onChange={e=>{const v=Math.max(.02,Math.min(1,Number(e.target.value)||.1));setOpts(o=>({...o,onionStep:v}));engine.current?.setOptions({onionStep:v});}}/></label>:null}
+     </>:null}
     </section>
    </aside>
   </main>

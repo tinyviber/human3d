@@ -276,6 +276,47 @@ assert(wpAfter.target.y>wpBefore.target.y+.02,`waypoint drag did not raise store
 assert(Math.abs(wpAfter.handleY-wpAfter.target.y)<1e-3,'swing handle did not track the stored target');
 assert(wpAfter.footY>wpBefore.footY,'solved mid-swing foot did not move with the waypoint');
 result.checks.workshopWaypointDrag=true;
+// --- Onion skin: ghost skeleton LineSegments of neighbouring poses. Toggle
+// the real checkbox → ghosts appear; the count control changes how many are
+// visible; a real pointer drag freezes their buffers until release.
+await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);});
+await page.locator('.ws-check').filter({hasText:'洋葱皮'}).locator('input').check();
+await page.waitForTimeout(200);
+const readOnion=()=>page.evaluate(()=>{const out=[];window.__WS__.scene.traverse(o=>{if(o.userData?.onion)out.push({visible:o.visible,dir:o.userData.onion.dir,dist:o.userData.onion.dist,pos:Array.from(o.geometry.getAttribute('position').array)});});return out;});
+let onionPool=await readOnion();
+assert.equal(onionPool.length,6,'onion pool should hold 3 past + 3 future line skeletons');
+assert(onionPool.every(g=>g.pos.every(Number.isFinite)),'ghost bone positions must be finite');
+// Default keys mode, playhead parked on the mid key of the 3-key QA doc
+// [0, .5, 1]: exactly one key brackets each side → one past + one future ghost.
+const keyed=onionPool.filter(g=>g.visible);
+assert.equal(keyed.length,2,'keys mode should ghost only the ±N keys bracketing the playhead');
+assert.deepEqual(keyed.map(g=>g.dir).sort(),[-1,1],'keys mode should draw a past and a future ghost');
+// Step mode at t=.5, Δt=.1: .3/.4/.6/.7 → 4 ghosts; count 3 → 6 ghosts.
+await page.locator('.ws-field').filter({hasText:'模式'}).locator('select').selectOption('step');
+await page.waitForTimeout(200);
+assert.equal((await readOnion()).filter(g=>g.visible).length,4,'step mode with count 2 should draw t±{Δt,2Δt}');
+await page.locator('.ws-field').filter({hasText:'数量'}).locator('input').fill('3');
+await page.waitForTimeout(200);
+const stepped=(await readOnion()).filter(g=>g.visible);
+assert.equal(stepped.length,6,'step mode with count 3 should draw six ghosts');
+const frozen=stepped.map(g=>g.pos);
+// A real pointer drag on the wrist handle: while the drag is active the ghost
+// buffers must not re-solve (the same !this.drag guard as rebuildAux); on
+// release the pending docDirty rebuild refreshes them.
+const dragSpot=await page.evaluate(()=>{const e=window.__WS__;const p=e.rig.point('wrist_R').project(e.camera);const r=e.renderer.domElement.getBoundingClientRect();return {x:r.left+(p.x+1)/2*r.width,y:r.top+(1-p.y)/2*r.height};});
+await page.mouse.move(dragSpot.x,dragSpot.y);await page.mouse.down();
+await page.mouse.move(dragSpot.x+50,dragSpot.y-40,{steps:6});
+const during=(await readOnion()).filter(g=>g.visible);
+assert.deepEqual(during.map(g=>g.pos),frozen,'onion ghosts re-solved while a drag was active');
+await page.mouse.up();
+await page.waitForTimeout(250);
+const released=(await readOnion()).filter(g=>g.visible);
+assert.equal(released.length,6,'onion ghosts should stay populated after the drag');
+assert(released.some((g,i)=>frozen[i].some((v,j)=>v!==g.pos[j])),'onion ghosts did not re-solve after the drag ended');
+await page.locator('.ws-check').filter({hasText:'洋葱皮'}).locator('input').uncheck();
+await page.waitForTimeout(200);
+assert((await readOnion()).every(g=>!g.visible),'onion ghosts stayed visible after the toggle was switched off');
+result.checks.workshopOnion=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 

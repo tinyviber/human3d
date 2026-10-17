@@ -1,7 +1,7 @@
-import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Group,HemisphereLight,Line,LineBasicMaterial,LineDashedMaterial,LineLoop,Mesh,MeshBasicMaterial,MeshStandardMaterial,PerspectiveCamera,Plane,PlaneGeometry,Raycaster,RingGeometry,Scene,SkinnedMesh,SphereGeometry,Vector2,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,GridHelper} from 'three';
+import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Float32BufferAttribute,Group,HemisphereLight,Line,LineBasicMaterial,LineDashedMaterial,LineLoop,LineSegments,Mesh,MeshBasicMaterial,MeshStandardMaterial,PerspectiveCamera,Plane,PlaneGeometry,Raycaster,RingGeometry,Scene,SkinnedMesh,SphereGeometry,Vector2,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,GridHelper} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {HumanRig} from '../core/rig';
+import {HumanRig,skeletonSegments} from '../core/rig';
 import {attachRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
 import type {EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from './document';
@@ -10,7 +10,32 @@ import {analyzePose,solveEffectiveFrame,type Analysis} from './solver';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from './foot';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
-export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean}
+export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean;onion:boolean;onionCount:number;onionMode:'keys'|'step';onionStep:number}
+/** Ghost cap per direction: ≤3 keeps even a maxKeys document cheap — keys mode
+ * brackets only the ±N keys around the playhead, never the whole timeline. */
+export const ONION_MAX=3;
+/** Ghost instants for one playhead position. `keys` brackets the playhead with
+ * the nearest real key times on each side (strict — the key under the playhead
+ * is the live pose, not a ghost); `step` takes t±k·Δt, dropping instants that
+ * fall outside [0,duration]. Returned dist is 1 = nearest. */
+export function onionTimes(doc:WorkshopDoc,time:number,o:Pick<WorkshopOptions,'onionCount'|'onionMode'|'onionStep'>){
+  const out:{time:number;dir:-1|1;dist:number}[]=[];
+  const n=Math.max(1,Math.min(ONION_MAX,Math.round(o.onionCount)||1));
+  if(o.onionMode==='step'){
+    const dt=Math.max(.01,o.onionStep);
+    for(let d=1;d<=n;d++){
+      if(time-d*dt>=-1e-9)out.push({time:Math.max(0,time-d*dt),dir:-1,dist:d});
+      if(time+d*dt<=doc.duration+1e-9)out.push({time:Math.min(doc.duration,time+d*dt),dir:1,dist:d});
+    }
+    return out;
+  }
+  const keys=sortedKeys(doc);
+  const before=keys.filter(k=>k.time<time-1e-9).slice(-n);
+  const after=keys.filter(k=>k.time>time+1e-9).slice(0,n);
+  before.forEach((k,i)=>out.push({time:k.time,dir:-1,dist:before.length-i}));
+  after.forEach((k,i)=>out.push({time:k.time,dir:1,dist:i+1}));
+  return out;
+}
 type DragKind='root'|'hand'|'foot'|'swing'|'poleArm'|'poleLeg'|'tip'|'contact';
 /** `passive` handles render but never start a drag — used for the actual foot
  * during a release interval, where the editable control is the swing point. */
@@ -22,11 +47,15 @@ export class WorkshopEngine{
   scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
   model?:Group;rig?:HumanRig;racket?:Group;ready=false;disposed=false;
   playing=true;speed=1;time=0;view:ViewId='threeQuarter';
-  options:WorkshopOptions={handles:true,trajectories:true,balance:true};
+  options:WorkshopOptions={handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys',onionStep:.1};
   private clock=new Clock();private raf=0;private lastNotify=0;private resizeObserver:ResizeObserver;
   private keyLight?:DirectionalLight;
   private handleGroup=new Group();private handles:Handle[]=[];private contactMarkers:Mesh[]=[];
   private trajectories=new Map<string,Line>();private comMarker?:Mesh;private comLine?:Line;private supportLoop?:LineLoop;
+  /** Onion-skin ghosts: 2×ONION_MAX line skeletons, slots [0..2]=past,
+   * [3..5]=future by distance. userData.onion={dir,dist} for QA inspection. */
+  private onionLines:LineSegments[]=[];private onionSegs:{name:string;parent:string}[]=[];
+  private onionSig='';private onionStale=true;
   private raycaster=new Raycaster();private pointer=new Vector2();
   private drag?:{h:Handle;plane:Plane;offset:Vector3;key:WorkshopKey};private docDirty=true;
   private latestFrame?:EffectiveFrame;
@@ -64,7 +93,7 @@ export class WorkshopEngine{
       this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
       this.racket=attachRacket(this.rig);this.racket.visible=false;
       this.footGeo={L:footGeometry(this.rig.rest,'L'),R:footGeometry(this.rig.rest,'R')};
-      this.makeHandles();this.makeMarkers();
+      this.makeHandles();this.makeMarkers();this.makeOnion();
       this.ready=true;this.solveCurrent();this.setView('threeQuarter');this.onReady?.(info);
     }catch(err){this.onError?.(err instanceof Error?err:new Error(String(err)));}
   }
@@ -89,6 +118,21 @@ export class WorkshopEngine{
     this.scene.add(this.comMarker,this.comLine,this.supportLoop);
     for(const [id,color]of [['tip',0xd23c3c],['wrist_R',0xec8c39],['wrist_L',0xec8c39]]as const){
       const line=new Line(new BufferGeometry(),new LineBasicMaterial({color,transparent:true,opacity:.55}));line.frustumCulled=false;this.scene.add(line);this.trajectories.set(id,line);
+    }
+  }
+  /** Ghost skeletons are plain LineSegments (never a cloned SkinnedMesh): one
+   * per direction×distance slot, sharing the lab debug skeleton's segment
+   * table so the bone list can't drift. Past = cool, future = warm, opacity
+   * decays with distance; depthTest off, renderOrder below the handles (8 vs
+   * 20), and they stay out of the pick set by living on the scene root. */
+  private makeOnion(){
+    if(!this.rig)return;
+    this.onionSegs=skeletonSegments(this.rig.info);
+    for(const dir of [-1,1]as const)for(let dist=1;dist<=ONION_MAX;dist++){
+      const geo=new BufferGeometry();geo.setAttribute('position',new Float32BufferAttribute(new Float32Array(this.onionSegs.length*6),3));
+      const line=new LineSegments(geo,new LineBasicMaterial({color:dir<0?0x367cff:0xe2543a,depthTest:false,transparent:true,opacity:.4*(1-(dist-1)*.25)}));
+      line.renderOrder=8;line.frustumCulled=false;line.visible=false;line.userData.onion={dir,dist};
+      this.scene.add(line);this.onionLines.push(line);
     }
   }
   /** Foot geometry from the loaded rig (sole offsets for lift and clearance). */
@@ -245,6 +289,29 @@ export class WorkshopEngine{
     if(this.racket)this.racket.visible=save.gripAmount>0;
     this.updateHandles(save);
     this.docDirty=false;
+    // The document behind the ghost poses may have changed even when the
+    // ghost instants did not — flag the next updateOnion to re-solve.
+    this.onionStale=true;
+  }
+  /** Re-solve ghost poses only when their instant signature changes, or when
+   * rebuildAux flagged a document edit. Every ghost goes through the same
+   * frameAt+solveEffectiveFrame path as the trajectory sampler, records each
+   * bone's world position, then restores the playhead pose on the live rig. */
+  private updateOnion(){
+    if(!this.options.onion||!this.rig){for(const l of this.onionLines)l.visible=false;this.onionSig='';this.onionStale=false;return;}
+    const doc=this.getDoc(),times=onionTimes(doc,this.time,this.options);
+    const sig=[this.options.onionMode,this.options.onionCount,this.options.onionStep,times.map(t=>`${t.dir}${t.dist}@${t.time.toFixed(6)}`).join(',')].join('|');
+    if(sig===this.onionSig&&!this.onionStale)return;
+    for(const l of this.onionLines)l.visible=false;
+    for(const t of times){
+      const line=this.onionLines[t.dir<0?t.dist-1:ONION_MAX+t.dist-1];if(!line)continue;
+      this.solveFrame(this.frameAtTime(doc,t.time));
+      const a=line.geometry.getAttribute('position');
+      this.onionSegs.forEach((b,i)=>{const p=this.rig!.point(b.name),q=this.rig!.point(b.parent);a.setXYZ(i*2,p.x,p.y,p.z);a.setXYZ(i*2+1,q.x,q.y,q.z);});
+      a.needsUpdate=true;line.visible=true;
+    }
+    this.solveFrame(this.frameAtTime(doc,this.time));
+    this.onionSig=sig;this.onionStale=false;
   }
   private updateBalance(a:Analysis){
     if(!this.comMarker||!this.comLine||!this.supportLoop)return;
@@ -283,6 +350,9 @@ export class WorkshopEngine{
         else if(this.time>=doc.duration){this.time=doc.duration;this.playing=false;this.notify(true);}
       }
       if(this.docDirty&&!this.drag)this.rebuildAux();
+      // Ghosts freeze mid-drag like every other aux layer; step mode still
+      // follows the playhead each frame through this same signature-gated call.
+      if(!this.drag)this.updateOnion();
       this.solveCurrent();
       const a=this.rig?analyzePose(this.rig,this.latestFrame!.pose,this.latestFrame!.constraints,this.racket):undefined;
       if(a)this.updateBalance(a);

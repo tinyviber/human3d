@@ -1,7 +1,7 @@
 import {AmbientLight,AnimationClip,AnimationMixer,AxesHelper,BufferGeometry,Color,DirectionalLight,Float32BufferAttribute,GridHelper,Group,HemisphereLight,Line,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,PerspectiveCamera,PlaneGeometry,Quaternion,Scene,SkinnedMesh,SphereGeometry,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {HumanRig} from './rig';
+import {HumanRig,skeletonSegments} from './rig';
 import {MOTIONS,motionById,muscleActionById} from './motions';
 import {attachRacket} from './racket';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,type DynamicsSession,type MotionSource} from './motion-source';
@@ -238,8 +238,8 @@ export class HumanEngine{
  }
  private makeDebug(){
   if(!this.rig)return;
-  const major=this.rig.info.bones.filter(b=>/^(root|pelvis_|spine|neck|head$|clavicle_|shoulder|upperarm|lowerarm|wrist_|metacarpal|finger|upperleg|lowerleg|foot_|toe)/.test(b.name));
-  const segments=major.filter(b=>b.parent);const geo=new BufferGeometry();geo.setAttribute('position',new Float32BufferAttribute(new Float32Array(segments.length*6),3));
+  const segments=skeletonSegments(this.rig.info);
+  const geo=new BufferGeometry();geo.setAttribute('position',new Float32BufferAttribute(new Float32Array(segments.length*6),3));
   const lines=new LineSegments(geo,new LineBasicMaterial({color:0x367cff,depthTest:false,transparent:true,opacity:.85}));lines.renderOrder=10;lines.frustumCulled=false;lines.userData.segments=segments;this.skeletonLines=lines;this.scene.add(lines);lines.visible=false;
   const jointGeo=new SphereGeometry(.009,10,8);const jointMat=new MeshStandardMaterial({color:0x225bdb,depthTest:false});
   const names=['root','spine03','spine01','neck01','head',...['L','R'].flatMap(s=>['upperarm01_','lowerarm01_','wrist_','upperleg01_','lowerleg01_','foot_'].map(n=>n+s))];

@@ -13,6 +13,15 @@ export interface HandJointPose {thumb:ThumbJointPose;fingers:Record<2|3|4|5,Fing
 export function mapMyoSimThumbToSkin(pose:ThumbJointPose):ThumbJointPose{
   return {cmcFlexion:-pose.cmcFlexion,cmcOpposition:pose.cmcOpposition,mcp:-pose.mcp,ip:-pose.ip*3.25};
 }
+/** Major-bone parent→child segment table for line-skeleton overlays. The lab's
+ * debug skeleton and the workshop's onion-skin ghosts draw from this one list,
+ * so the bone filter can never drift between the two renderers. */
+export function skeletonSegments(info:RigInfo){
+  const major=info.bones.filter(b=>/^(root|pelvis_|spine|neck|head$|clavicle_|shoulder|upperarm|lowerarm|wrist_|metacarpal|finger|upperleg|lowerleg|foot_|toe)/.test(b.name));
+  const out:{name:string;parent:string}[]=[];
+  for(const b of major)if(b.parent)out.push({name:b.name,parent:b.parent});
+  return out;
+}
 export class HumanRig {
   bones=new Map<string,Bone>();rest=new Map<string,Vector3>();restLocal=new Map<string,Vector3>();
   constructor(public model:Object3D,public info:RigInfo){

@@ -10,6 +10,7 @@ import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from './limits';
 import {analyzePose,rotateHandFrame,solveEffectiveFrame,supportPolygon} from './solver';
+import {onionTimes} from './engine';
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
 // frameAt's origin must be the rest root — the same value the engine and the
@@ -597,5 +598,33 @@ describe('document.interpolate hand frame cubic (WP-C squad)',()=>{
   expect(q1.angleTo(q0)).toBeCloseTo(2.704,2);    // the 155° key lands exactly
   expect(maxA).toBeLessThan(3.1);                  // stays on the 155° arc, never near ~205°
   expect(maxW).toBeLessThan(12);                   // no residual branch jump
+ });
+});
+
+describe('onion skin ghost instants',()=>{
+ // defaultDocument keys sit at 0 / .22 / .5 / .66 / .8 s. (built lazily —
+ // rig is only populated by beforeAll).
+ const doc=()=>defaultDocument(rig.rest);
+ const o={onionCount:2,onionMode:'keys' as const,onionStep:.1};
+ it('brackets the playhead with the ±N nearest real keys in keys mode',()=>{
+  // Parked ON the contact key: that key is the live pose — ghosts are the two
+  // keys before and after it, nearest first (dist 1).
+  expect(onionTimes(doc(),.5,o).map(g=>[g.dir,g.dist,g.time])).toEqual([[-1,2,0],[-1,1,.22],[1,1,.66],[1,2,.8]]);
+  expect(onionTimes(doc(),.6,{...o,onionCount:1}).map(g=>[g.dir,g.dist,g.time])).toEqual([[-1,1,.5],[1,1,.66]]);
+ });
+ it('caps ghosts at ONION_MAX per side — a dense document is never fully ghosted',()=>{
+  const dense=doc();for(let i=1;i<=9;i++)dense.keys.push({...dense.keys[0],id:`kx${i}`,time:i/10*dense.duration});
+  const t=onionTimes(dense,.5,{...o,onionCount:99});
+  expect(t.length).toBe(6); // 8 keys bracket each side; only the nearest 3 ghost
+  expect(t.filter(g=>g.dir===-1).map(g=>g.dist)).toEqual([3,2,1]);
+  expect(t.filter(g=>g.dir===1).map(g=>g.dist)).toEqual([1,2,3]);
+ });
+ it('step mode takes t±k·Δt and drops instants outside the document',()=>{
+  expect(onionTimes(doc(),.5,{onionCount:2,onionMode:'step',onionStep:.1}).map(g=>[g.dir,g.dist,+g.time.toFixed(6)]))
+   .toEqual([[-1,1,.4],[1,1,.6],[-1,2,.3],[1,2,.7]]);
+  // Near t=0 no past instants exist; only the future side is drawn.
+  const t=onionTimes(doc(),.05,{onionCount:3,onionMode:'step',onionStep:.1});
+  expect(t.every(g=>g.dir===1)).toBe(true);
+  expect(t.map(g=>+g.time.toFixed(6))).toEqual([.15,.25,.35]);
  });
 });
