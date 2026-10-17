@@ -31,6 +31,9 @@ export class WorkshopEngine{
   /** App hooks: begin edit = pick or auto-insert the key being dragged. */
   onBeginEdit?:(time:number,prefer?:string)=>WorkshopKey|null;
   onDocChanged?:()=>void;onSelectKey?:(id:string)=>void;onSeek?:(time:number)=>void;
+  /** Fired once when a drag ends — the app persists the doc here so the final
+   * pose can't be lost between pointermove re-renders. */
+  onEditEnd?:()=>void;
   constructor(public host:HTMLElement,private getDoc:()=>WorkshopDoc){
     this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
@@ -87,7 +90,7 @@ export class WorkshopEngine{
     const rect=this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(((ev.clientX-rect.left)/rect.width)*2-1,-((ev.clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.pointer,this.camera);
-    const hits=this.raycaster.intersectObjects([...this.handleGroup.children,...this.contactMarkers],false);
+    const hits=this.raycaster.intersectObjects([...this.handleGroup.children,...this.contactMarkers].filter(o=>o.visible),false);
     const o=hits[0]?.object;return o?o.userData.ref as Handle|undefined:undefined;
   }
   private onPointerDown=(ev:PointerEvent)=>{
@@ -104,6 +107,7 @@ export class WorkshopEngine{
       :new Plane().setFromNormalAndCoplanarPoint(normal,origin);
     const hit=this.raycaster.ray.intersectPlane(plane,new Vector3())??origin;
     this.drag={h,plane,offset:origin.clone().sub(hit),key};
+    this.setPlaying(false); // editing a pose while playback moves time is incoherent
     this.controls.enabled=false;try{this.renderer.domElement.setPointerCapture(ev.pointerId);}catch{/* synthetic events have no pointer */}
   };
   private onPointerMove=(ev:PointerEvent)=>{
@@ -127,7 +131,7 @@ export class WorkshopEngine{
     this.solveCurrent();this.docDirty=true;this.onDocChanged?.();
   };
   private onPointerUp=(ev:PointerEvent)=>{
-    if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}}
+    if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}this.onEditEnd?.();}
   };
   /* ---------- pose evaluation ---------- */
   private currentFrame(){
@@ -165,7 +169,9 @@ export class WorkshopEngine{
       const f=frameAt(doc,i/samples*doc.duration);
       solvePose(this.rig,f.pose,f.constraints);
       paths.wrist_R.push(this.rig.point('wrist_R'));paths.wrist_L.push(this.rig.point('wrist_L'));
-      paths.tip.push(f.constraints.grip&&this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3());
+      // No grip → no racket: skipping the sample keeps non-grip stretches out
+      // of the tip line instead of writing the world origin into the path.
+      if(f.constraints.grip&&this.racket)paths.tip.push(this.racket.localToWorld(new Vector3(0,.61,0)));
     }
     for(const [id,line]of this.trajectories){
       const pts=paths[id]??[];
@@ -238,6 +244,14 @@ export class WorkshopEngine{
     this.disposed=true;cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();
     const dom=this.renderer.domElement;
     dom.removeEventListener('pointerdown',this.onPointerDown);dom.removeEventListener('pointermove',this.onPointerMove);dom.removeEventListener('pointerup',this.onPointerUp);dom.removeEventListener('pointercancel',this.onPointerUp);
+    // Everything in this scene was created by the workshop (handles, markers,
+    // lines, racket, model materials) — release GPU resources before the
+    // renderer context dies instead of relying on GC.
+    this.scene.traverse(o=>{
+      const g=(o as Mesh).geometry as BufferGeometry|undefined;g?.dispose();
+      const m=(o as Mesh).material as {dispose():void}|{dispose():void}[]|undefined;
+      if(Array.isArray(m))for(const x of m)x.dispose();else m?.dispose?.();
+    });
     this.controls.dispose();this.renderer.dispose();this.host.removeChild(dom);
   }
 }

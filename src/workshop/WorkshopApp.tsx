@@ -4,7 +4,7 @@ import {Activity,ArrowLeft,Camera,Check,Download,Film,Pause,Play,Plus,RotateCcw,
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {WorkshopDoc,WorkshopKey} from './document';
-import {defaultDocument,ensureKey,keyAt,nearestKey,parseDoc,serializeDoc,sortedKeys} from './document';
+import {defaultDocument,ensureKey,keyAt,nearestKey,parseDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
 import {MotionLibrary} from './library';
 import {rotateHandFrame} from './solver';
 import type {RigInfo,ViewId} from '../core/types';
@@ -74,7 +74,12 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    e.onError=err=>setError(err.message);
    e.onFrame=setFrame;
    e.onSelectKey=setSelected;
-   e.onDocChanged=()=>bump(v=>v+1);
+   let lastDragSave=0;
+   // Persist drags throttled while moving and unconditionally at drag end;
+   // before this, a pose edit could be lost if the page closed before the
+   // next explicit save.
+   e.onDocChanged=()=>{const now=performance.now();if(now-lastDragSave>500){lastDragSave=now;lib.current!.save();}bump(v=>v+1);};
+   e.onEditEnd=()=>{lib.current!.save();bump(v=>v+1);};
    e.onBeginEdit=(time,prefer)=>{
     const d=lib.current!.active();
     if(prefer){const k=keyAt(d,prefer);if(k)return k;}
@@ -93,12 +98,12 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   else if(Math.abs(el.currentTime-target)>.05)el.currentTime=target;
  },[frame,sync]);
  const L=lib.current!;
- const edit=(fn:(d:WorkshopDoc)=>void)=>{fn(L.active());L.save();engine.current?.markDirty();bump(v=>v+1);};
+ const edit=(fn:(d:WorkshopDoc)=>void)=>{fn(L.active());L.save();engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const editSelected=(fn:(k:WorkshopKey)=>void)=>{const k=keyAt(L.active(),selected);if(k)edit(()=>fn(k));};
  const d=L.active();
  const sel=keyAt(d,selected)??nearestKey(d,frame.time,1e9);
  const analysis=frame.analysis;
- const selectDoc=(id:string)=>{const doc=L.select(id);setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
+ const selectDoc=(id:string)=>{const doc=L.select(id);setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const createDoc=()=>{const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
  const removeDoc=(id:string)=>{const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
@@ -128,11 +133,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <input className="ws-newname" value={newName} placeholder="新动作名称…" onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')createDoc();}}/>
       <button onClick={createDoc}><Plus size={13}/>新建</button>
      </div>
-     <p className="ws-note">动作自动保存到本机浏览器；导出 JSON 可跨设备分享。</p>
+     <p className="ws-note" style={L.lastError?{color:'#c0392b'}:undefined}>{L.lastError?`保存失败（仅存于内存）：${L.lastError}`:'动作自动保存到本机浏览器；导出 JSON 可跨设备分享。'}</p>
     </section>
     <section className="ws-card"><h2>动作文档</h2>
      <label className="ws-field"><span>名称</span><input value={d.name} onChange={e=>edit(dd=>{dd.name=e.target.value;})}/></label>
-     <label className="ws-field"><span>时长 s</span><input type="number" min=".2" max="10" step=".1" value={d.duration} onChange={e=>edit(dd=>{dd.duration=Math.max(.2,Number(e.target.value)||.2);for(const k of dd.keys)k.time=Math.min(k.time,dd.duration);})}/></label>
+     <label className="ws-field"><span>时长 s</span><input type="number" min=".2" max="10" step=".1" value={d.duration} onChange={e=>edit(dd=>retimeKeys(dd,Math.max(.2,Number(e.target.value)||.2)))}/></label>
      <p className="ws-note">{d.keys.length} 个关键帧 · {d.inbetweens?'Hermite 补间':'逐帧保持'}</p>
      <div className="ws-row">
       <button onClick={exportDoc}><Download size={13}/>导出 JSON</button>
@@ -175,7 +180,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     <section className="ws-card"><h2>选中关键帧 {sel?<small>@{sel.time.toFixed(2)}s</small>:null}</h2>
      {sel?<>
       <label className="ws-field"><span>标签</span><input value={sel.label} placeholder="阶段名，如 触球" onChange={e=>editSelected(k=>{k.label=e.target.value;})}/></label>
-      <label className="ws-field"><span>时间 s</span><input type="number" min="0" max={d.duration} step=".02" value={sel.time} onChange={e=>edit(()=>{sel.time=Math.max(0,Math.min(d.duration,Number(e.target.value)||0));d.keys.sort((a,b)=>a.time-b.time);})}/></label>
+      <label className="ws-field"><span>时间 s</span><input type="number" min="0" max={d.duration} step=".02" value={sel.time} onChange={e=>edit(()=>setKeyTime(d,sel,Number(e.target.value)||0))}/></label>
       <div className="ws-sub"><h3>约束 <small>随关键帧保存，约束补间</small></h3>
        <Row label="左脚支撑锁定" checked={sel.constraints.plantL} onChange={v=>editSelected(k=>{k.constraints.plantL=v;})}/>
        <Row label="右脚支撑锁定" checked={sel.constraints.plantR} onChange={v=>editSelected(k=>{k.constraints.plantR=v;})}/>
@@ -216,7 +221,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     <button aria-label="回到开头" onClick={()=>engine.current?.seek(0)}><RotateCcw size={17}/></button>
     <span className="ws-time">{fmt(frame.time)}<i>/</i>{fmt(d.duration)}</span>
    </div>
-   <Timeline doc={d} time={frame.time} selected={sel?.id??''} onSelect={setSelected} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>edit(()=>{const k=keyAt(d,id);if(k)k.time=t;})}/>
+   <Timeline doc={d} time={frame.time} selected={sel?.id??''} onSelect={id=>{setSelected(id);engine.current?.setPlaying(false);}} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>edit(()=>{const k=keyAt(d,id);if(k)setKeyTime(d,k,t);})}/>
    <div className="ws-actions">
     <button onClick={addKey}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>

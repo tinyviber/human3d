@@ -50,6 +50,29 @@ await page.getByRole('switch',{name:'球拍运动轨迹',exact:true}).click();aw
 // Record the live WebGL canvas at 30fps, without synthetic frame generation.
 const recorded=await page.evaluate(async()=>{const e=window.__LAB__,stream=e.renderer.domElement.captureStream(30);const type=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';const recorder=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:4500000}),chunks=[];recorder.ondataavailable=ev=>chunks.push(ev.data);const done=new Promise(resolve=>recorder.onstop=async()=>{const data=await new Blob(chunks,{type:'video/webm'}).arrayBuffer();stream.getTracks().forEach(t=>t.stop());resolve(Array.from(new Uint8Array(data)));});recorder.start();e.replay();const poll=setInterval(()=>{if(!e.playing){clearInterval(poll);setTimeout(()=>recorder.stop(),200);}},50);setTimeout(()=>{if(recorder.state==='recording'){clearInterval(poll);recorder.stop();}},15000);return done;});
 fs.writeFileSync('evidence/forehand.webm',Buffer.from(recorded));result.checks.liveVideo=true;
+// --- Workshop E2E: real pointer drag → save → reload keeps the edited pose.
+await page.goto('http://127.0.0.1:5173/workshop.html');
+await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
+assert.equal(await page.locator('.ws-key').count(),5);
+assert.equal(await page.locator('canvas').count(),1);
+await page.locator('.ws-newname').fill('QA 测试动作');
+await page.getByRole('button',{name:'新建',exact:true}).click();
+assert.equal(await page.locator('.ws-key').count(),2);
+const handScreen=await page.evaluate(()=>{
+ const e=window.__WS__;e.setPlaying(false);e.seek(0);
+ const p=e.rig.point('wrist_R').project(e.camera);
+ const r=e.renderer.domElement.getBoundingClientRect();
+ return {x:r.left+(p.x+1)/2*r.width,y:r.top+(1-p.y)/2*r.height};
+});
+const seedTarget=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
+await page.mouse.move(handScreen.x,handScreen.y);await page.mouse.down();
+await page.mouse.move(handScreen.x+60,handScreen.y-90,{steps:8});await page.mouse.up();
+const moved=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
+assert(Math.hypot(moved.x-seedTarget.x,moved.y-seedTarget.y,moved.z-seedTarget.z)>.005,'drag edit was not persisted to storage');
+await page.reload();await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
+const libNames=await page.locator('.ws-lib-row .ws-lib-name span').allTextContents();
+assert(libNames.some(n=>n.includes('QA 测试动作')));
+result.checks.workshopDragPersist=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 
