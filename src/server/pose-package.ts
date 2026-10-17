@@ -4,7 +4,7 @@ import {poseAt} from '../core/authoring';
 import type {AuthoredKeyframedId} from '../core/authored-motions';
 import type {MotionSpec} from '../core/types';
 import {frameAt,sortedKeys,type WorkshopDoc} from '../workshop/document';
-import {analyzePose,limitItems,solvePose,type CheckItem} from '../workshop/solver';
+import {analyzePose,limitItems,solveEffectiveFrame,type CheckItem} from '../workshop/solver';
 import {canonical,sha256} from './rig-manifest';
 export const POSE_PACKAGE_KIND='pose-package';
 export const POSE_PACKAGE_SCHEMA_VERSION=2;
@@ -124,7 +124,7 @@ export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,meta:Omit<
  const origin=rig.rest.get('root')!;
  const sample:Sampler=t=>{
   const f=frameAt(doc,t,origin);
-  solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+  solveEffectiveFrame(rig,f);
   return analyzePose(rig,f.pose,f.constraints).items;
  };
  const keyTimes=sortedKeys(doc).map(k=>k.time);

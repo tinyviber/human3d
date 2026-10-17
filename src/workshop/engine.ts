@@ -6,7 +6,7 @@ import {attachRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
 import type {EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from './document';
 import {contactStartKey,frameAt,isReleaseKey,sortedKeys,toV} from './document';
-import {analyzePose,solvePose,type Analysis} from './solver';
+import {analyzePose,solveEffectiveFrame,type Analysis} from './solver';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from './foot';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
@@ -164,10 +164,11 @@ export class WorkshopEngine{
     const doc=this.getDoc();
     return this.frameAtTime(doc,Math.max(0,Math.min(doc.duration,this.time)));
   }
-  /** Solve an effective frame; support fades and the grip ramp come from the sampler, not the key flags. */
+  /** Solve an effective frame; support fades, the grip ramp and the clavicle
+   * assist come from the sampler, not the key flags. */
   private solveFrame(f:EffectiveFrame){
     if(!this.rig)return;
-    solvePose(this.rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+    solveEffectiveFrame(this.rig,f);
   }
   /** Lowest ankle height keeping the sole on or above the rest sole plane. */
   private minAnkleY(side:Side,f:{yaw:number;pitch:number},y:number){

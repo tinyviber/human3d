@@ -81,6 +81,9 @@ export function blendGrip(rig:HumanRig,amount:number){
   applyGrip(rig);
   const grip=names.map(n=>rig.bone(n).quaternion.clone());
   rig.relaxHand('R');
+  // relaxHand curls fingers 2–5 but leaves the thumb where applyGrip put it;
+  // the relaxed thumb is the rest pose, so amount 0 must reach identity too.
+  for(let joint=1;joint<=3;joint++)rig.bone(`finger1-${joint}_R`).quaternion.identity();
   names.forEach((n,i)=>rig.bone(n).quaternion.slerp(grip[i],amount));
   rig.model.updateMatrixWorld(true);
 }

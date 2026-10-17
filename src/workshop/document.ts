@@ -43,12 +43,15 @@ export interface WorkshopDoc{
   /** Periodic motion: the key chain wraps so velocity, contacts and grip are continuous across the seam. */
   loop:boolean;
   handFrames:Record<Side,HandFrame>;
+  /** Clavicle assist: the right shoulder girdle rides up with a high hand target
+   * (the authored reach behaviour — the solver derives the amount per frame). */
+  clavicleLift?:boolean;
   keys:WorkshopKey[];
 }
 export type DocLike=Pick<WorkshopDoc,'keys'|'duration'|'loop'|'handFrames'>;
 /** Support weight of each foot in [0,1]: 1 = fully planted, 0 = free swing. */
 export interface SupportWeights{L:number;R:number}
-export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number}
+export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number;clavicleLift?:boolean}
 
 /** Grip closes and opens over this window after the key that toggles it. */
 export const GRIP_TRANSITION_S=.25;
@@ -284,10 +287,10 @@ export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):E
   if(!doc.inbetweens){
     const {keyIndex,constraints}=constraintsAt(m.keys,t),e=m.entries[keyIndex];
     return {pose:unflattenPose(e.flat.slice()),constraints:{...constraints},keyIndex,
-      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0};
+      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0,clavicleLift:doc.clavicleLift};
   }
   const r=interpolate(m,t),k=m.chain[r.i].real;
-  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip};
+  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift};
 }
 export const sortedKeys=(doc:{keys:WorkshopKey[]})=>[...doc.keys].sort((a,b)=>a.time-b.time);
 
@@ -368,6 +371,7 @@ export function validateDocShape(d:unknown):string[]{
  if(!(typeof doc.duration==='number'&&Number.isFinite(doc.duration)&&doc.duration>=minDuration&&doc.duration<=maxDuration))e.push(`duration 必须是 ${minDuration}–${maxDuration}s 的有限数`);
  if(typeof doc.inbetweens!=='boolean')e.push('inbetweens 必须是布尔值');
  if(typeof doc.loop!=='boolean')e.push('loop 必须是布尔值');
+ if(doc.clavicleLift!==undefined&&typeof doc.clavicleLift!=='boolean')e.push('clavicleLift 必须是布尔值');
  for(const s of ['L','R']as const){
   const v=(doc.handFrames as Record<string,unknown>|undefined)?.[s];
   if(v!=='world'&&v!=='pelvis')e.push(`handFrames.${s} 必须是 world 或 pelvis`);
@@ -475,9 +479,12 @@ export function setKeyTime(doc:WorkshopDoc,key:WorkshopKey,t:number){
  * workbench opens with a usable five-key motion instead of a T-pose. Hands
  * interpolate in the pelvis frame, as the laboratory does. ---- */
 
-interface SeedControls{y:number;z:number;yaw:number;chest:number;lean:number;right:[number,number,number];left:[number,number,number];rf:[number,number,number];rn:[number,number,number];lf:[number,number,number];ln:[number,number,number];stance:number}
+export interface SeedControls{y:number;z:number;yaw:number;chest:number;lean:number;right:[number,number,number];left:[number,number,number];rf:[number,number,number];rn:[number,number,number];lf:[number,number,number];ln:[number,number,number];stance:number}
 const readySeed:SeedControls={y:-.055,z:-.05,yaw:0,chest:0,lean:5,right:[-.24,1.09,.29],left:[.17,1.14,.30],rf:[0,0,1],rn:[1,0,0],lf:[-.6,-.2,.7],ln:[-.4,.8,0],stance:.20};
-function seedPose(rest:ReadonlyMap<string,Vector3>,c:SeedControls):PoseParams{
+/** Task-space controls → a key pose. `foot` sets the ankle target's forward
+ * offset: `zBase + sign*zStep` (zStep 0 keeps both feet on the zBase line —
+ * the idle/reach/squat convention; ±zStep is the staggered ready stance). */
+export function controlsToPoseParams(rest:ReadonlyMap<string,Vector3>,c:SeedControls,foot:{zBase:number;zStep:number}):PoseParams{
   const origin=rest.get('root')!;
   const yaw=new Quaternion().setFromAxisAngle(new Vector3(0,1,0),c.yaw*DEG);
   const rootPos=origin.clone().add(new Vector3(0,c.y,c.z));
@@ -487,16 +494,17 @@ function seedPose(rest:ReadonlyMap<string,Vector3>,c:SeedControls):PoseParams{
     forward:fromV(new Vector3(...f).applyQuaternion(yaw)),normal:fromV(new Vector3(...n).applyQuaternion(yaw))});
   // Planted feet live in world space: authoring keeps foot targets and poles
   // unrotated so the stance never rotates with pelvis yaw.
-  const foot=(side:'L'|'R'):FootTarget=>{
+  const footT=(side:'L'|'R'):FootTarget=>{
     const sign=side==='L'?1:-1;
-    return {target:{x:sign*c.stance,y:rest.get(`foot_${side}`)!.y,z:.018+sign*.045},
+    return {target:{x:sign*c.stance,y:rest.get(`foot_${side}`)!.y,z:foot.zBase+sign*foot.zStep},
       pole:{x:sign*.22,y:.5,z:1},yaw:sign*7,pitch:0};
   };
   const pose={root:fromV(new Vector3(0,c.y,c.z)),yaw:c.yaw,lean:c.lean,chest:c.chest,side:0,
     handL:hand(c.left,c.lf,c.ln,[.51,1.13,-.12]),handR:hand(c.right,c.rf,c.rn,[-.52,1.17,-.12]),
-    footL:foot('L'),footR:foot('R')};
+    footL:footT('L'),footR:footT('R')};
   canonicalizeHands(pose);return pose;
 }
+const seedPose=(rest:ReadonlyMap<string,Vector3>,c:SeedControls)=>controlsToPoseParams(rest,c,{zBase:.018,zStep:.045});
 export function defaultDocument(rest:ReadonlyMap<string,Vector3>):WorkshopDoc{
   const P=(patch:Partial<SeedControls>)=>seedPose(rest,{...readySeed,...patch});
   const plant={plantL:true,plantR:true,grip:true,contact:false};

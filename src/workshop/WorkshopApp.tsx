@@ -182,6 +182,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <Row label="循环播放" detail={loopBlockers(d).join('；')||'首帧位于 0 s，末帧早于时长'} checked={d.loop} disabled={!d.loop&&loopBlockers(d).length>0} onChange={v=>edit(dd=>{if(v&&loopBlockers(dd).length)return;dd.loop=v;})}/>
      <label className="ws-field"><span>左手坐标系</span><select value={d.handFrames.L} onChange={e=>edit(dd=>{dd.handFrames.L=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
      <label className="ws-field"><span>右手坐标系</span><select value={d.handFrames.R} onChange={e=>edit(dd=>{dd.handFrames.R=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
+     <Row label="抬肩辅助" detail="手高于胸口时锁骨与肩部随动上抬" checked={d.clavicleLift===true} onChange={v=>edit(dd=>{dd.clavicleLift=v||undefined;})}/>
      <div className="ws-row">
       <button onClick={exportDoc}><Download size={13}/>导出 JSON</button>
       <button onClick={()=>importRef.current?.click()}><Upload size={13}/>导入</button>
