@@ -1,4 +1,4 @@
-import {Quaternion,Vector3} from 'three';
+import {Matrix4,Quaternion,Vector3} from 'three';
 import {DEG} from '../core/kinematics';
 
 /** Trajectory-first motion document: keyframes carry task-space poses AND
@@ -60,32 +60,114 @@ export function unflattenPose(a:number[]):PoseParams{
 }
 FLAT.length=0;
 
+/** Hand forward/normal are an orthonormal basis by contract: normalize f and
+ * orthogonalize n against it. Applied at document boundaries (seed, parse) so
+ * sampled quat frames reproduce stored key values bit-for-bit. */
+export function canonicalizeHands(p:PoseParams){
+ for(const h of [p.handL,p.handR]){
+  const f=toV(h.forward);
+  if(f.lengthSq()<1e-12)f.set(0,0,1);
+  f.normalize();h.forward=fromV(f);
+  const n=toV(h.normal);
+  n.addScaledVector(f,-n.dot(f));
+  if(n.lengthSq()<1e-12){n.set(f.y,f.z,f.x);n.addScaledVector(f,-n.dot(f));}
+  n.normalize();h.normal=fromV(n);
+ }
+}
 export const clonePose=(p:PoseParams):PoseParams=>unflattenPose(flattenPose(p));
 export const cloneConstraints=(c:KeyConstraints):KeyConstraints=>({...c});
 
-/** Nonuniform cubic Hermite with Catmull-Rom tangents — same scheme as the
- * authored clip builder, so velocity stays continuous through keyframes. */
+/** Flattened-channel indices that carry angles (degrees). Unwrapped along the
+ * key chain before Hermite so 179°→−179° takes the 2° short path. */
+const ANGLE_CHANNELS=new Set([3,4,5,6,37,38,45,46]);
+// handL forward 13-15 / normal 16-18 · handR forward 25-27 / normal 28-30:
+// direction frames, interpolated as rotations — never scalar-lerped (opposite
+// vectors would collapse through the zero vector and lose orthonormality).
+const unwrapAngle=(prev:number,v:number)=>v+360*Math.round((prev-v)/360);
+function frameQuat(h:HandTarget){
+ const f=toV(h.forward);
+ if(f.lengthSq()<1e-10)f.set(0,0,1);f.normalize();
+ const n=toV(h.normal);
+ n.addScaledVector(f,-n.dot(f));
+ if(n.lengthSq()<1e-10){n.set(f.y,f.z,f.x);n.addScaledVector(f,-n.dot(f));}
+ n.normalize();
+ return new Quaternion().setFromRotationMatrix(new Matrix4().makeBasis(f,n,new Vector3().crossVectors(f,n)));
+}
+const basisVec=(q:Quaternion,x:number,y:number,z:number)=>new Vector3(x,y,z).applyQuaternion(q);
+/** Nonuniform cubic Hermite with Catmull-Rom tangents for positions, angle
+ * unwrapping for scalar degrees, and quaternion slerp for hand direction
+ * frames — velocity stays continuous through keyframes. */
 export function samplePose(keys:WorkshopKey[],time:number):PoseParams{
   const flat=keys.map(k=>flattenPose(k.pose));
+  for(const c of ANGLE_CHANNELS)for(let j=1;j<flat.length;j++)flat[j][c]=unwrapAngle(flat[j-1][c],flat[j][c]);
+  // Planted feet are contact intervals, not pose samples. Rewrite the
+  // foot-target channels to their effective values before interpolating:
+  //   · a run of plant=true keys holds the run's first contact point;
+  //   · the first plant=false key after a run (the lift key) inherits that
+  //     contact point at the key instant — liftoff never teleports the foot;
+  //     its stored target still shapes the swing (see the waypoint pass below);
+  //   · further plant=false keys are ordinary swing samples.
+  // Keys flagged `rest` (planted, or a transition boundary) get zero Hermite
+  // tangents so position AND velocity stay continuous across plant changes:
+  // the foot leaves a contact from rest and arrives at the next one at rest.
+  const restAt:Record<number,boolean[]>={};
+  for(const [flag,ch]of [['plantL',31],['plantR',39]]as const){
+    const rest=new Array<boolean>(keys.length).fill(false);
+    let contact:[number,number,number]|undefined,prevPlant=false;
+    keys.forEach((k,j)=>{
+      const planted=k.constraints[flag];
+      if(planted&&!prevPlant)contact=[flat[j][ch],flat[j][ch+1],flat[j][ch+2]];
+      if(contact&&(planted||prevPlant)){flat[j][ch]=contact[0];flat[j][ch+1]=contact[1];flat[j][ch+2]=contact[2];rest[j]=true;}
+      prevPlant=planted;
+    });
+    for(const c of [ch,ch+1,ch+2])restAt[c]=rest;
+  }
   let i=0;while(i<keys.length-2&&time>keys[i+1].time)i++;
   const t0=keys[i].time,t1=keys[i+1].time,dt=t1-t0;
   const u=dt>1e-9?Math.max(0,Math.min(1,(time-t0)/dt)):0;
   const n=flat[0].length,out=new Array<number>(n);
   for(let c=0;c<n;c++){
     const val=(j:number)=>flat[Math.max(0,Math.min(keys.length-1,j))][c];
-    const m0=i===0?0:(val(i+1)-val(i-1))/(keys[i+1].time-keys[i-1].time);
-    const m1=i+1===keys.length-1?0:(val(i+2)-val(i))/(keys[i+2].time-keys[i].time);
+    const rest=restAt[c];
+    const tan=(j:number)=>j<=0||j>=keys.length-1||rest?.[j]?0:(val(j+1)-val(j-1))/(keys[j+1].time-keys[j-1].time);
+    const m0=tan(i),m1=tan(i+1);
     out[c]=(2*u**3-3*u*u+1)*val(i)+(u**3-2*u*u+u)*dt*m0+(-2*u**3+3*u*u)*val(i+1)+(u**3-u*u)*dt*m1;
   }
   const pose=unflattenPose(out);
-  // Planted feet are positional constraints, not samples: hold the planting
-  // key's world-space target strictly inside the interval; at the boundary the
-  // next key's own pose applies (a replant is an intended discrete step).
-  const interior=time<keys[i+1].time-1e-9;
-  if(interior){
-    const c=keys[i].constraints;
-    if(c.plantL)pose.footL.target={...keys[i].pose.footL.target};
-    if(c.plantR)pose.footR.target={...keys[i].pose.footR.target};
+  // Hand direction frames: slerp the orthonormal (forward,normal,forward×normal)
+  // basis between the two bounding keys; guarantees a valid frame everywhere.
+  for(const [hand,q0,q1]of [
+   [pose.handL,frameQuat(keys[Math.max(0,Math.min(keys.length-1,i))].pose.handL),frameQuat(keys[Math.max(0,Math.min(keys.length-1,i+1))].pose.handL)],
+   [pose.handR,frameQuat(keys[Math.max(0,Math.min(keys.length-1,i))].pose.handR),frameQuat(keys[Math.max(0,Math.min(keys.length-1,i+1))].pose.handR)],
+  ]as const){
+   if(q0.dot(q1)<0){q1.set(-q1.x,-q1.y,-q1.z,-q1.w);}
+   const q=q0.clone().slerp(q1,u);
+   const f=basisVec(q,1,0,0),nn=basisVec(q,0,1,0);
+   hand.forward=fromV(f);hand.normal=fromV(nn);
+  }
+  // A release key (plant=false right after a plant run) marks the START of a
+  // swing: at its own time the foot is still at the inherited contact, so the
+  // key's stored target is used as a mid-swing waypoint instead. The path
+  // contact → stored waypoint (interval midpoint) → next key's effective
+  // target is C¹ throughout — a lifted pose genuinely leaves the ground
+  // rather than collapsing into a smoothstep slide along it. When the stored
+  // target is itself at ground level the authored motion IS a slide (拖步).
+  for(const [flag,foot,ch]of [['plantL','footL',31],['plantR','footR',39]]as const){
+   if(i<=0||keys[i].constraints[flag]||!keys[i-1].constraints[flag])continue;
+   const mid=t0+dt/2,rest=restAt[ch];
+   for(let c=0;c<3;c++){
+    const ax=(['x','y','z']as const)[c];
+    const a=flat[i][ch+c],cc=flat[i+1][ch+c],b=keys[i].pose[foot].target[ax];
+    // Seam tangent at the waypoint is the Catmull-Rom slope over the whole
+    // interval; the interval END tangent must match the generic rule
+    // (rest ⇒ 0, otherwise the Catmull-Rom tangent at that key) or velocity
+    // would step when the next key is a mid-swing key.
+    const chord=(cc-a)/dt,half=dt/2;
+    const end=i+1>=keys.length-1||rest?.[i+1]?0:(flat[i+2][ch+c]-flat[i][ch+c])/(keys[i+2].time-t0);
+    const h=(uu:number,v0:number,v1:number,m0:number,m1:number)=>
+     (2*uu**3-3*uu*uu+1)*v0+(uu**3-2*uu*uu+uu)*half*m0+(-2*uu**3+3*uu*uu)*v1+(uu**3-uu*uu)*half*m1;
+    pose[foot].target[ax]=time<=mid?h((time-t0)/half,a,b,0,chord):h((time-mid)/half,b,cc,chord,end);
+   }
   }
   return pose;
 }
@@ -120,11 +202,87 @@ export function ensureKey(doc:WorkshopDoc,time:number):WorkshopKey{
 }
 
 export function serializeDoc(doc:WorkshopDoc){return JSON.stringify(doc,null,2);}
+const isV3=(v:unknown):v is V3=>!!v&&typeof v==='object'&&['x','y','z'].every(k=>Number.isFinite((v as Record<string,number>)[k]));
+/** Structural validator shared by import, library rehydrate and the service:
+ * every numeric field must be finite, times strictly increasing, constraint
+ * fields boolean, direction frames non-degenerate. Returns human-readable
+ * problems; an empty list means the doc can enter the pose pipeline. */
+export function validateDocShape(d:unknown):string[]{
+ const e:string[]=[];
+ if(!d||typeof d!=='object')return ['文档不是对象'];
+ const doc=d as WorkshopDoc;
+ if(doc.schemaVersion!==1)e.push('schemaVersion 必须为 1');
+ if(typeof doc.id!=='string'||!doc.id)e.push('缺少 id');
+ if(typeof doc.name!=='string')e.push('缺少 name');
+ if(!(typeof doc.duration==='number'&&Number.isFinite(doc.duration)&&doc.duration>0&&doc.duration<=600))e.push('duration 必须是 0–600s 的有限数');
+ if(!Array.isArray(doc.keys)||doc.keys.length<2)return [...e,'keys 至少需要 2 个关键帧'];
+ const vec=(v:unknown,path:string)=>{if(!isV3(v))e.push(`${path} 不是有限三维向量`);};
+ const hand=(h:unknown,path:string)=>{
+  if(!h||typeof h!=='object'){e.push(`${path} 缺失`);return;}
+  const H=h as HandTarget;
+  vec(H.target,`${path}.target`);vec(H.pole,`${path}.pole`);vec(H.forward,`${path}.forward`);vec(H.normal,`${path}.normal`);
+  if(isV3(H.forward)&&!(H.forward.x**2+H.forward.y**2+H.forward.z**2>1e-6))e.push(`${path}.forward 不能是零向量`);
+  if(isV3(H.normal)&&!(H.normal.x**2+H.normal.y**2+H.normal.z**2>1e-6))e.push(`${path}.normal 不能是零向量`);
+  if(isV3(H.forward)&&isV3(H.normal)){
+   const fl=Math.hypot(H.forward.x,H.forward.y,H.forward.z),nl=Math.hypot(H.normal.x,H.normal.y,H.normal.z);
+   if(fl>1e-6&&nl>1e-6&&Math.abs(H.forward.x*H.normal.x+H.forward.y*H.normal.y+H.forward.z*H.normal.z)/(fl*nl)>.99)e.push(`${path} 的 forward 与 normal 近乎平行，无法构成方向框架`);
+  }
+ };
+ const foot=(f:unknown,path:string)=>{
+  if(!f||typeof f!=='object'){e.push(`${path} 缺失`);return;}
+  const F=f as FootTarget;
+  vec(F.target,`${path}.target`);vec(F.pole,`${path}.pole`);
+  for(const a of ['yaw','pitch']as const)if(!Number.isFinite(F[a]))e.push(`${path}.${a} 不是有限数`);
+ };
+ let prev=-Infinity;
+ doc.keys.forEach((k,idx)=>{
+  if(!k||typeof k!=='object'){e.push(`keys[${idx}] 不是对象`);return;}
+  if(typeof k.id!=='string'||!k.id)e.push(`keys[${idx}] 缺少 id`);
+  if(!(typeof k.time==='number'&&Number.isFinite(k.time))){e.push(`keys[${idx}].time 不是有限数`);return;}
+  if(k.time<-1e-9||k.time>doc.duration+1e-6)e.push(`keys[${idx}].time=${k.time} 超出 0–${doc.duration}`);
+  if(k.time<=prev)e.push(`keys[${idx}].time=${k.time} 未严格递增（重复时间会污染补间）`);
+  prev=k.time;
+  const p=k.pose;
+  if(!p||typeof p!=='object'){e.push(`keys[${idx}].pose 缺失`);return;}
+  vec(p.root,`keys[${idx}].pose.root`);
+  for(const a of ['yaw','lean','chest','side']as const)if(!Number.isFinite(p[a]))e.push(`keys[${idx}].pose.${a} 不是有限数`);
+  hand(p.handL,`keys[${idx}].pose.handL`);hand(p.handR,`keys[${idx}].pose.handR`);
+  foot(p.footL,`keys[${idx}].pose.footL`);foot(p.footR,`keys[${idx}].pose.footR`);
+  const c=k.constraints;
+  if(!c||typeof c!=='object'){e.push(`keys[${idx}].constraints 缺失`);return;}
+  for(const f of ['plantL','plantR','grip','contact']as const)if(typeof c[f]!=='boolean')e.push(`keys[${idx}].constraints.${f} 必须是布尔值`);
+  if(k.videoTime!==undefined&&!Number.isFinite(k.videoTime))e.push(`keys[${idx}].videoTime 不是有限数`);
+ });
+ return e;
+}
+/** Throws on the first problems; docs must pass validateDocShape before use. */
 export function parseDoc(text:string):WorkshopDoc{
   const d=JSON.parse(text) as WorkshopDoc;
-  if(d.schemaVersion!==1||!Array.isArray(d.keys)||d.keys.length<2)throw new Error('不是有效的动作工作台文件');
-  for(const k of d.keys){if(typeof k.time!=='number'||!k.pose||!k.constraints)throw new Error('关键帧缺少姿态或约束');}
-  d.keys.sort((a,b)=>a.time-b.time);return d;
+  const errs=validateDocShape(d);
+  if(errs.length)throw new Error(`${errs[0]}${errs.length>1?`（共 ${errs.length} 处问题）`:''}`);
+  d.keys.sort((a,b)=>a.time-b.time);
+  for(const k of d.keys){k.label=k.label??'';canonicalizeHands(k.pose);}
+  return d;
+}
+/** Retiming rule: scaling duration preserves phase proportions and strict
+ * ordering — never clamps times onto duplicates (repeated times would leave
+ * zero-length intervals and NaN Hermite tangents). */
+export function retimeKeys(doc:WorkshopDoc,newDuration:number){
+ const old=doc.duration;
+ doc.duration=Math.max(.01,newDuration);
+ const keys=sortedKeys(doc);
+ if(old>1e-9){for(const k of keys)k.time=Math.min(doc.duration,k.time*doc.duration/old);}
+ else keys.forEach((k,i)=>{k.time=keys.length>1?i/(keys.length-1)*doc.duration:0;});
+ doc.keys=keys;
+}
+/** Single-key retime: stay strictly between neighbours (a shared timestamp is
+ * an event boundary, not a second pose to blend). */
+export function setKeyTime(doc:WorkshopDoc,key:WorkshopKey,t:number){
+ const keys=sortedKeys(doc),i=keys.findIndex(k=>k.id===key.id);
+ if(i<0)return;
+ const lo=(keys[i-1]?.time??0)+(i===0?0:.01),hi=i===keys.length-1?doc.duration:keys[i+1].time-.01;
+ key.time=Math.max(lo,Math.min(hi,t));
+ doc.keys.sort((a,b)=>a.time-b.time);
 }
 
 /* ---- Default example: a compact forehand seeded from the same task-space
@@ -148,9 +306,10 @@ function seedPose(rest:ReadonlyMap<string,Vector3>,c:SeedControls):PoseParams{
     return {target:{x:sign*c.stance,y:rest.get(`foot_${side}`)!.y,z:.018+sign*.045},
       pole:{x:sign*.22,y:.5,z:1},yaw:sign*7,pitch:0};
   };
-  return {root:fromV(new Vector3(0,c.y,c.z)),yaw:c.yaw,lean:c.lean,chest:c.chest,side:0,
+  const pose={root:fromV(new Vector3(0,c.y,c.z)),yaw:c.yaw,lean:c.lean,chest:c.chest,side:0,
     handL:hand(c.left,c.lf,c.ln,[.51,1.13,-.12]),handR:hand(c.right,c.rf,c.rn,[-.52,1.17,-.12]),
     footL:foot('L'),footR:foot('R')};
+  canonicalizeHands(pose);return pose;
 }
 export function defaultDocument(rest:ReadonlyMap<string,Vector3>):WorkshopDoc{
   const P=(patch:Partial<SeedControls>)=>seedPose(rest,{...readySeed,...patch});

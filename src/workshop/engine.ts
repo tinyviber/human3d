@@ -5,13 +5,15 @@ import {HumanRig} from '../core/rig';
 import {attachRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
 import type {EffectiveFrame,KeyConstraints,PoseParams,WorkshopDoc,WorkshopKey} from './document';
-import {frameAt,sortedKeys,toV} from './document';
+import {constraintsAt,frameAt,sortedKeys,toV} from './document';
 import {analyzePose,solvePose,type Analysis} from './solver';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
 export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean}
-type DragKind='root'|'hand'|'foot'|'poleArm'|'poleLeg'|'tip'|'contact';
-interface Handle{kind:DragKind;side?:'L'|'R';mesh:Mesh;keyId?:string}
+type DragKind='root'|'hand'|'foot'|'swing'|'poleArm'|'poleLeg'|'tip'|'contact';
+/** `passive` handles render but never start a drag — used for the actual foot
+ * during a release interval, where the editable control is the swing point. */
+interface Handle{kind:DragKind;side?:'L'|'R';mesh:Mesh;keyId?:string;passive?:boolean}
 
 /** Pose-editor scene: same rig and view language as the lab viewer, but every
  * effector is a draggable task-space handle resolved by the kinematic solver. */
@@ -31,6 +33,9 @@ export class WorkshopEngine{
   /** App hooks: begin edit = pick or auto-insert the key being dragged. */
   onBeginEdit?:(time:number,prefer?:string)=>WorkshopKey|null;
   onDocChanged?:()=>void;onSelectKey?:(id:string)=>void;onSeek?:(time:number)=>void;
+  /** Fired once when a drag ends — the app persists the doc here so the final
+   * pose can't be lost between pointermove re-renders. */
+  onEditEnd?:()=>void;
   constructor(public host:HTMLElement,private getDoc:()=>WorkshopDoc){
     this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
@@ -69,6 +74,7 @@ export class WorkshopEngine{
     mk('root',undefined,0x2469ee,.034);
     mk('hand','L',0xec8c39,.026);mk('hand','R',0xec8c39,.026);
     mk('foot','L',0xe2543a,.026);mk('foot','R',0xe2543a,.026);
+    mk('swing','L',0x0891b2,.02);mk('swing','R',0x0891b2,.02);
     mk('poleArm','L',0x4a9e6b,.018);mk('poleArm','R',0x4a9e6b,.018);
     mk('poleLeg','L',0x4a9e6b,.018);mk('poleLeg','R',0x4a9e6b,.018);
     mk('tip',undefined,0xd23c3c,.024);
@@ -87,8 +93,8 @@ export class WorkshopEngine{
     const rect=this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(((ev.clientX-rect.left)/rect.width)*2-1,-((ev.clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.pointer,this.camera);
-    const hits=this.raycaster.intersectObjects([...this.handleGroup.children,...this.contactMarkers],false);
-    const o=hits[0]?.object;return o?o.userData.ref as Handle|undefined:undefined;
+    const hits=this.raycaster.intersectObjects([...this.handleGroup.children,...this.contactMarkers].filter(o=>o.visible),false);
+    const o=hits.find(x=>!x.object.userData.ref?.passive)?.object;return o?o.userData.ref as Handle|undefined:undefined;
   }
   private onPointerDown=(ev:PointerEvent)=>{
     if(ev.button!==0||!this.ready)return;
@@ -99,11 +105,16 @@ export class WorkshopEngine{
     this.solveCurrent();
     const origin=h.mesh.getWorldPosition(new Vector3());
     const normal=new Vector3();this.camera.getWorldDirection(normal);
-    const plane=h.kind==='foot'
+    // A planted foot is a contact — dragging stays on the ground plane. An
+    // unplanted foot is a swing waypoint: drag in the camera-facing plane so
+    // the stored target can carry real height.
+    const planted=h.kind==='foot'&&key.constraints[h.side==='L'?'plantL':'plantR'];
+    const plane=planted
       ?new Plane(new Vector3(0,1,0),-origin.y)
       :new Plane().setFromNormalAndCoplanarPoint(normal,origin);
     const hit=this.raycaster.ray.intersectPlane(plane,new Vector3())??origin;
     this.drag={h,plane,offset:origin.clone().sub(hit),key};
+    this.setPlaying(false); // editing a pose while playback moves time is incoherent
     this.controls.enabled=false;try{this.renderer.domElement.setPointerCapture(ev.pointerId);}catch{/* synthetic events have no pointer */}
   };
   private onPointerMove=(ev:PointerEvent)=>{
@@ -116,7 +127,10 @@ export class WorkshopEngine{
     switch(this.drag.h.kind){
       case 'root':{const rest=this.rig.rest.get('root')!;k.root={x:pos.x-rest.x,y:pos.y-rest.y,z:pos.z-rest.z};break;}
       case 'hand':{(this.drag.h.side==='L'?k.handL:k.handR).target={x:pos.x,y:pos.y,z:pos.z};break;}
-      case 'foot':{const f=this.drag.h.side==='L'?k.footL:k.footR;f.target={x:pos.x,y:f.target.y,z:pos.z};break;}
+      case 'foot':{const f=this.drag.h.side==='L'?k.footL:k.footR;
+        const lock=this.drag.key.constraints[this.drag.h.side==='L'?'plantL':'plantR'];
+        f.target={x:pos.x,y:lock?f.target.y:Math.max(0,pos.y),z:pos.z};break;}
+      case 'swing':{const f=this.drag.h.side==='L'?k.footL:k.footR;f.target={x:pos.x,y:Math.max(0,pos.y),z:pos.z};break;}
       case 'poleArm':{(this.drag.h.side==='L'?k.handL:k.handR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'poleLeg':{(this.drag.h.side==='L'?k.footL:k.footR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'tip':case 'contact':{
@@ -127,7 +141,7 @@ export class WorkshopEngine{
     this.solveCurrent();this.docDirty=true;this.onDocChanged?.();
   };
   private onPointerUp=(ev:PointerEvent)=>{
-    if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}}
+    if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}this.onEditEnd?.();}
   };
   /* ---------- pose evaluation ---------- */
   private currentFrame(){
@@ -154,6 +168,19 @@ export class WorkshopEngine{
     put('poleArm','L',toV(p.handL.pole));put('poleArm','R',toV(p.handR.pole));
     put('poleLeg','L',toV(p.footL.pole));put('poleLeg','R',toV(p.footR.pole));
     put('tip',undefined,this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3(),c.grip);
+    // Swing waypoint split: during a release interval the visible foot sits ON
+    // the path contact→waypoint→landing, so the bone handle becomes display
+    // only and the editable control is a separate handle bound to the release
+    // key's stored target — the mid-swing waypoint the foot passes through.
+    // Without it a drag would write the stored target while the handle stayed
+    // glued to the inherited contact (no visual feedback).
+    const keys=sortedKeys(this.getDoc()),i=constraintsAt(keys,this.time).keyIndex;
+    for(const [flag,foot,side]of [['plantL','footL','L'],['plantR','footR','R']]as const){
+      const release=i>0&&i<keys.length-1&&!keys[i].constraints[flag]&&keys[i-1].constraints[flag];
+      const bone=this.handles.find(x=>x.kind==='foot'&&x.side===side),sw=this.handles.find(x=>x.kind==='swing'&&x.side===side);
+      if(bone)bone.passive=release;
+      if(sw){sw.mesh.visible=release&&this.options.handles;if(release){sw.keyId=keys[i].id;sw.mesh.position.copy(toV(keys[i].pose[foot].target));}}
+    }
   }
   private rebuildAux(){
     if(!this.rig)return;
@@ -165,7 +192,9 @@ export class WorkshopEngine{
       const f=frameAt(doc,i/samples*doc.duration);
       solvePose(this.rig,f.pose,f.constraints);
       paths.wrist_R.push(this.rig.point('wrist_R'));paths.wrist_L.push(this.rig.point('wrist_L'));
-      paths.tip.push(f.constraints.grip&&this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3());
+      // No grip → no racket: skipping the sample keeps non-grip stretches out
+      // of the tip line instead of writing the world origin into the path.
+      if(f.constraints.grip&&this.racket)paths.tip.push(this.racket.localToWorld(new Vector3(0,.61,0)));
     }
     for(const [id,line]of this.trajectories){
       const pts=paths[id]??[];
@@ -238,6 +267,14 @@ export class WorkshopEngine{
     this.disposed=true;cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();
     const dom=this.renderer.domElement;
     dom.removeEventListener('pointerdown',this.onPointerDown);dom.removeEventListener('pointermove',this.onPointerMove);dom.removeEventListener('pointerup',this.onPointerUp);dom.removeEventListener('pointercancel',this.onPointerUp);
+    // Everything in this scene was created by the workshop (handles, markers,
+    // lines, racket, model materials) — release GPU resources before the
+    // renderer context dies instead of relying on GC.
+    this.scene.traverse(o=>{
+      const g=(o as Mesh).geometry as BufferGeometry|undefined;g?.dispose();
+      const m=(o as Mesh).material as {dispose():void}|{dispose():void}[]|undefined;
+      if(Array.isArray(m))for(const x of m)x.dispose();else m?.dispose?.();
+    });
     this.controls.dispose();this.renderer.dispose();this.host.removeChild(dom);
   }
 }

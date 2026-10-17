@@ -1,5 +1,5 @@
 import type {WorkshopDoc} from './document';
-import {blankDocument,defaultDocument,newDocId,parseDoc} from './document';
+import {blankDocument,canonicalizeHands,defaultDocument,newDocId,parseDoc,validateDocShape} from './document';
 import type {Vector3} from 'three';
 
 /** Motion library: the workshop's persistent store. Multiple named documents
@@ -12,16 +12,22 @@ export const LIBRARY_KEY='kinesis-workshop-library';
 
 function docIdTaken(docs:WorkshopDoc[],id:string){return docs.some(d=>d.id===id);}
 function validateDoc(d:WorkshopDoc):d is WorkshopDoc{
-  return d.schemaVersion===1&&typeof d.id==='string'&&typeof d.name==='string'&&typeof d.duration==='number'&&d.duration>0&&Array.isArray(d.keys)&&d.keys.length>=2&&d.keys.every(k=>typeof k.time==='number'&&!!k.pose&&!!k.constraints);
+  return validateDocShape(d).length===0;
 }
 export class MotionLibrary{
   docs:WorkshopDoc[]=[];activeId='';
+  /** Set when the last save() failed (quota/private mode) — the UI must not
+   * claim the motion was persisted when it only lives in memory. */
+  lastError='';
   constructor(private rest:ReadonlyMap<string,Vector3>,private store?:StorageLike|null){}
   load(){
     let parsed:LibraryFile|undefined;
     try{const raw=this.store?.getItem(LIBRARY_KEY);if(raw)parsed=JSON.parse(raw) as LibraryFile;}catch{/* corrupted storage → reseed */}
     if(parsed?.schemaVersion===1&&Array.isArray(parsed.docs)){
       this.docs=parsed.docs.filter(validateDoc);
+      // Stored docs predate the orthonormal hand-frame contract — normalize on
+      // rehydrate so sampled poses reproduce stored keys exactly.
+      for(const d of this.docs)for(const k of d.keys)canonicalizeHands(k.pose);
       this.activeId=this.docs.some(d=>d.id===parsed.activeId)?parsed.activeId:this.docs[0]?.id??'';
     }
     if(!this.docs.length){this.docs=[defaultDocument(this.rest)];this.activeId=this.docs[0].id;this.save();}
@@ -29,7 +35,7 @@ export class MotionLibrary{
   }
   save(){
     if(!this.store)return;
-    try{this.store.setItem(LIBRARY_KEY,JSON.stringify({schemaVersion:1,activeId:this.activeId,docs:this.docs} satisfies LibraryFile));}catch{/* quota/private mode — keep working in memory */}
+    try{this.store.setItem(LIBRARY_KEY,JSON.stringify({schemaVersion:1,activeId:this.activeId,docs:this.docs} satisfies LibraryFile));this.lastError='';}catch(err){this.lastError=err instanceof Error?err.message:String(err);}
   }
   active(){return this.docs.find(d=>d.id===this.activeId)??this.docs[0];}
   select(id:string){if(docIdTaken(this.docs,id)){this.activeId=id;this.save();}return this.active();}

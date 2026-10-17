@@ -2,8 +2,8 @@ import {AnimationClip,QuaternionKeyframeTrack,VectorKeyframeTrack,Vector3,Quater
 import {HumanRig} from './rig';
 import {applyGrip} from './racket';
 import {DEG,solveTwoBone} from './kinematics';
-import {AUTHORED_KEYFRAMED_IDS,motionById} from './motions';
-type KeyframedMotionId=typeof AUTHORED_KEYFRAMED_IDS[number];
+import {AUTHORED_KEYFRAMED_IDS,authoredMotionById,type AuthoredKeyframedId} from './authored-motions';
+type KeyframedMotionId=AuthoredKeyframedId;
 type V=[number,number,number];
 interface Controls{y:number;z:number;yaw:number;chest:number;lean:number;right:V;left:V;rf:V;rn:V;lf:V;ln:V;stance:number}
 type Key={t:number;pose:Partial<Controls>};
@@ -23,6 +23,15 @@ const seq:Record<KeyframedMotionId,Key[]>={
  {t:3.8,pose:{...ready,y:-.03,yaw:28,chest:18,right:[.19,1.39,.24],left:[.26,1.15,.08],rf:[-.55,.66,.30],rn:[.40,.15,.80]}},
  {t:4.6,pose:{...ready,yaw:8,chest:4,right:[-.15,1.13,.35]}},{t:5.2,pose:ready}],
 };
+/** Canonical authoring data behind a keyframed motion: the control frames
+ * resolved against `base`, i.e. every number that drives the trajectory.
+ * Hashing this (not the action id) is what ties a pose package to the motion
+ * definition it was solved from. The returned object is a deep copy —
+ * mutating it cannot corrupt the authored `seq`/`base` module data. */
+export function keyframedDefinition(id:AuthoredKeyframedId){
+ return {format:'keyframed-controls/v1' as const,id,
+  keys:seq[id].map(k=>({t:k.t,controls:JSON.parse(JSON.stringify({...base,...k.pose})) as Controls}))};
+}
 function sample(keys:Key[],time:number):Controls{
  const frames=keys.map(k=>({...base,...k.pose}));let i=0;while(i<keys.length-2&&time>keys[i+1].t)i++;
  const dt=keys[i+1].t-keys[i].t,u=Math.max(0,Math.min(1,(time-keys[i].t)/dt));
@@ -77,7 +86,7 @@ export function poseAt(rig:HumanRig,id:KeyframedMotionId,time:number){
 export function buildAuthoredClips(rig:HumanRig){
  const clips=new Map<string,AnimationClip>();
  for(const id of AUTHORED_KEYFRAMED_IDS){
-  const spec=motionById(id);
+  const spec=authoredMotionById(id)!;
   const times:number[]=[],positions:number[]=[],rot=new Map([...rig.bones.keys()].map(n=>[n,[] as number[]]));const frames=Math.ceil(spec.duration*40);
   for(let i=0;i<=frames;i++){
    const t=i/frames*spec.duration;poseAt(rig,id,t);times.push(t);positions.push(...rig.bone('root').position.toArray());

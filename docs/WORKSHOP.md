@@ -26,7 +26,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 **2. 关键帧携带约束而不只是姿态。** 每个关键帧记录：
 
-- `plantL / plantR`：支撑脚锁定。补间时锁定脚的世界空间目标在区间内**保持常量**（非插值），骨盆移动时脚不动。
+- `plantL / plantR`：支撑脚锁定。连续的 `plant=true` 关键帧构成一个**接触区间**：整个区间内脚保持在区间起始帧的接触位置（后续锁定帧存储的脚位被忽略——接触是约束不是姿态采样）。移动支撑脚必须先经过一个 `plant=false` 关键帧（离地），再声明新的 `plant=true`（重新接触）。离地帧时刻脚仍位于上一接触点（保证连续），但**离地帧存储的脚位不会被忽略——它作为摆动路径点**：脚从接触点由静止出发，在区间中点经过该存储姿态，再以静止到达落地帧接触点。想做出真正抬脚就把离地帧的脚拖到空中；存储脚位贴地则产生有意的拖步/滑步。切换处 Hermite 切线为零，位置与速度都连续，不会瞬间跳变。
 - `grip`：右手握拍约束 → `applyGrip` 包裹指节、显示球拍。
 - `contact`：触球/接触事件 → 拍头在该帧的世界位置显示为黄色标记，直接拖动标记即调整该帧手部目标让拍头到达该点。
 
@@ -36,7 +36,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 ## 数据与求解
 
-- `src/workshop/document.ts`：`WorkshopDoc` = 关键帧数组 + 时长 + 补间开关。姿态是任务空间参数（根骨偏移/朝向、脊柱前倾/转体/侧弯、四肢末端目标 + 极点 + 手部 forward/normal 框架、脚部 yaw/pitch）。`samplePose` 对所有数值字段做非均匀 Hermite 插值（Catmull-Rom 切线），支撑脚按上一条规则保持。
+- `src/workshop/document.ts`：`WorkshopDoc` = 关键帧数组 + 时长 + 补间开关。姿态是任务空间参数（根骨偏移/朝向、脊柱前倾/转体/侧弯、四肢末端目标 + 极点 + 手部 forward/normal 框架、脚部 yaw/pitch）。`samplePose` 按数据性质分别插值：位置量做非均匀 Hermite（Catmull-Rom 切线）；yaw/foot yaw/pitch 等角度先沿关键帧链做 ±360° 展开再走最短路径；手部 forward/normal 契约上必须是正交归一框架（seed/parse/库存恢复时规范化），按四元数 slerp 插值保证中间帧始终构成有效方向；支撑脚按上一条接触区间规则保持。
 - `src/workshop/solver.ts`：`solvePose` 把参数落到骨架（复用 `rig.limb`/`rig.hand`/`applyGrip`，含支撑脚背屈超限时的骨盆后移二分修正）。`analyzePose` 输出运动学合理性：膝/肘/肩限位、支撑脚残差、分段质量近似质心在支撑多边形（锁定脚脚印凸包）内的投影。
 - `src/workshop/engine.ts`：Three.js 场景、手柄拾取与拖拽平面、轨迹线（拍头/手腕）、触球标记、质心投影与地面支撑多边形。
 - `src/workshop/WorkshopApp.tsx`：文档/视频/约束/检查面板 + 关键帧时间轴。
@@ -46,7 +46,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 工作台按**动作库**组织（`src/workshop/library.ts` 的 `MotionLibrary`）：
 
 - 每个动作是一份 `WorkshopDoc`（`schemaVersion:1`）：`id`（按名称生成 slug + 随机后缀，冲突时重新生成）、`name`（自定义命名）、`english`、`duration`、`inbetweens`、`keys[]`。
-- 动作库整体存 `localStorage['kinesis-workshop-library']`：`{schemaVersion:1, activeId, docs[]}`，每次编辑即写回；读取时逐条校验，损坏或非法条目跳过、全空时用示例动作重新播种；隐私模式 / 超限写失败时退回内存运行。
+- 动作库整体存 `localStorage['kinesis-workshop-library']`：`{schemaVersion:1, activeId, docs[]}`，编辑即写回（拖动期间 500ms 节流 + 拖动结束强制保存）。读取时逐条经 `validateDocShape` 严格校验（有限数值、严格递增时间、布尔约束、非退化方向框架），损坏或非法条目跳过、全空时用示例动作重新播种；隐私模式 / 超限写失败时 `library.lastError` 置位且界面明示「仅存于内存」。
 - 新建动作用 `blankDocument` 模板：站立姿态、双足支撑锁定、起始/结束两个关键帧，时长 1s。
 - `导出 JSON` 输出**当前动作单文件**（`*.workshop.json`）；`导入` 解析后加入动作库并选中，id 冲突自动重生成。
 
@@ -58,5 +58,5 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 - 不做动力学：没有质量/惯性的真实积分、没有肌肉。合理性检查是运动学近似（de Leva 式分段质量分数）。
 - 补间是 Hermite，未做时序优化/滤波；导出只含关键帧与约束，不含烘焙轨迹。
-- 手部 forward/normal 通过增量滑杆编辑；拖动平面默认面向相机，脚部锁定在地面高度。
+- 手部 forward/normal 通过增量滑杆编辑；拖动平面默认面向相机。支撑脚锁定在地面高度拖动；离地脚可三维拖动（相机朝向平面）或在右侧面板用「抬升高度」滑块精确设置 `foot.target.y` —— 该高度即摆动路径点。离地帧时刻脚骨骼仍在上一个接触点，因此摆动区间内脚柄只作显示；青色「摆动路径点」手柄直接绑定离地帧存储的 `foot.target`，拖动它即编辑轨迹中点。末尾离地帧没有后续区间，面板会提示先添加落地帧。
 - 与查看器共用 `rig/kinematics/racket` 模块，但不改其接口；工作台动作不进入主页动作库。

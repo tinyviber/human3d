@@ -8,6 +8,8 @@
     "build": "tsc -b && vite build",
     "preview": "vite preview --host 127.0.0.1",
     "test": "vitest run",
+    "service": "tsx src/server/serve.ts",
+    "protocol:example": "tsx scripts/export-pose-package.mts",
     "qa": "node scripts/browser-qa.mjs",
     "assets": "python3 scripts/build-human.py && tsx scripts/retarget-walk.mjs",
     "dynamics:validate": "python3 scripts/validate-action-spec.py",
@@ -23,6 +25,7 @@
     "three": "^0.180.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "@types/react": "^19.1.1",
     "@types/react-dom": "^19.1.1",
     "@types/three": "^0.180.0",

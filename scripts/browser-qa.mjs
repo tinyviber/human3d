@@ -50,6 +50,86 @@ await page.getByRole('switch',{name:'球拍运动轨迹',exact:true}).click();aw
 // Record the live WebGL canvas at 30fps, without synthetic frame generation.
 const recorded=await page.evaluate(async()=>{const e=window.__LAB__,stream=e.renderer.domElement.captureStream(30);const type=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';const recorder=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:4500000}),chunks=[];recorder.ondataavailable=ev=>chunks.push(ev.data);const done=new Promise(resolve=>recorder.onstop=async()=>{const data=await new Blob(chunks,{type:'video/webm'}).arrayBuffer();stream.getTracks().forEach(t=>t.stop());resolve(Array.from(new Uint8Array(data)));});recorder.start();e.replay();const poll=setInterval(()=>{if(!e.playing){clearInterval(poll);setTimeout(()=>recorder.stop(),200);}},50);setTimeout(()=>{if(recorder.state==='recording'){clearInterval(poll);recorder.stop();}},15000);return done;});
 fs.writeFileSync('evidence/forehand.webm',Buffer.from(recorded));result.checks.liveVideo=true;
+// --- Workshop E2E: real pointer drag → save → reload keeps the edited pose.
+await page.goto('http://127.0.0.1:5173/workshop.html');
+await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
+assert.equal(await page.locator('.ws-key').count(),5);
+assert.equal(await page.locator('canvas').count(),1);
+await page.locator('.ws-newname').fill('QA 测试动作');
+await page.getByRole('button',{name:'新建',exact:true}).click();
+assert.equal(await page.locator('.ws-key').count(),2);
+const handScreen=await page.evaluate(()=>{
+ const e=window.__WS__;e.setPlaying(false);e.seek(0);
+ const p=e.rig.point('wrist_R').project(e.camera);
+ const r=e.renderer.domElement.getBoundingClientRect();
+ return {x:r.left+(p.x+1)/2*r.width,y:r.top+(1-p.y)/2*r.height};
+});
+const seedTarget=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
+await page.mouse.move(handScreen.x,handScreen.y);await page.mouse.down();
+await page.mouse.move(handScreen.x+60,handScreen.y-90,{steps:8});await page.mouse.up();
+const moved=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
+assert(Math.hypot(moved.x-seedTarget.x,moved.y-seedTarget.y,moved.z-seedTarget.z)>.005,'drag edit was not persisted to storage');
+const wristBefore=await page.evaluate(()=>window.__WS__.rig.point('wrist_R').toArray());
+await page.reload();await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
+const libNames=await page.locator('.ws-lib-row .ws-lib-name span').allTextContents();
+assert(libNames.some(n=>n.includes('QA 测试动作')));
+// Reloading must restore the dragged wrist pose, not just the motion name:
+// verify the persisted document, the live in-memory doc AND the solved bone
+// position all match the pre-reload edit.
+const persisted=await page.evaluate(()=>JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.find(d=>d.name==='QA 测试动作').keys[0].pose.handR.target);
+assert.deepEqual(persisted,moved,'stored handR.target changed across reload — drag edit was not persisted');
+const live=await page.evaluate(()=>{const e=window.__WS__;return {target:e.getDoc().keys[0].pose.handR.target,wrist:e.rig.point('wrist_R').toArray()};});
+assert.deepEqual(live.target,moved,'live doc handR.target differs from the persisted edit');
+assert(live.wrist.every((v,i)=>Math.abs(v-wristBefore[i])<.01),'solved wrist position changed across reload');
+result.checks.workshopDragPersist=true;
+// Foot-height editing through the real UI: add a mid key, unplant the left
+// foot on it — the key then starts a swing interval and its stored target is
+// the mid-swing waypoint — then set the lift slider and confirm the solved
+// foot actually leaves the ground inside that interval.
+await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);});
+await page.waitForTimeout(150); // let the React frame state flush before addKey reads it
+await page.getByRole('button',{name:'添加关键帧',exact:true}).click();
+assert.equal(await page.locator('.ws-key').count(),3);
+await page.locator('.ws-key').nth(1).click();
+const liftSlider=page.locator('.ws-slider').filter({hasText:'左脚抬升高度'}).locator('input');
+assert(await liftSlider.isDisabled(),'lift slider should be disabled while the foot is planted');
+await page.locator('.ws-check').filter({hasText:'左脚支撑锁定'}).locator('input').uncheck();
+assert(!(await liftSlider.isDisabled()),'lift slider did not enable after unplanting the foot');
+await liftSlider.evaluate(el=>{const set=Object.getOwnPropertyDescriptor(HTMLInputElement.prototype,'value').set;set.call(el,'0.35');el.dispatchEvent(new Event('input',{bubbles:true}));});
+await page.waitForTimeout(200);
+const lift=await page.evaluate(()=>{const e=window.__WS__;const ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);const mid=ks[1];e.seek((mid.time+ks[2].time)/2);e.solveCurrent();return {target:mid.pose.footL.target.y,planted:mid.constraints.plantL,footY:e.rig.point('foot_L').y};});
+assert.equal(lift.planted,false,'plantL did not toggle off via the UI');
+assert(Math.abs(lift.target-.35)<1e-3,`UI slider did not write footL.target.y (got ${lift.target})`);
+assert(lift.footY>.15,`solved foot did not leave the ground mid-swing (y=${lift.footY})`);
+result.checks.workshopFootHeight=true;
+// Waypoint 3D drag: during a release interval the actual-foot handle becomes
+// passive and a separate swing-point handle carries the stored target —
+// dragging it must move stored target, handle and the solved mid-swing foot
+// together (the previous behaviour wrote the target but the handle never
+// followed the mouse).
+const wpBefore=await page.evaluate(()=>{
+ const e=window.__WS__,ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);
+ e.seek((ks[1].time+ks[2].time)/2);e.solveCurrent();
+ const sw=e.handles.find(x=>x.kind==='swing'&&x.side==='L'),foot=e.handles.find(x=>x.kind==='foot'&&x.side==='L');
+ const p=sw.mesh.position.clone().project(e.camera),r=e.renderer.domElement.getBoundingClientRect();
+ return {swVisible:sw.mesh.visible,footPassive:foot.passive===true,target:{...ks[1].pose.footL.target},footY:e.rig.point('foot_L').y,
+   x:r.left+(p.x+1)/2*r.width,y:r.top+(1-p.y)/2*r.height};
+});
+assert(wpBefore.swVisible,'swing waypoint handle not visible during a release interval');
+assert(wpBefore.footPassive,'foot handle should be passive during a release interval');
+await page.mouse.move(wpBefore.x,wpBefore.y);await page.mouse.down();
+await page.mouse.move(wpBefore.x+40,wpBefore.y-70,{steps:8});await page.mouse.up();
+await page.waitForTimeout(150);
+const wpAfter=await page.evaluate(()=>{
+ const e=window.__WS__,ks=[...e.getDoc().keys].sort((a,b)=>a.time-b.time);
+ e.seek((ks[1].time+ks[2].time)/2);e.solveCurrent();
+ const sw=e.handles.find(x=>x.kind==='swing'&&x.side==='L');
+ return {target:{...ks[1].pose.footL.target},handleY:sw.mesh.position.y,footY:e.rig.point('foot_L').y};
+});
+assert(wpAfter.target.y>wpBefore.target.y+.02,`waypoint drag did not raise stored target (${wpBefore.target.y}→${wpAfter.target.y})`);
+assert(Math.abs(wpAfter.handleY-wpAfter.target.y)<1e-3,'swing handle did not track the stored target');
+assert(wpAfter.footY>wpBefore.footY,'solved mid-swing foot did not move with the waypoint');
+result.checks.workshopWaypointDrag=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 

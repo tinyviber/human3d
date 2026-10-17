@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-16",
+  "date": "2026-10-17",
   "browser": "155.0.8059.80",
   "viewport": [
     1536,
@@ -414,7 +414,10 @@
     "sources": true,
     "motionSamples": true,
     "mobileOverflow": false,
-    "liveVideo": true
+    "liveVideo": true,
+    "workshopDragPersist": true,
+    "workshopFootHeight": true,
+    "workshopWaypointDrag": true
   },
   "samples": {
     "idle": [

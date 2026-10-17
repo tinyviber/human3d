@@ -5,7 +5,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '../core/rig';
 import {attachRacket,gripFrame} from '../core/racket';
 import {angleAt} from '../core/kinematics';
-import {defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,samplePose,serializeDoc,sortedKeys,toV,unflattenPose} from './document';
+import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,toV,unflattenPose,validateDocShape} from './document';
 import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {analyzePose,rotateHandFrame,solvePose,supportPolygon} from './solver';
 
@@ -51,6 +51,94 @@ describe('workshop document',()=>{
     expect(toV(p.footL.target).distanceTo(toV(k.pose.footL.target))).toBeLessThan(1e-9);
    }
   }
+ });
+ it('takes the short angular path when yaw wraps through ±180°',()=>{
+  const doc=blankDocument(rig.rest,'转身','yaw-wrap');
+  doc.keys[0].pose.yaw=179;doc.keys[1].pose.yaw=-179;
+  const mid=samplePose(doc.keys,.5);
+  // 2° short path: midpoint ≈ ±180°, never crosses 0.
+  expect(Math.abs(mid.yaw)).toBeGreaterThan(179.5);expect(Math.abs(mid.yaw)).toBeLessThan(181);
+ });
+ it('interpolates hand direction frames as rotations, never through the zero vector',()=>{
+  const doc=blankDocument(rig.rest,'转手','frame-slerp');
+  doc.keys[0].pose.handR.forward={x:1,y:0,z:0};doc.keys[0].pose.handR.normal={x:0,y:1,z:0};
+  doc.keys[1].pose.handR.forward={x:-1,y:0,z:0};doc.keys[1].pose.handR.normal={x:0,y:1,z:0};
+  for(let i=0;i<=10;i++){
+   const p=samplePose(doc.keys,i/10),f=toV(p.handR.forward),n=toV(p.handR.normal);
+   expect(f.length()).toBeGreaterThan(.99);expect(n.length()).toBeGreaterThan(.99);
+   expect(Math.abs(f.dot(n))).toBeLessThan(1e-6);
+  }
+ });
+ it('holds a continuous foot contact across planted keys and lifts off from the contact point',()=>{
+  const doc=blankDocument(rig.rest,'换脚','contact-run');
+  const A={x:.2,y:0,z:.3},B={x:.5,y:.12,z:.1},C={x:-.1,y:0,z:.4};
+  doc.keys[0].pose.footL.target={...A};doc.keys[1].pose.footL.target={...B};
+  // Second planted key mid-run: contact still holds A even though the key stores B.
+  const mid=samplePose(doc.keys,.5),atKey=samplePose(doc.keys,1);
+  expect(toV(mid.footL.target).distanceTo(toV(A))).toBeLessThan(1e-9);
+  expect(toV(atKey.footL.target).distanceTo(toV(A))).toBeLessThan(1e-9);
+  // Release key between two contacts: the stored (already-lifted) B is
+  // ignored — the foot lifts FROM A and swings to the replant target C.
+  const lifted={...doc.keys[1],constraints:{...doc.keys[1].constraints,plantL:false}};
+  const replanted={id:'k3',time:2,label:'',pose:{...doc.keys[1].pose,footL:{...doc.keys[1].pose.footL,target:{...C}}},constraints:{...doc.keys[1].constraints}};
+  doc.duration=2;doc.keys=[doc.keys[0],lifted,replanted];
+  const at=(t:number)=>toV(samplePose(doc.keys,t).footL.target);
+  expect(at(1).distanceTo(toV(A))).toBeLessThan(1e-9);
+  expect(at(2).distanceTo(toV(C))).toBeLessThan(1e-9);
+  expect(at(1.5).distanceTo(toV(A))).toBeGreaterThan(.05);
+  expect(at(1.5).distanceTo(toV(C))).toBeGreaterThan(.05);
+ });
+ it('keeps foot position AND velocity continuous across support transitions',()=>{
+  const doc=blankDocument(rig.rest,'换脚','boundary-continuity');
+  const A={x:.2,y:0,z:.3},C={x:-.1,y:0,z:.4};
+  doc.duration=2;
+  doc.keys[0].pose.footL.target={...A};
+  doc.keys[1].constraints.plantL=false;doc.keys[1].pose.footL.target={x:.5,y:.12,z:.1}; // released mid-doc, stores a lifted pose
+  doc.keys.push({id:'k3',time:2,label:'',pose:{...doc.keys[1].pose,footL:{...doc.keys[1].pose.footL,target:{...C}}},constraints:{...doc.keys[1].constraints,plantL:true}});
+  doc.keys.sort((a,b)=>a.time-b.time);
+  const at=(t:number)=>toV(samplePose(doc.keys,t).footL.target);
+  // Position: approaching the lift key from the left keeps A; at and after
+  // the key the foot departs from A — never teleports to the stored pose.
+  for(const t of [.95,.999,1,1.001])expect(at(t).distanceTo(toV(A))).toBeLessThan(.01);
+  // Velocity: both transitions move through rest — finite differences shrink
+  // to ~0 at the lift (t=1) and the replant (t=2).
+  const eps=1e-3,v=(t:number)=>at(t+eps).sub(at(t-eps)).length()/(2*eps);
+  expect(v(1)).toBeLessThan(.05);
+  expect(v(2)).toBeLessThan(.05);
+  // Mid-swing the foot is genuinely in flight — and genuinely OFF THE
+  // GROUND: the release key's stored pose is a waypoint the path passes
+  // through at the interval midpoint, not a smoothstep slide.
+  expect(v(1.5)).toBeGreaterThan(.1);
+  expect(at(1.5).y).toBeCloseTo(.12,9);
+  expect(at(1.5).y).toBeGreaterThan(Math.max(A.y,C.y)+.05);
+  for(let s=0;s<=20;s++)expect(at(1+s/40).y).toBeGreaterThanOrEqual(-1e-9);
+ });
+ it('retimes duration proportionally instead of collapsing keys onto one time',()=>{
+  const doc=defaultDocument(rig.rest);retimeKeys(doc,.4);
+  const times=sortedKeys(doc).map(k=>k.time);
+  times.forEach((t,i)=>expect(t).toBeCloseTo([0,.11,.25,.33,.4][i],6));
+  for(let i=1;i<times.length;i++)expect(times[i]).toBeGreaterThan(times[i-1]);
+  for(let i=0;i<=50;i++)expect(flattenPose(samplePose(doc.keys,i/50*.4)).every(Number.isFinite)).toBe(true);
+ });
+ it('keeps single-key retiming strictly inside neighbour bounds',()=>{
+  const doc=defaultDocument(rig.rest),keys=sortedKeys(doc);
+  setKeyTime(doc,keys[2],99);
+  expect(keys[2].time).toBeCloseTo(keys[3].time-.01,9);
+  setKeyTime(doc,keys[2],-99);
+  expect(keys[2].time).toBeCloseTo(keys[1].time+.01,9);
+ });
+ it('rejects malformed docs on every checked dimension',()=>{
+  const good=JSON.parse(serializeDoc(blankDocument(rig.rest,'好','ok')));
+  expect(validateDocShape(good)).toEqual([]);
+  const cases:[string,(d:Record<string,unknown>)=>void][]=[
+   ['重复时间',d=>{(d.keys as {time:number}[])[1].time=(d.keys as {time:number}[])[0].time;}],
+   ['NaN 目标',d=>{((d.keys as {pose:{handL:{target:{x:number}}}}[])[0].pose.handL.target.x)=NaN;}],
+   ['零向量朝向',d=>{((d.keys as {pose:{handL:{forward:{x:number;y:number;z:number}}}}[])[0].pose.handL.forward)={x:0,y:0,z:0};}],
+   ['非布尔约束',d=>{((d.keys as {constraints:{plantL:unknown}}[])[0].constraints.plantL)='yes';}],
+   ['越界时间',d=>{(d.keys as {time:number}[])[1].time=99;}],
+  ];
+  for(const [,mutate]of cases){const d=JSON.parse(JSON.stringify(good));mutate(d);expect(validateDocShape(d).length).toBeGreaterThan(0);}
+  for(const [,mutate]of cases){const d=JSON.parse(JSON.stringify(good));mutate(d);expect(()=>parseDoc(JSON.stringify(d))).toThrow();}
  });
  it('auto-keys by sampling the live pose at insert time',()=>{
   const doc=defaultDocument(rig.rest);
@@ -170,5 +258,18 @@ describe('motion library',()=>{
   const l=lib(memStorage()),doc=parseDoc(serializeDoc(l.active()));
   const added=l.add(doc);
   expect(added.id).not.toBe('forehand-workshop');expect(l.docs.length).toBe(2);expect(l.active().id).toBe(added.id);
+ });
+ it('surfaces storage failures instead of claiming the motion was saved',()=>{
+  const failing:StorageLike={getItem:()=>null,setItem:()=>{throw new Error('quota');}};
+  const l=lib(failing);
+  expect(l.lastError).toBe('quota');
+  l.create('X');expect(l.lastError).toBe('quota');
+ });
+ it('drops deeply-invalid stored docs instead of admitting them into playback',()=>{
+  const store=memStorage(),doc=JSON.parse(serializeDoc(defaultDocument(rig.rest)));
+  doc.keys[1].time=doc.keys[0].time; // duplicate times now fail validation
+  store.map.set(LIBRARY_KEY,JSON.stringify({schemaVersion:1,activeId:doc.id,docs:[doc,defaultDocument(rig.rest)]}));
+  const l=new MotionLibrary(rig.rest,store).load();
+  expect(l.docs.length).toBe(1);expect(l.docs[0].id).toBe('forehand-workshop');
  });
 });
