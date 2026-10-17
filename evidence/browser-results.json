@@ -417,6 +417,7 @@
     "liveVideo": true,
     "posePackage": true,
     "workshopDragPersist": true,
+    "workshopPackageExport": true,
     "workshopFootHeight": true,
     "workshopWaypointDrag": true
   },

@@ -1,6 +1,6 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
-import {Activity,ArrowLeft,Camera,Check,Download,Film,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {Activity,ArrowLeft,Camera,Check,Download,Film,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
@@ -11,6 +11,8 @@ import {clampDuration,WORKSHOP_LIMITS} from './limits';
 import {ankleYForLift,footLift,type Side} from './foot';
 import {rotateHandFrame} from './solver';
 import {unwrapMotionFile} from '../core/motion-file';
+import {buildManifestLocal,buildPosePackageLocal} from '../core/package-export';
+import type {RigManifest} from '../core/protocol';
 import type {RigInfo,ViewId} from '../core/types';
 
 const fmt=(t:number)=>`${Math.floor(t/60)}:${(Math.floor(t%60)).toString().padStart(2,'0')}.${Math.floor(t*100%100).toString().padStart(2,'0')}`;
@@ -71,6 +73,16 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const books=useRef(new HistoryBook()),gate=useRef(new RecordGate()),wristEpoch=useRef(0),shortcuts=useRef<{undo:()=>void;redo:()=>void}>({undo:()=>{},redo:()=>{}});
  const [hint,setHint]=useState('');
  useEffect(()=>{if(!hint)return;const t=setTimeout(()=>setHint(''),6000);return()=>clearTimeout(t);},[hint]);
+ // Pose-package export state: fps is user-visible because it moves the
+ // artifact id; the manifest is a session constant built once; pkgProblems is
+ // the persistent 422 record (keyed to the doc it was rejected on).
+ const [exportFps,setExportFps]=useState(40);
+ const [exporting,setExporting]=useState(false);
+ const [pkgProblems,setPkgProblems]=useState<{doc:string;items:string[]}|null>(null);
+ const manifestRef=useRef<RigManifest|null>(null);
+ // crypto.subtle exists only on secure origins (https / localhost); without it
+ // the digest would have to be fabricated, so the export degrades instead.
+ const subtleOk=typeof globalThis.crypto?.subtle?.digest==='function';
  const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true});
  const [videoUrl,setVideoUrl]=useState('');const [sync,setSync]=useState(false);const syncOffset=useRef(0);const [videoPlaying,setVideoPlaying]=useState(false);
  useEffect(()=>{
@@ -148,6 +160,36 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  };
  const delKey=()=>{if(d.keys.length<=2||!sel)return;edit(dd=>{dd.keys=dd.keys.filter(k=>k.id!==sel.id);});setSelected(sortedKeys(d)[0].id);};
  const exportDoc=()=>{const blob=new Blob([serializeDoc(d)],{type:'application/json'});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`${d.id}.workshop.json`;a.click();URL.revokeObjectURL(a.href);};
+ // Solve + hash + validate locally — the same pipeline the service runs for
+ // POST /v1/motions {workshop-doc}, so the downloaded bytes equal the service
+ // response for this document. The builder snapshots the doc itself, but the
+ // playhead is paused first so a playing frame can't move the read pose.
+ const exportPackage=async()=>{
+  const e=engine.current;
+  if(!e?.rig){setHint('模型尚未加载完成，无法导出姿态包。');return;}
+  e.setPlaying(false);
+  setExporting(true);
+  try{
+   manifestRef.current??=await buildManifestLocal(rigInfo);
+   const res=await buildPosePackageLocal(d,exportFps,{rig:e.rig,manifest:manifestRef.current});
+   if(res.status===200){
+    const blob=new Blob([JSON.stringify(res.body)],{type:'application/json'});
+    const a=document.createElement('a');a.href=URL.createObjectURL(blob);
+    // Content-addressed name: the doc and the artifact id both address content.
+    a.download=`${d.id}.${res.body.id}.pose.json`;a.click();URL.revokeObjectURL(a.href);
+    setPkgProblems(null);
+    setHint(`已导出姿态包 ${res.body.id}（${exportFps} fps · ${res.body.timeline.count} 帧）`);
+   }else if(res.status===422){
+    // Rejected artifacts do not exist — nothing downloads. The validator's
+    // problems stay listed in the card until the next export attempt.
+    setPkgProblems({doc:d.id,items:res.body.error.details??[res.body.error.message]});
+   }else{
+    setPkgProblems(null);
+    setHint(res.body.error.message);
+   }
+  }catch(err){setHint(err instanceof Error?err.message:String(err));}
+  finally{setExporting(false);}
+ };
  // Motion-file envelopes unwrap to their embedded WorkshopDoc first —
  // a bare envelope's schemaVersion:1 would otherwise be misread as a v1 doc;
  // clip-motion envelopes carry no document and unwrap throws a readable error.
@@ -191,6 +233,15 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button onClick={exportDoc}><Download size={13}/>导出 JSON</button>
       <button onClick={()=>importRef.current?.click()}><Upload size={13}/>导入</button>
       <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={e=>{const f=e.target.files?.[0];if(f)void importDoc(f);e.target.value='';}}/>
+     </div>
+     <div className="ws-sub"><h3>姿态包 <small>本地求解 · 与服务同一条管线</small></h3>
+      <label className="ws-field"><span>采样率 fps</span><input type="number" min={1} max={60} step={1} value={exportFps} disabled={!subtleOk||exporting} onChange={e=>setExportFps(Math.max(1,Math.min(60,Math.round(Number(e.target.value)||40))))}/></label>
+      <div className="ws-row">
+       <button onClick={()=>void exportPackage()} disabled={!subtleOk||!info||exporting} title={subtleOk?'求解并校验当前文档，下载 .pose.json':'姿态包导出需 https 或 localhost 打开'}><Package size={13}/>{exporting?'求解中…':'导出姿态包'}</button>
+      </div>
+      <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
+      {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'#c0392b'}}>上一次导出被语义校验拒绝，未生成文件：</p>
+       <ul>{pkgProblems.items.map((p,i)=><li key={i}>{p}</li>)}</ul></div>:null}
      </div>
     </section>
     <section className="ws-card"><h2>参考视频 <small>WHAM 自动估计待接入</small></h2>

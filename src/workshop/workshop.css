@@ -68,6 +68,8 @@
 .ws-vkeys button{display:flex;align-items:center;gap:6px;font-size:10px;padding:5px 7px;border-radius:4px;color:#42536b}
 .ws-vkeys button:hover{background:#eef3fb;color:var(--blue)}
 .ws-vkeys small{margin-left:auto;color:#93a1b3;font-variant-numeric:tabular-nums}
+.ws-problems ul{margin:4px 0 0;padding-left:16px}
+.ws-problems li{font-size:10px;color:#b0483c;line-height:1.7}
 .ws-legend p{display:flex;align-items:center;gap:8px;font-size:10px;color:#5c708c;margin:7px 0}
 .ws-legend i{width:11px;height:11px;border-radius:50%;flex-shrink:0}
 .ws-legend em{font-style:normal;font-weight:600}
