@@ -1,0 +1,113 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://github.com/tinyviber/human3d/spec/pose-package.schema.json",
+  "title": "PosePackage",
+  "description": "Canonical pose package v1: per-bone local rotations + root translation on a shared timestamp grid. Right-handed coordinates, +Y up, character faces +Z, meters/radians/seconds. Local transforms are relative to the parent bone; rest local rotations are identity [0,0,0,1] and non-root local translations are constant (see the rig manifest restLocal fields). Quaternion components are in [x,y,z,w] order and hemisphere-continuous so consumer slerp takes the short arc.",
+  "type": "object",
+  "required": ["schemaVersion","kind","id","units","frame","poseMode","quaternionOrder","action","rig","timeline","tracks","events","quality","provenance"],
+  "properties": {
+    "schemaVersion": {"const": 1},
+    "kind": {"const": "pose-package"},
+    "id": {"type": "string", "pattern": "^mot_[0-9a-f]{16}$"},
+    "units": {
+      "type": "object", "required": ["length","angle","time"],
+      "properties": {"length": {"const": "meter"}, "angle": {"const": "radian"}, "time": {"const": "second"}},
+      "additionalProperties": false
+    },
+    "frame": {
+      "type": "object", "required": ["handedness","up","forward"],
+      "properties": {"handedness": {"const": "right"}, "up": {"const": "+Y"}, "forward": {"const": "+Z"}},
+      "additionalProperties": false
+    },
+    "poseMode": {"const": "local-trs", "description": "Per-bone local transform relative to its parent bone. Unanimated bones inherit manifest restLocal; only 'root' carries a translation track."},
+    "quaternionOrder": {"const": "xyzw"},
+    "action": {
+      "type": "object", "required": ["id","revision","parameters","definitionSHA256"],
+      "properties": {
+        "id": {"type": "string"},
+        "revision": {"type": "string"},
+        "parameters": {"type": "object"},
+        "definitionSHA256": {"type": "string", "pattern": "^[0-9a-f]{64}$", "description": "Sorted-key canonical JSON hash of the fully resolved action definition."}
+      },
+      "additionalProperties": false
+    },
+    "rig": {
+      "type": "object", "required": ["id","manifestSHA256","bones"],
+      "properties": {
+        "id": {"type": "string"},
+        "manifestSHA256": {"type": "string", "pattern": "^[0-9a-f]{64}$"},
+        "bones": {"type": "integer", "minimum": 1}
+      },
+      "additionalProperties": false
+    },
+    "timeline": {
+      "type": "object", "required": ["fps","duration","count","timestamps"],
+      "properties": {
+        "fps": {"type": "number", "exclusiveMinimum": 0, "maximum": 240, "description": "Output sample grid; the solver's internal dt is recorded separately in provenance when relevant."},
+        "duration": {"type": "number", "minimum": 0},
+        "count": {"type": "integer", "minimum": 2},
+        "timestamps": {"type": "array", "items": {"type": "number"}, "description": "Action-relative seconds, strictly increasing. The single time truth — no fps field is authoritative for event times."}
+      },
+      "additionalProperties": false
+    },
+    "tracks": {
+      "type": "object", "required": ["translation","rotations"],
+      "properties": {
+        "translation": {
+          "type": "object", "required": ["bone","values"],
+          "properties": {
+            "bone": {"const": "root"},
+            "values": {"type": "array", "items": {"type": "number"}, "description": "Flattened [x,y,z] × timeline.count — the root bone's world-space position."}
+          },
+          "additionalProperties": false
+        },
+        "rotations": {
+          "type": "array",
+          "description": "One entry per animated bone (identity throughout ⇒ omitted).",
+          "items": {
+            "type": "object", "required": ["bone","values"],
+            "properties": {
+              "bone": {"type": "string"},
+              "values": {"type": "array", "items": {"type": "number"}, "description": "Flattened [x,y,z,w] × timeline.count, unit norm, hemisphere-continuous."}
+            },
+            "additionalProperties": false
+          }
+        }
+      },
+      "additionalProperties": false
+    },
+    "events": {
+      "type": "array",
+      "items": {
+        "type": "object", "required": ["time","label","type"],
+        "properties": {
+          "time": {"type": "number"},
+          "label": {"type": "string"},
+          "type": {"enum": ["phase","keyframe","contact","support-start"]}
+        },
+        "additionalProperties": false
+      }
+    },
+    "quality": {
+      "type": "object", "required": ["checks","warnings"],
+      "properties": {
+        "checks": {"type": "array", "items": {"type": "object", "required": ["id","ok","detail"], "properties": {"id": {"type": "string"}, "ok": {"type": "boolean"}, "detail": {"type": "string"}}, "additionalProperties": false}},
+        "warnings": {"type": "array", "items": {"type": "string"}}
+      },
+      "additionalProperties": false,
+      "description": "Template/rig/solver-specific measurements — not a claim of general biomechanical validity."
+    },
+    "provenance": {
+      "type": "object", "required": ["solver","solverRevision","source","license","parametersResolved"],
+      "properties": {
+        "solver": {"type": "string"},
+        "solverRevision": {"type": "string"},
+        "source": {"type": "string"},
+        "license": {"type": "object", "required": ["motion","rig"], "properties": {"motion": {"type": "string"}, "rig": {"type": "string"}}, "additionalProperties": false},
+        "parametersResolved": {"type": "object"}
+      },
+      "additionalProperties": false
+    }
+  },
+  "additionalProperties": false
+}

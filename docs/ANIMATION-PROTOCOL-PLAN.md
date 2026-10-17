@@ -1,6 +1,6 @@
 # 跨项目人体动作协议：方案与优先级
 
-状态：探索计划，尚未实现协议、服务端或导出器。此方案根据三轮独立脑暴与评审整理，目标是让项目通过经过校验的数据参数请求已支持的动作，避免为每次动作请求临时写代码或让 LLM 生成代码。
+状态：MVP 已实现 v1 只读目录与同步求解接口（见文末「实现状态」）；GLB 导出、渲染请求、MCP 适配与异步任务尚未实现。此方案根据三轮独立脑暴与评审整理，目标是让项目通过经过校验的数据参数请求已支持的动作，避免为每次动作请求临时写代码或让 LLM 生成代码。
 
 ## 结论与排序
 
@@ -124,3 +124,22 @@ RenderRequest 独立引用一个已完成的 motion，可包含命名相机预�
 - [VRMC_vrm humanoid 规范](https://github.com/vrm-c/vrm-specification/blob/master/specification/VRMC_vrm-1.0/humanoid.md)：将人体语义骨骼映射到 glTF 节点，适合作为可选 VRM adapter，不作为所有客户必须使用的唯一骨架。
 - [OpenAPI 规范](https://spec.openapis.org/oas/latest.html)：面向普通 HTTP 客户端的语言无关接口描述，可用于能力发现、schema 发布和客户端生成。
 - [MCP 规范](https://modelcontextprotocol.io/specification/2026-07-28)：定义 AI 应用连接工具和资源的协议，支持可选 agent adapter；其官方边界是 AI 应用生态，不替代通用项目 API。
+
+## 实现状态（MVP v1）
+
+已实现：`src/server/` 单体服务（`npm run service`，仅 loopback，`node:http` 零新增运行时依赖）+ `spec/` 契约文件。
+
+| 端点 | 状态 |
+|---|---|
+| `GET /v1/capabilities` | ✅ 服务版本、动作目录（含参数 schema、来源、缺陷 notes）、rig 摘要、资源上限 |
+| `GET /v1/actions/{id}` | ✅ 单动作描述 |
+| `GET /v1/rigs/{id}` | ✅ rig manifest：163 骨拓扑、rest local TRS（平移=父子 head 差、旋转恒等）、VRM humanoid 语义映射（52 骨映射 / 111 extra）、manifestSHA256 + sourceSHA256 |
+| `POST /v1/motions` | ✅ 同步返回 pose-json；`Idempotency-Key` 重放 / 冲突 409；指纹为排序键 canonical JSON SHA-256（RFC 8785 JCS 待替换） |
+| `GET /v1/motions/{id}` | ❌ 未实现——当前全部同步完成，无异步任务 |
+| `POST .../renders`、GLB/VRMA 导出、MCP adapter | ❌ 未实现——按分阶段验收顺序后置 |
+
+目录诚实的边界：keyframed 五动作（idle/reach/squat/ready/forehand）+ `workshop-doc`（提交校验过的 WorkshopDoc，≤10s/120 keys，参数即模板原语——对应第二优先的声明式模板雏形）。`walk`（CMU 动捕转换，许可边界）、动力学动作（`punch`/`baseball-throw`，离线分钟级求解、需要记录回放→姿态包转换）均不在目录中；`shotput`/`throw` 记录无动作 spec，属陈旧资产。forehand 的「上臂与躯干穿插」在目录 notes 与 quality.warnings 中显式标注。
+
+姿态包约定：仅输出非恒等旋转轨道 + root 平移（共享时间戳网格）、四元数半球连续化、事件（phase/keyframe/contact/support-start）、quality（膝/肘/肩限位与足底高度逐帧聚合 + workshop 逐关键帧约束检查 + warnings）。`src/server/validate.ts` 是独立校验器（不共用求解代码），重算 FK 复查段长、范数、半球连续、时间戳；`spec/examples/idle.pose.json` 是黄金 fixture（`npm run protocol:example` 重新生成）。
+
+验证发现并已并入设计的修正：OpenAPI 锁 3.1（对齐本仓既有 draft-2020-12 schema）；语义表采用 VRM humanoid 词表而非自造命名；MuscleMimic/MyoSuite 消费的是特定 MuJoCo 骨架的 qpos 轨迹——TRS 姿态包是呈现/交付格式，未来可加 solver-native `qpos/qvel` 块而非把 TRS 当求解器输入。

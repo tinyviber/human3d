@@ -1,0 +1,199 @@
+openapi: 3.1.0
+info:
+  title: human3d motion API
+  version: 0.1.0
+  description: |
+    Kinematic human-motion service (protocol v1). Accepts an action id plus
+    bounded parameters and returns a canonical pose package: per-bone local
+    rotations + root translation on a shared timestamp grid, events, and a
+    quality block. GLB/images/video are derived products planned as separate
+    render requests — not yet implemented.
+
+    Design doc: docs/ANIMATION-PROTOCOL-PLAN.md
+    Schemas: spec/pose-package.schema.json, spec/rig-manifest.schema.json
+
+    Local deployment: loopback only, request bodies capped at 1 MiB. No
+    user-supplied scripts, file paths, or model files are accepted.
+servers:
+  - url: http://127.0.0.1:8788
+    description: local reference service (npm run service)
+paths:
+  /v1/capabilities:
+    get:
+      operationId: listCapabilities
+      summary: Service version, action catalog, rigs, parameter schemas, resource limits
+      responses:
+        '200':
+          description: Capability catalog
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, rigs, actions, limits, endpoints]
+                properties:
+                  service:
+                    type: object
+                    properties:
+                      name: {const: human3d-motion}
+                      version: {type: string}
+                      protocol: {const: v1}
+                  rigs:
+                    type: array
+                    items:
+                      type: object
+                      properties:
+                        id: {type: string}
+                        manifestSHA256: {type: string}
+                        bones: {type: integer}
+                        height: {type: number}
+                        semantics: {type: object}
+                  actions:
+                    type: array
+                    items: {$ref: '#/components/schemas/ActionDescriptor'}
+                  limits: {type: object}
+                  endpoints: {type: array, items: {type: string}}
+  /v1/actions/{actionId}:
+    get:
+      operationId: getAction
+      summary: Single action's parameter schema, provenance and executable constraints
+      parameters:
+        - name: actionId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Action descriptor
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ActionDescriptor'}
+        '404': {$ref: '#/components/responses/Error'}
+  /v1/rigs/{rigId}:
+    get:
+      operationId: getRig
+      summary: Rig manifest — topology, rest local TRS, VRM semantic map, hashes
+      parameters:
+        - name: rigId
+          in: path
+          required: true
+          schema: {type: string}
+      responses:
+        '200':
+          description: Rig manifest
+          content:
+            application/json:
+              schema: {$ref: 'rig-manifest.schema.json'}
+        '404': {$ref: '#/components/responses/Error'}
+  /v1/motions:
+    post:
+      operationId: runMotion
+      summary: Solve an action into a canonical pose package (synchronous)
+      description: |
+        Short solves return `200` with the completed pose package. The
+        `Idempotency-Key` header associates client retries with one run:
+        replaying the key with an identical canonical request body returns the
+        stored response; reusing the key with a different body returns `409`.
+        Request fingerprints use sorted-key canonical JSON (see service source;
+        full RFC 8785 JCS is planned).
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: false
+          schema: {type: string, maxLength: 128}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/MotionRequest'}
+      responses:
+        '200':
+          description: Completed pose package
+          content:
+            application/json:
+              schema: {$ref: 'pose-package.schema.json'}
+        '400': {$ref: '#/components/responses/Error'}
+        '404': {$ref: '#/components/responses/Error'}
+        '409': {$ref: '#/components/responses/Error'}
+components:
+  schemas:
+    MotionRequest:
+      type: object
+      required: [action]
+      additionalProperties: false
+      properties:
+        action:
+          type: object
+          required: [id]
+          additionalProperties: false
+          properties:
+            id:
+              type: string
+              enum: [idle, reach, squat, ready, forehand, workshop-doc]
+            parameters:
+              type: object
+              description: |
+                Per-action bounded parameters. Keyframed actions accept `{}`.
+                `workshop-doc` requires `document` (WorkshopDoc JSON:
+                named keyframes with pose targets and plant/grip/contact
+                constraints; max 10 s, 120 keys) and optional `sampleHz`.
+        rig:
+          type: string
+          default: makehuman-body
+          description: Only 'makehuman-body' is servable; other rigs return 409 until a validated retarget adapter exists.
+        outputs:
+          type: array
+          items:
+            type: object
+            required: [kind, format]
+            properties:
+              kind: {const: motion}
+              format: {const: pose-json}
+          description: Only pose-json is implemented; other formats return 400 unsupported_output.
+        sample:
+          type: object
+          properties:
+            fps: {type: number, minimum: 1, maximum: 60, default: 40}
+    ActionDescriptor:
+      type: object
+      required: [id, revision, title, english, kind, parameters, outputs, provenance]
+      properties:
+        id: {type: string}
+        revision: {type: string}
+        title: {type: string}
+        english: {type: string}
+        kind: {enum: [keyframed, workshop-doc]}
+        durationSeconds: {type: [number, 'null']}
+        parameters: {type: object, description: JSON Schema for action.parameters}
+        outputs: {type: array, items: {type: object}}
+        phases:
+          type: array
+          items:
+            type: object
+            properties: {time: {type: number}, label: {type: string}}
+        provenance:
+          type: object
+          properties:
+            source: {type: string}
+            license: {type: string}
+            upstreamLicense: {type: string}
+        notes: {type: array, items: {type: string}}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: object
+          required: [code, message]
+          properties:
+            code:
+              type: string
+              enum: [invalid_request, invalid_json, validation_failed, unknown_action, unknown_rig, unsupported_rig, unsupported_output, idempotency_conflict, not_found, internal]
+            message: {type: string}
+            missing: {type: array, items: {type: string}, description: Capabilities the request would need that the service does not have}
+            available: {type: array}
+  responses:
+    Error:
+      description: Error envelope
+      content:
+        application/json:
+          schema: {$ref: '#/components/schemas/Error'}

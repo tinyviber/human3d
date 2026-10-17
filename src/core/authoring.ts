@@ -2,8 +2,8 @@ import {AnimationClip,QuaternionKeyframeTrack,VectorKeyframeTrack,Vector3,Quater
 import {HumanRig} from './rig';
 import {applyGrip} from './racket';
 import {DEG,solveTwoBone} from './kinematics';
-import {AUTHORED_KEYFRAMED_IDS,motionById} from './motions';
-type KeyframedMotionId=typeof AUTHORED_KEYFRAMED_IDS[number];
+import {AUTHORED_KEYFRAMED_IDS,authoredMotionById,type AuthoredKeyframedId} from './authored-motions';
+type KeyframedMotionId=AuthoredKeyframedId;
 type V=[number,number,number];
 interface Controls{y:number;z:number;yaw:number;chest:number;lean:number;right:V;left:V;rf:V;rn:V;lf:V;ln:V;stance:number}
 type Key={t:number;pose:Partial<Controls>};
@@ -77,7 +77,7 @@ export function poseAt(rig:HumanRig,id:KeyframedMotionId,time:number){
 export function buildAuthoredClips(rig:HumanRig){
  const clips=new Map<string,AnimationClip>();
  for(const id of AUTHORED_KEYFRAMED_IDS){
-  const spec=motionById(id);
+  const spec=authoredMotionById(id)!;
   const times:number[]=[],positions:number[]=[],rot=new Map([...rig.bones.keys()].map(n=>[n,[] as number[]]));const frames=Math.ceil(spec.duration*40);
   for(let i=0;i<=frames;i++){
    const t=i/frames*spec.duration;poseAt(rig,id,t);times.push(t);positions.push(...rig.bone('root').position.toArray());
