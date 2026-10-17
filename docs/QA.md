@@ -14,7 +14,7 @@
 
 ## 自动测试
 
-> 2026-10-17 追加（issue #2 修复）：`npx vitest run` 共 **107 项通过**，新增契约、语义校验与工坊回归测试，阈值见 [validation.md](validation.md)。该计数为当日快照；架构收敛后（2026-10-18）为 **138 项**，最新数量以 `npm test` 输出为准。下方 33 项是原验收记录，未改动。
+> 2026-10-17 追加（issue #2 修复）：`npx vitest run` 共 **107 项通过**，新增契约、语义校验与工坊回归测试，阈值见 [validation.md](validation.md)。该计数为当日快照；架构收敛后（2026-10-18）为 **138 项**，WP-C 收尾（同日，`feat/pose-pipeline` `0b17c6d` 起）为 **185 项**，最新数量以 `npm test` 输出为准。下方 33 项是原验收记录，未改动。
 
 `npm test -- --maxWorkers=1`：**33 项通过**。真实解析交付的 GLB 与 AnimationClip，并检查直拳握拳各指节、腕部动作和蒙皮—肌肉仿真上肢方向一致性。
 
@@ -74,6 +74,13 @@
 | `workshopGlbExport` | 「导出 GLB」真实下载：glTF magic/版本、恰好一条 animation、rotation channel 数等于包轨道数；文件名 `<docId>.<artifactId>.glb`（GLB 不承载身份契约——动画名与文件名借用制品 id 便于对应，身份以 .pose.json 为准） |
 | `workshopFootHeight` | UI 取消支撑 → 高度滑块写 0.35 m → 摆动中点 `foot_L` 离地 >0.15 |
 | `workshopWaypointDrag` | 摆动区间内脚柄 passive、青色路径点手柄真实拖动跟手且求解脚位同步升高 |
+
+### WP-C 追加的检查与证据（求解语义变更：切线限界 + 手部 SO(3) 三次）
+
+- **质量探针**：`src/workshop/quality-probe.ts` 是共享度量实现（vitest 与 CLI 同源），`npx tsx scripts/measure-quality-probe.mts [fps=240] [motion|all]` 走真实 `frameAt → solveEffectiveFrame → analyzePose` 路径以 240fps 采样；`evidence/quality-probe-*.json` 是 WP-C 后求解器的提交基线。`quality.test.ts` 既有结构断言也有硬质量门（kick 削减、atKey 步长、accelTop 等，实测值写进注释）。
+- **forehand-study 验收夹具**：`spec/examples/forehand-study.request.json` 是 2.0 s、5 键的正手研究文档，**全部由工作台真实 UI 写路径制作**（`scripts/forehand-study/drive.mjs` + `ops.json` 回放：面板滑块/时间字段 input 事件 + 画布双视角真实指针拖拽）；账本在 `spec/examples/forehand-study.md`，逐轮探针快照在 `evidence/forehand-study/rounds.jsonl`。`contract.test.ts` 钉结构与 200 契约，`quality.test.ts` 对其实测值加 ×1.25 上限 / ÷1.25 下限硬门（腕弯曲 0 截幅、IK 残差 ~0、触球键拍头速度 >3 m/s、tip kicks ≤170 回归门等）。
+- **`scripts/forehand-study/` 工具目录**：研究期的探针迭代/驱动脚本（probe/grid/inspect/retune/kickmap/tiptrace/delta-decomp/finalize/pkgcheck + `drive.mjs` UI 驱动器 + `ops.json` 配方），保留作复现与后续校准用途，各文件头注释注明入口参数。
+- 求解语义变更后全量浏览器复验：本记录对应一次 `QA_BROWSER_CHANNEL=chrome npm run qa` 全绿（errors/warnings 为空）与 `node scripts/dynamics-browser-qa.mjs` 29 项全过；`evidence/browser-results.json`、`dynamics-results.json` 与相关截图/录屏随运行刷新。
 
 ## 实测关键姿态
 
@@ -137,6 +144,8 @@
 - forehand.webm / forehand.mp4：30 fps 实时挥拍录屏，H.264 转码已完整解码验证。
 - video-1.3.png / video-2.55.png / video-3.35.png / video-4.6.png：录屏关键帧复查。
 - browser-results.json：浏览器检查与 480 个基础动作采样的结构化原始结果。
+- quality-probe-{idle,reach,squat,ready,forehand,default,summary}.json：240fps 质量探针基线（WP-C 后求解器）。
+- forehand-study/rounds.jsonl + doc-*.json：UI 制作验收夹具的逐轮探针快照与中间文档；定稿在 `spec/examples/`。
 
 ## 2026-10-17 投掷与直拳修复复验
 

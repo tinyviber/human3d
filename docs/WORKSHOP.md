@@ -36,7 +36,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 ## 数据与求解
 
-- `src/workshop/document.ts`：`WorkshopDoc` = 关键帧数组 + 时长 + 补间开关。姿态是任务空间参数（根骨偏移/朝向、脊柱前倾/转体/侧弯、四肢末端目标 + 极点 + 手部 forward/normal 框架、脚部 yaw/pitch）。`samplePose` 按数据性质分别插值：位置量做非均匀 Hermite（Catmull-Rom 切线）；yaw/foot yaw/pitch 等角度先沿关键帧链做 ±360° 展开再走最短路径；手部 forward/normal 契约上必须是正交归一框架（seed/parse/库存恢复时规范化），按四元数 slerp 插值保证中间帧始终构成有效方向；支撑脚按上一条接触区间规则保持。
+- `src/workshop/document.ts`：`WorkshopDoc` = 关键帧数组 + 时长 + 补间开关。姿态是任务空间参数（根骨偏移/朝向、脊柱前倾/转体/侧弯、四肢末端目标 + 极点 + 手部 forward/normal 框架、脚部 yaw/pitch）。`samplePose` 按数据性质分别插值：位置量做非均匀 Hermite（Catmull-Rom 中心差分切线，每个内部键限界 `|m| ≤ 2×相邻较小割线幅值`（`TANGENT_SECANT_CAP`）——抑制稀疏键的样条过冲/鞭打，端点与锁定通道仍取零切线，保持 C¹）；yaw/foot yaw/pitch 等角度先沿关键帧链做 ±360° 展开再走最短路径；手部 forward/normal 契约上必须是正交归一框架（seed/parse/库存恢复时规范化），按 corrected-slerp 形式的 SO(3) 三次曲线插值（逐位过键、键时刻角速度 C¹，切线与 `tan()` 同一构造与同限界）保证中间帧始终构成有效方向；支撑脚按上一条接触区间规则保持。
 - `src/workshop/solver.ts`：采样帧的唯一求解入口是 `solveEffectiveFrame`（支撑权重淡入淡出、握拍渐变、抬肩辅助随帧传入，不再单独推导），落到 `solvePose` 把参数写到骨架（复用 `rig.limb`/`rig.hand`/`applyGrip`，含支撑脚背屈超限时的骨盆后移二分修正）。`analyzePose` 输出运动学合理性：膝/肘/肩限位、支撑脚残差、分段质量近似质心在支撑多边形（锁定脚脚印凸包）内的投影。
 - `src/workshop/engine.ts`：Three.js 场景、手柄拾取与拖拽平面、轨迹线（拍头/手腕）、触球标记、质心投影与地面支撑多边形。
 - `src/workshop/WorkshopApp.tsx`：文档/视频/约束/检查面板 + 关键帧时间轴。
@@ -67,6 +67,6 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 ## 边界
 
 - 不做动力学：没有质量/惯性的真实积分、没有肌肉。合理性检查是运动学近似（de Leva 式分段质量分数）。
-- 补间是 Hermite，未做时序优化/滤波；导出只含关键帧与约束，不含烘焙轨迹。
+- 补间是限幅 Hermite（位置/角度通道）+ SO(3) 三次（手部朝向），未做时序优化/滤波；导出只含关键帧与约束，不含烘焙轨迹。质量度量走 `src/workshop/quality-probe.ts`（CLI：`npx tsx scripts/measure-quality-probe.mts`，校准基线在 `evidence/quality-probe-*.json`）。
 - 手部 forward/normal 通过增量滑杆编辑；拖动平面默认面向相机。支撑脚锁定在地面高度拖动；离地脚可三维拖动（相机朝向平面）或在右侧面板用「抬升高度」滑块精确设置 `foot.target.y` —— 该高度即摆动路径点。离地帧时刻脚骨骼仍在上一个接触点，因此摆动区间内脚柄只作显示；青色「摆动路径点」手柄直接绑定离地帧存储的 `foot.target`，拖动它即编辑轨迹中点。末尾离地帧没有后续区间，面板会提示先添加落地帧。
 - 与查看器共用 `rig/kinematics/racket` 模块，但不改其接口；工作台动作不进入主页动作库。

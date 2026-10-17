@@ -427,3 +427,39 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 | tip 折返>25° | 1(130°@0.5) → 0 | 2 → 1(40°@2.163) |
 
 **诚实结论**:① kick 阈值 0.1m/s 对 defaultDocument 已到下限——0.8s 挥拍 tip 合法速度 ~24m/s,|Δv|>0.1 几乎每帧成立,真正消失的是键邻域 C⁰ kick(最差单帧 Δv 10.26→4.87,且时间从 keyΔ0ms 挪到 keyΔ63ms)。② tip vmax 上升 28%:slerp 在键时刻的方向阶跃等效于每键一次刹车,平滑后能量不再被人为吃掉——这是物理上更诚实的轨迹,hand 链峰 31.2 rad/s 仍低于 40 rad/s 语义门。③ forehand 是 kick 指标真正能区分的文档:62→26,且残余集中在 keyΔ13ms 的接触区物理挥速,不是朝向插值缺陷。
+
+# WP-C(收尾)— 验收夹具、硬质量门与裁决摘要
+
+> 承接上两节(切线限界 `b450e79`、手部 SO(3) 三次 `5f3f2b9`)。收尾交付:`72f78e3`(UI 制作的 forehand-study 夹具 + 账本)+ `0b17c6d`(契约/质量硬门);本工单补全量浏览器复验与文档同步。
+
+## 决策裁决摘要(评审选项,提案原文见 WP-C 工单)
+
+- **B 进**:手部朝向逐段 slerp → SO(3) 三次插值(角速度 C¹)——已交付,见上节。
+- **C 进**:经工作台真实 UI 写路径制作验收文档 + 探针硬质量门——已交付,见下。
+- **D 推迟**:不在本 WP 交付,列入遗留待后续工单定夺。
+- **E/F 出**:判出本 WP 范围,不做。
+- **锥角不拓宽**:`WRIST_BEND_LIMIT_DEG` 维持 59.8° 不变。defaultDocument 的腕弯曲需求(87.7°、25% 帧被截幅)是种子文档自身的真实超限,不是限幅过紧的证据;验收文档在现有锥内完成(maxBend 48.2°、0/481 帧截幅),不靠放宽限幅凑指标。
+
+## study 夹具与账本位置
+
+- 夹具:`spec/examples/forehand-study.request.json`(2.0s、5 键正手:准备→引拍→触球→随挥→恢复;`handFrames` 双手 pelvis;唯一 contact 键 @1.15s)。
+- 账本:`spec/examples/forehand-study.md`——逐键 UI 编辑路径、~35 轮探针迭代拐点、240/60fps 最终指标表、残余偏差如实记录。全部编辑经真实 UI 写路径(`drive.mjs` 回放 `ops.json`:滑块/字段 input 事件 + 双视角画布指针拖拽),无姿态数据注入;`getDoc()` 仅用于读出。
+- 工具链:`scripts/forehand-study/`(drive/ops 配方、probe、grid、inspect、retune、kickmap、tiptrace、delta-decomp、finalize、pkgcheck),各文件头注明用途与入口参数,保留作复现与后续校准用途。
+- 逐轮指标快照:`evidence/forehand-study/rounds.jsonl`(`final-240`/`final-60` 为定稿读数)+ `doc-*.json` 中间稿。
+
+## 硬质量门校准值(quality.test.ts,实测 ×1.25 上限 / ÷1.25 下限)
+
+@240fps:腕截幅 `clamped=0` 且 `maxBend<55°`(实测 48.2);IK arm/leg 残差 `<3mm`(实测 ~1e-16);`reachMax<1`(实测 94.3%);支撑脚滑移 `<1mm`(实测 ~4e-16);鞋底穿透 `<1e-6`;踝背屈 L/R `≤20.1°`(实测 19.6/20.0,R 贴限由 pelvis 修正顶住,`saturated=0`);`root.maxA<16`(实测 12.56)、`maxStep<1.6mm`(实测 1.27);contact 键 tip `>3.0`(实测 3.79)、tip vmax `>7.0`(实测 8.94 @0.983,峰领先触球 0.17s、门 |Δt|≤0.25s);tip kicks `≤170`(实测 136,回归门不宣称清零)、wrist kicks `≤9`(实测 7);动力链近端峰先于前臂 +0.05s 容差。60fps 复跑同门不变。`contract.test.ts` 钉:≤5 键、恰好一个 contact、逐键双足支撑、pelvis 手系、schema/服务 200 全通过。
+
+## 求解语义两轮变更后的全量复验(本工单)
+
+- `QA_BROWSER_CHANNEL=chrome npm run qa`:全部检查过(errors/warnings 空)——含 `posePackageForehand`(信封恢复/球拍重挂载/oneShot)、`workshopDragPersist`(拖动→刷新后内存文档与求解腕位一致)、`workshopWaypointDrag`(路径点真实拖动跟手)等既有断言在新求解语义下复验;证据文件随运行刷新。
+- `QA_BROWSER_CHANNEL=chrome node scripts/dynamics-browser-qa.mjs`:29 项全过(投掷相位、直拳手部、录屏),动力学回放无回归。
+- `npx tsc -b` / `npm test`(185)/ `npm run spec:check`(14)/ `npm run build` 全绿;`measure-motions.mts` 重测刷新 `docs/validation.md` 表(漂移均在余量内:内置峰 forehand 6.95 rad/s,工坊默认文档 29.22→32.98 rad/s——共享键切线带真实角速度过键,仍低于 40 门)。
+
+## 遗留(如实记录,未达标或待后续)
+
+- **tip kicks 136 @240fps(study 文档)**:物理残余而非插值缺陷——0.1m/s/帧阈值 ≈ 24m/s² 等效加速度,而 8.9m/s 挥拍鞭打段 accelTop ~80m/s²,大部分 kick 帧是合法速度变化;已用 ≤170 回归门防恶化,不宣称达标。
+- **动力链非完全 proximal→distal**:相对峰时刻上臂 .875s → 骨盆/躯干同帧 .971s → 手 .988s → 前臂 1.212s——近端次序在 240fps 帧粒度未拉开(骨盆/躯干同帧),手部峰夹在前臂之前;门只钉「近端先于前臂」,全序留待后续。
+- **D/E 待办**:D 按裁决推迟、E 判出本 WP,若重启需新工单;选项原文见 WP-C 工单记录。
+- **study 晋升 bundled**:夹具目前是 spec 示例 + 探针门,未进 `assets/motions/` 信封与主页动作库;晋升(文档→motion-file 信封、进内置动作)留后续 WP。
