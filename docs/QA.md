@@ -74,7 +74,8 @@
 | `workshopGlbExport` | 「导出 GLB」真实下载：glTF magic/版本、恰好一条 animation、rotation channel 数等于包轨道数；文件名 `<docId>.<artifactId>.glb`（GLB 不承载身份契约——动画名与文件名借用制品 id 便于对应，身份以 .pose.json 为准） |
 | `workshopFootHeight` | UI 取消支撑 → 高度滑块写 0.35 m → 摆动中点 `foot_L` 离地 >0.15 |
 | `workshopWaypointDrag` | 摆动区间内脚柄 passive、青色路径点手柄真实拖动跟手且求解脚位同步升高 |
-|| `workshopOnion` | 「洋葱皮」开关 → 场景中 3 前 + 3 后幽灵 LineSegments 池存在；keys 模式只画播放头 ±N 键括号（停在中键上前一后一），step 模式数量随「数量」控件 2→4 / 3→6；真实指针拖动期间幽灵缓冲逐字节冻结、松手后随 docDirty 重建刷新；关闭后全部隐藏 |
+| `workshopOnion` | 「洋葱皮」开关 → 场景中 3 前 + 3 后幽灵 LineSegments 池存在；keys 模式只画播放头 ±N 键括号（停在中键上前一后一），step 模式数量随「数量」控件 2→4 / 3→6；真实指针拖动期间幽灵缓冲逐字节冻结、松手后随 docDirty 重建刷新；关闭后全部隐藏 |
+| `workshopStillExport` | 「渲染静帧」真实点击下载：PNG magic + IHDR 钉死固定出图 640×720，文件名 `<docId>.t<秒>.png`，导出后 `__WS__` 播放态与时间原样恢复；「关键帧拼图」（播放中点击）下载 `<docId>.sheet.png`，3 键文档为 3 格单行（1920×748），体积大于单帧静帧，且导出后播放态恢复为 true |
 
 ### WP-C 追加的检查与证据（求解语义变更：切线限界 + 手部 SO(3) 三次）
 

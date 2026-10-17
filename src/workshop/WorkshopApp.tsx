@@ -1,7 +1,7 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,LayoutGrid,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
@@ -224,6 +224,31 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   }catch(err){setHint(err instanceof Error?err.message:String(err));}
   finally{setExporting(false);}
  };
+ // WP-D fixed-camera render export: the engine owns the whole pause →
+ // snapshot → seek+solve+render+toBlob → restore dance (captureStill /
+ // captureSheet), so a render never disturbs playback, view or overlay state;
+ // the app only turns the returned PNG blob into a named download. No !info
+ // gate — like solvePackage, a premature click lands on the engine's own
+ // readable error.
+ const exportStill=async()=>{
+  const e=engine.current;if(!e){setHint('模型尚未加载完成，无法导出。');return;}
+  setExporting(true);
+  try{
+   const t=e.time;
+   download(`${d.id}.t${t.toFixed(2)}.png`,await e.captureStill(t));
+   setHint(`已导出静帧 t=${t.toFixed(2)}s（640×720 · 固定 45° 相机 · 无编辑器叠加物）`);
+  }catch(err){setHint(err instanceof Error?err.message:String(err));}
+  finally{setExporting(false);}
+ };
+ const exportSheet=async()=>{
+  const e=engine.current;if(!e){setHint('模型尚未加载完成，无法导出。');return;}
+  setExporting(true);
+  try{
+   download(`${d.id}.sheet.png`,await e.captureSheet());
+   setHint('已导出关键帧拼图（每格 640×720 · 固定 45° 相机 · 无编辑器叠加物）');
+  }catch(err){setHint(err instanceof Error?err.message:String(err));}
+  finally{setExporting(false);}
+ };
  // Motion-file envelopes unwrap to their embedded WorkshopDoc first —
  // a bare envelope's schemaVersion:1 would otherwise be misread as a v1 doc;
  // clip-motion envelopes carry no document and unwrap throws a readable error.
@@ -279,6 +304,13 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
       {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'#c0392b'}}>上一次导出被语义校验拒绝，未生成文件：</p>
        <ul>{pkgProblems.items.map((p,i)=><li key={i}>{p}</li>)}</ul></div>:null}
+     </div>
+     <div className="ws-sub"><h3>静帧渲染 <small>固定相机预设 · 固定出图尺寸</small></h3>
+      <div className="ws-row">
+       <button onClick={()=>void exportStill()} disabled={exporting} title="以固定 45° 相机渲染当前时刻，640×720 PNG"><Camera size={13}/>渲染静帧</button>
+       <button onClick={()=>void exportSheet()} disabled={exporting} title="每个关键帧时刻渲染一格拼成单张 PNG；超过 12 帧时均匀抽 12 格"><LayoutGrid size={13}/>关键帧拼图</button>
+      </div>
+      <p className="ws-note">固定相机预设与固定出图尺寸（640×720 PNG），导出图像不含编辑器手柄等叠加物；播放与视角在导出后原样恢复。</p>
      </div>
     </section>
     <section className="ws-card"><h2>参考视频 <small>WHAM 自动估计待接入</small></h2>

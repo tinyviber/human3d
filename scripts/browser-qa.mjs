@@ -317,6 +317,40 @@ await page.locator('.ws-check').filter({hasText:'洋葱皮'}).locator('input').u
 await page.waitForTimeout(200);
 assert((await readOnion()).every(g=>!g.visible),'onion ghosts stayed visible after the toggle was switched off');
 result.checks.workshopOnion=true;
+// --- WP-D fixed-camera render export: real clicks → real downloads. PNG
+// magic + IHDR pin the fixed output contract (640×720 per still/tile), the
+// sheet's dimensions prove its 3-tile grid, and the engine must hand the
+// transport back untouched — checked paused for the still and PLAYING for
+// the sheet (capture pauses internally, then restores the running state).
+await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);});
+const [stillDl]=await Promise.all([
+ page.waitForEvent('download'),
+ page.getByRole('button',{name:'渲染静帧',exact:true}).click(),
+]);
+assert.equal(stillDl.suggestedFilename(),`${wsDoc.id}.t0.50.png`,'still filename is not <docId>.t<sec>.png');
+const stillBuf=fs.readFileSync(await stillDl.path());
+assert.equal(stillBuf.readUInt32BE(0),0x89504E47,'still export is not a PNG'); // \x89PNG
+assert.equal(stillBuf.readUInt32BE(16),640,'still width is not the fixed 640 px');
+assert.equal(stillBuf.readUInt32BE(20),720,'still height is not the fixed 720 px');
+assert(stillBuf.length>5000,`still suspiciously small for a rendered pose: ${stillBuf.length}B`);
+const stillState=await page.evaluate(()=>({time:window.__WS__.time,playing:window.__WS__.playing}));
+assert.deepEqual(stillState,{time:.5,playing:false},'still export did not restore the transport state');
+// Sheet while playing: the QA doc has 3 keys → a 3×1 grid of fixed tiles plus
+// the caption band; restore must resume playback, not leave it paused.
+await page.evaluate(()=>window.__WS__.setPlaying(true));
+const [sheetDl]=await Promise.all([
+ page.waitForEvent('download'),
+ page.getByRole('button',{name:'关键帧拼图',exact:true}).click(),
+]);
+assert.equal(sheetDl.suggestedFilename(),`${wsDoc.id}.sheet.png`,'sheet filename is not <docId>.sheet.png');
+const sheetBuf=fs.readFileSync(await sheetDl.path());
+assert.equal(sheetBuf.readUInt32BE(0),0x89504E47,'sheet export is not a PNG');
+assert.equal(sheetBuf.readUInt32BE(16),640*3,'3-key sheet should be three 640 px tiles wide');
+assert.equal(sheetBuf.readUInt32BE(20),720+28,'3-key sheet should be one tile row plus the caption band');
+assert(sheetBuf.length>stillBuf.length,'3-tile sheet should outweigh the single still');
+assert.equal(await page.evaluate(()=>window.__WS__.playing),true,'sheet export left the engine paused');
+await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);});
+result.checks.workshopStillExport=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 

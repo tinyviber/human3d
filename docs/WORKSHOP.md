@@ -54,15 +54,17 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 ## 文件格式与导出
 
-工作台有三个导出入口，前两个是源数据/交付契约，第三个是派生品：
+工作台有五个导出入口：前三个是源数据/交付契约/派生品，后两个是姿态审阅用的固定相机渲染品：
 
 | 按钮 | 文件名 | 内容 | 备注 |
 |---|---|---|---|
 | `导出 JSON` | `<docId>.workshop.json` | WorkshopDoc v2：米制世界坐标、角度为度、时间为秒；关键帧含 `pose` 全部任务空间字段、`constraints` 和可选 `videoTime` | `导入` 载入同类文件或 motion-file 信封 |
 | `导出姿态包` | `<docId>.<artifactId>.pose.json` | 规范姿态包（`spec/pose-package.schema.json` v2）：`buildPosePackageLocal` 本地求解，与 `POST /v1/motions {workshop-doc}` 同一条 `parseDoc → solveWorkshop → validatePosePackage` 管线，产物与响应对等（对等测试逐字节钉死） | 语义校验 422 时**不下载**，问题明细留在卡片上；需 https/localhost（`crypto.subtle`）；采样率 fps 1–60 进入制品 id |
 | `导出 GLB` | `<docId>.<artifactId>.glb` | 同一求解结果烘焙成 glTF 动画（逐骨四元数轨 + root 位移轨，时间轴原样含非整数末段） | **派生品**：不承载身份契约——`animations[0].name` 与文件名借用 artifact id 便于对应（非内容寻址声明）；导出用干净重解析的 `human.glb`（编辑器里的球拍/材质不会烘进去），共享 `src/core/glb-export.ts`，Node 侧 `npm run package-to-glb` 走同一转换器 |
+| `渲染静帧` | `<docId>.t<秒>.png` | 当前时刻姿态的确定性渲染（`WorkshopEngine.captureStill`）：固定相机预设（默认 45°，相对该时刻骨盆根定位）+ 固定 640×720 PNG，pixelRatio 钉 1、不随视口/轨道漂移；内部 `暂停 → 快照 time/playing/相机/叠加物可见态 → seek+solve+render+toBlob（同任务内）→ 原样恢复`，`preserveDrawingBuffer` 保证读回 | 编辑器叠加物（手柄/轨迹线/触球标记/洋葱皮/重心支撑）**默认不入图**——直切 `Object3D.visible`，不走 options/docDirty（不触发 rebuildAux）；`opts.overlays:true` 可保留 |
+| `关键帧拼图` | `<docId>.sheet.png` | 逐关键帧时刻一格静帧拼 contact sheet（`captureSheet`）：默认全部键时刻，>12 键 `sheetTimes` 均匀抽样 12 格且首尾帧必保留；4 列网格，每格下方 `t=…s` 标注带 | 每格与单张静帧共用同一 `captureStill` 管线（同相机预设、同尺寸、同叠加物策略）；多格渲染间的等待由 `capturing` 标志压住 animate 循环对叠加物可见性的重建 |
 
-三个导出共用同一份当前文档；姿态包与 GLB 由 `solvePackage()` 统一求解，fps 改动会得到不同 artifact id（不同文件名）。
+五个导出共用同一份当前文档；姿态包与 GLB 由 `solvePackage()` 统一求解，fps 改动会得到不同 artifact id（不同文件名）；静帧与拼图不携带 artifact 身份，只是姿态审阅图。
 
 内置动作不放在浏览器动作库里，而是按 motion-file 信封（`schemaVersion:1`）存于 `assets/motions/*.json`，由 `assets/motions/motion.schema.json` 与 `normalizeMotionFile` 双侧校验：`kind:'workshop-motion'` 内嵌 `document`（与导出的 WorkshopDoc 同构），`kind:'clip-motion'` 指向外部动画片段（`clip.url`，如 walk），两种 kind 的轨迹字段互斥。工作台与服务共用同一条 `normalizeMotionFile → frameAt → solveEffectiveFrame` 求解管线，因此内置动作的姿态与服务交付的姿态包同源。
 

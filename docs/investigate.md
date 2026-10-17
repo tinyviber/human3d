@@ -476,3 +476,14 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 - **服务目录不变**:`service.ts` 仍按 `f.kind==='workshop-motion'` 过滤,dynamics-motion 进文件注册表/网页动作库但不进 `/v1/actions`;`service.test.ts` 的「不预告不可服务动作」断言原样覆盖 `punch`/`baseball-throw`。
 - **类型解环**:`MuscleActionFile`/`DynamicsRecords` 抽到 `src/core/muscle-action.ts`,`dynamics.ts`/`motion-source.ts`/`motion-file.ts`/`types.ts` 都从这里取型,不再经 `motions.ts`。
 - **副产物**:`assets/actions/` 目录整体删除;`assets/source/dynamics/full-activation-model.xml` 是早期实验中间产物,随本次迁移删除(完整模型快照仍由 `myofullbody-complete.xml` + `myofullbody-parameters.json` 承载)。
+
+## WP-D(补)— 固定相机渲染导出:静帧 + 关键帧拼图
+
+eval 裁决语义:**确定性出图参数的静帧导出 + 关键帧 contact-sheet 导出**(明确非相机跟随、非服务端 renders 端点)。
+
+- **引擎入口**:`WorkshopEngine.captureStill(t,{view?,overlays?})` / `captureSheet(times?,opts)`,与 `setView`/`seek` 同层的公开方法。出图契约自描述:固定 `STILL_WIDTH×STILL_HEIGHT` = 640×720 PNG、pixelRatio 钉 1、固定相机预设(默认 `CAPTURE_VIEW='threeQuarter'`,`setView` 语义——相对该时刻骨盆根定位)。流程 = `setPlaying(false)` → 快照 time/playing/view/相机位姿/逐对象叠加物可见态(快照记录**暂停前**的 playing,恢复才有意义)→ `seek(t)`+`solveCurrent`+`renderer.render`+`canvas.toBlob`(同任务内快照,`preserveDrawingBuffer:true` 已开)→ `finally` 原样恢复(`setPixelRatio` 先于 `resize()` 回 host 尺寸)。
+- **叠加物策略**:拼图/静帧用于姿态审阅,编辑器叠加物(手柄组/轨迹线/触球标记/洋葱皮/CoM 支撑)默认全部不入图——直切 `Object3D.visible`,不走 `setOptions`/`docDirty`(一次导出不应触发 rebuildAux 的文档级副作用);`opts.overlays:true` 保留入图。新增私有 `capturing` 标志:多格拼图的两个 await 之间 animate 循环照常跑,`rebuildAux`(轨迹线/触球标记)、`updateOnion`、`updateBalance` 都会按 options 重建可见性,标志位压住全部重显路径;同标志还挡住捕获中画布 pointerdown 起的 drag 与 pointermove 写入。
+- **拼图**:`captureSheet` 默认取全部关键帧时刻(sortedKeys);>12 键经纯函数 `sheetTimes` 均匀抽样到 `SHEET_MAX_TILES`=12,首尾帧必保留(step>1 保证严格递增无重复格)。逐 tile 走 captureStill 真路径 → `createImageBitmap` 解码 → 离屏 2D 画布 `SHEET_COLS`=4 列网格,每格下方 `SHEET_LABEL_H`=28px `t=…s` 标注带 → 单张 PNG。
+- **UI**:动作文档卡姿态包区旁新增「静帧渲染」子区——「渲染静帧」按 `e.time` 导 `<docId>.t<秒>.png`、「关键帧拼图」导 `<docId>.sheet.png`,复用既有 `download`/`safeName`;注释与 hint 写明固定相机预设+固定出图尺寸、不含编辑器手柄、播放/视角导出后恢复。
+- **测试/QA**:`workshop.test.ts` 补 `sheetTimes` 纯函数断言(键数 ≤ 上限全保留、30 键均匀抽 12 且端点钉死+无重复、自定义上限与调用序保持);`browser-qa.mjs` 新增 `workshopStillExport`——真实点击 → `waitForEvent('download')` → PNG magic(\x89PNG)+ IHDR 钉 640×720 与文件名约定,拼图断言 3 格宽度(1920×748)与体积大于单帧,并分别验证暂停态导出后 time/playing 原样恢复、播放中导出后 playing 恢复为 true。
+- **文档**:WORKSHOP.md 导出矩阵三行→五行(静帧/拼图归入「渲染品」,不携带 artifact 身份);QA.md 检查表补 `workshopStillExport` 行。

@@ -36,6 +36,32 @@ export function onionTimes(doc:WorkshopDoc,time:number,o:Pick<WorkshopOptions,'o
   after.forEach((k,i)=>out.push({time:k.time,dir:1,dist:i+1}));
   return out;
 }
+/* ---------- fixed-camera render export (WP-D) ---------- */
+/** Self-describing still contract: every exported frame is a
+ * STILL_WIDTH×STILL_HEIGHT PNG shot through a named camera preset (default
+ * CAPTURE_VIEW). Same document + time + view ⇒ same pixels — the live
+ * viewport size, device pixel ratio and the user's orbit never leak in. */
+export const STILL_WIDTH=640,STILL_HEIGHT=720;
+export const CAPTURE_VIEW:ViewId='threeQuarter';
+/** Sheet budget: even a maxKeys document must review as one image, so denser
+ * timelines are decimated by sheetTimes down to ≤SHEET_MAX_TILES tiles, laid
+ * out SHEET_COLS per row with a SHEET_LABEL_H caption band under each tile. */
+export const SHEET_MAX_TILES=12,SHEET_COLS=4,SHEET_LABEL_H=28;
+/** Uniform decimation pinning both endpoints — the first and last key are the
+ * two poses a reviewer least wants dropped. Step >1 when len>max keeps the
+ * picks strictly increasing (no duplicate tiles); input order is preserved. */
+export function sheetTimes(times:number[],max=SHEET_MAX_TILES):number[]{
+  if(times.length<=max)return times.slice();
+  const out:number[]=[];
+  for(let i=0;i<max;i++)out.push(times[Math.round(i*(times.length-1)/(max-1))]);
+  return out;
+}
+/** `view` picks the camera preset (default CAPTURE_VIEW); `overlays:true`
+ * keeps editor furniture (handles, trajectories, contact markers, onion
+ * ghosts, CoM/support gizmos) in the image — off by default because a review
+ * still must read as the pose itself, not as the editor. */
+export interface CaptureOptions{view?:ViewId;overlays?:boolean}
+interface CaptureSnapshot{time:number;playing:boolean;view:ViewId;cam:Vector3;target:Vector3;ratio:number;overlays:{handles:boolean;trajectories:boolean[];contacts:boolean[];onion:boolean[];balance:boolean[]}|null}
 type DragKind='root'|'hand'|'foot'|'swing'|'poleArm'|'poleLeg'|'tip'|'contact';
 /** `passive` handles render but never start a drag — used for the actual foot
  * during a release interval, where the editable control is the swing point. */
@@ -58,6 +84,12 @@ export class WorkshopEngine{
   private onionSig='';private onionStale=true;
   private raycaster=new Raycaster();private pointer=new Vector2();
   private drag?:{h:Handle;plane:Plane;offset:Vector3;key:WorkshopKey};private docDirty=true;
+  /** Set while a still/sheet capture is in flight. The animate loop consults
+   * it wherever it re-derives overlay visibility (rebuildAux, updateOnion,
+   * updateBalance), so overlays hidden for the shot can't be resurrected
+   * between the awaits of a multi-tile sheet; it also blocks a mid-capture
+   * pointerdown on the canvas from starting a drag. */
+  private capturing=false;
   private latestFrame?:EffectiveFrame;
   private footGeo?:Record<Side,FootGeometry>;
   onFrame?:(f:WorkshopFrame)=>void;onReady?:(info:RigInfo)=>void;onError?:(e:Error)=>void;
@@ -146,7 +178,7 @@ export class WorkshopEngine{
     const o=hits.find(x=>!x.object.userData.ref?.passive)?.object;return o?o.userData.ref as Handle|undefined:undefined;
   }
   private onPointerDown=(ev:PointerEvent)=>{
-    if(ev.button!==0||!this.ready)return;
+    if(ev.button!==0||!this.ready||this.capturing)return;
     const h=this.pick(ev);if(!h)return;
     const doc=this.getDoc();
     const time=h.keyId?doc.keys.find(k=>k.id===h.keyId)?.time??this.time:this.time;
@@ -174,7 +206,7 @@ export class WorkshopEngine{
     this.controls.enabled=false;try{this.renderer.domElement.setPointerCapture(ev.pointerId);}catch{/* synthetic events have no pointer */}
   };
   private onPointerMove=(ev:PointerEvent)=>{
-    if(!this.drag||!this.rig)return;
+    if(!this.drag||!this.rig||this.capturing)return;
     const rect=this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(((ev.clientX-rect.left)/rect.width)*2-1,-((ev.clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.pointer,this.camera);
@@ -270,7 +302,9 @@ export class WorkshopEngine{
     for(const [id,line]of this.trajectories){
       const pts=paths[id]??[];
       line.geometry.dispose();line.geometry=new BufferGeometry().setFromPoints(pts);
-      line.visible=this.options.trajectories&&(id!=='tip'||keys.some(k=>k.constraints.grip));
+      // `capturing` wins over the option: a pending docDirty rebuild during a
+      // still/sheet export must not re-show editor overlays mid-capture.
+      line.visible=!this.capturing&&this.options.trajectories&&(id!=='tip'||keys.some(k=>k.constraints.grip));
     }
     // Contact markers: racket-head position at each contact key.
     for(const m of this.contactMarkers){this.scene.remove(m);m.geometry.dispose();}
@@ -283,6 +317,7 @@ export class WorkshopEngine{
       const ring=new Mesh(new RingGeometry(.035,.042,28),new MeshBasicMaterial({color:0xf0b429,side:DoubleSide,depthTest:false,transparent:true,opacity:.8}));
       ring.rotation.x=-Math.PI/2;ring.renderOrder=21;ball.add(ring);
       const h:Handle={kind:'contact',mesh:ball,keyId:k.id};ball.userData.ref=h;ball.userData.handle=true;
+      ball.visible=!this.capturing; // rebuilt markers default visible — keep them out of an in-flight capture
       this.contactMarkers.push(ball);this.scene.add(ball);
     }
     this.solveFrame(save);this.latestFrame=save;
@@ -298,6 +333,9 @@ export class WorkshopEngine{
    * frameAt+solveEffectiveFrame path as the trajectory sampler, records each
    * bone's world position, then restores the playhead pose on the live rig. */
   private updateOnion(){
+    // Captures pin ghosts hidden but keep the signature cache — the first
+    // post-capture frame resumes without a needless re-solve.
+    if(this.capturing){for(const l of this.onionLines)l.visible=false;return;}
     if(!this.options.onion||!this.rig){for(const l of this.onionLines)l.visible=false;this.onionSig='';this.onionStale=false;return;}
     const doc=this.getDoc(),times=onionTimes(doc,this.time,this.options);
     const sig=[this.options.onionMode,this.options.onionCount,this.options.onionStep,times.map(t=>`${t.dir}${t.dist}@${t.time.toFixed(6)}`).join(',')].join('|');
@@ -315,7 +353,7 @@ export class WorkshopEngine{
   }
   private updateBalance(a:Analysis){
     if(!this.comMarker||!this.comLine||!this.supportLoop)return;
-    const on=this.options.balance;
+    const on=this.options.balance&&!this.capturing;
     this.comMarker.visible=on;this.comLine.visible=on;
     this.comMarker.position.copy(a.com);
     this.comLine.geometry.dispose();this.comLine.geometry=new BufferGeometry().setFromPoints([a.com,new Vector3(a.com.x,0,a.com.z)]);
@@ -338,6 +376,112 @@ export class WorkshopEngine{
     this.controls.target.copy(target);this.camera.lookAt(target);this.controls.update();
   }
   resize(){const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.renderer.setSize(w,h);}
+  /* ---------- fixed-camera render export ---------- */
+  /** Render the pose at `t` to a fixed-size PNG (STILL_WIDTH×STILL_HEIGHT)
+   * through a fixed camera preset — deterministic output parameters: the
+   * same document + time + view always produce the same image, independent
+   * of the live viewport and the user's orbit.
+   *
+   * Flow: pause → snapshot transport/camera/overlay visibility → seek(t) +
+   * solve + render + toBlob inside one task → restore everything.
+   * `preserveDrawingBuffer:true` is already on, so toBlob (which snapshots at
+   * call time) reliably reads back the frame we just rendered.
+   *
+   * Overlay policy: a still is for pose review, so editor furniture — drag
+   * handles, trajectory lines, contact markers, onion ghosts, CoM/support
+   * gizmos — is hidden by default (`opts.overlays:true` keeps it). Hiding
+   * toggles Object3D.visible directly, deliberately NOT through
+   * WorkshopOptions/docDirty: an export must not trigger rebuildAux and its
+   * document-level side effects. Between the awaits of a captureSheet the
+   * `capturing` flag keeps the animate loop from re-showing them. */
+  async captureStill(t:number,opts:CaptureOptions={}):Promise<Blob>{
+    if(!this.ready||!this.rig)throw new Error('模型尚未加载完成，无法渲染静帧');
+    const saved=this.beginCapture(opts);
+    try{
+      this.seek(t);this.solveCurrent();
+      this.setView(opts.view??CAPTURE_VIEW);
+      this.renderer.render(this.scene,this.camera);
+      const blob=await new Promise<Blob|null>(res=>this.renderer.domElement.toBlob(res,'image/png'));
+      if(!blob)throw new Error('静帧编码失败：canvas.toBlob 返回空');
+      return blob;
+    }finally{this.endCapture(saved);}
+  }
+  /** Keyframe contact sheet: one captureStill tile per instant (default: all
+   * key times, decimated by sheetTimes beyond SHEET_MAX_TILES) composed on an
+   * offscreen 2D canvas as a SHEET_COLS-wide grid with a per-tile timestamp
+   * caption — one deterministic PNG for whole-motion pose review. Every tile
+   * shares captureStill's fixed camera preset, output size and overlay
+   * policy, so a sheet cell is exactly what a single still would be. */
+  async captureSheet(times?:number[],opts:CaptureOptions={}):Promise<Blob>{
+    const ts=sheetTimes(times??sortedKeys(this.getDoc()).map(k=>k.time));
+    if(!ts.length)throw new Error('文档没有关键时刻，无法生成拼图');
+    const cols=Math.min(SHEET_COLS,ts.length),rows=Math.ceil(ts.length/cols);
+    const sheet=document.createElement('canvas');
+    sheet.width=cols*STILL_WIDTH;sheet.height=rows*(STILL_HEIGHT+SHEET_LABEL_H);
+    const ctx=sheet.getContext('2d');if(!ctx)throw new Error('无法创建 2D 拼图画布');
+    ctx.fillStyle='#f5f7fa';ctx.fillRect(0,0,sheet.width,sheet.height);
+    for(let i=0;i<ts.length;i++){
+      const x=(i%cols)*STILL_WIDTH,y=Math.floor(i/cols)*(STILL_HEIGHT+SHEET_LABEL_H);
+      const bmp=await createImageBitmap(await this.captureStill(ts[i],opts));
+      ctx.drawImage(bmp,x,y);bmp.close();
+      ctx.fillStyle='#eef1f6';ctx.fillRect(x,y+STILL_HEIGHT,STILL_WIDTH,SHEET_LABEL_H);
+      ctx.fillStyle='#33415c';ctx.font='600 13px "DM Sans",system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+      ctx.fillText(`t = ${ts[i].toFixed(2)} s`,x+STILL_WIDTH/2,y+STILL_HEIGHT+SHEET_LABEL_H/2);
+      ctx.strokeStyle='#d6dce4';ctx.strokeRect(x+.5,y+.5,STILL_WIDTH-1,STILL_HEIGHT+SHEET_LABEL_H-1);
+    }
+    const blob=await new Promise<Blob|null>(res=>sheet.toBlob(res,'image/png'));
+    if(!blob)throw new Error('拼图编码失败：canvas.toBlob 返回空');
+    return blob;
+  }
+  /** Snapshot every piece of transport/camera/render state a capture touches
+   * (the snapshot records the PRE-pause values — endCapture's restore is what
+   * "the session continues where it was" means), then pin the capture
+   * contract: paused transport, pixelRatio 1, fixed buffer size and aspect. */
+  private beginCapture(opts:CaptureOptions):CaptureSnapshot{
+    const saved:CaptureSnapshot={
+      time:this.time,playing:this.playing,view:this.view,
+      cam:this.camera.position.clone(),target:this.controls.target.clone(),ratio:this.renderer.getPixelRatio(),
+      // Visibility is snapshotted per object so the restore is exact even for
+      // layers the loop only re-derives lazily (trajectories and contact
+      // markers update on docDirty rebuilds, not every frame).
+      overlays:!opts.overlays?{
+        handles:this.handleGroup.visible,
+        trajectories:[...this.trajectories.values()].map(l=>l.visible),
+        contacts:this.contactMarkers.map(m=>m.visible),
+        onion:this.onionLines.map(l=>l.visible),
+        balance:[this.comMarker,this.comLine,this.supportLoop].map(o=>o?.visible??false),
+      }:null,
+    };
+    this.setPlaying(false);
+    this.capturing=true;
+    if(saved.overlays){
+      this.handleGroup.visible=false;
+      for(const l of this.trajectories.values())l.visible=false;
+      for(const m of this.contactMarkers)m.visible=false;
+      for(const l of this.onionLines)l.visible=false;
+      for(const o of [this.comMarker,this.comLine,this.supportLoop])if(o)o.visible=false;
+    }
+    this.renderer.setPixelRatio(1);this.renderer.setSize(STILL_WIDTH,STILL_HEIGHT,false);
+    this.camera.aspect=STILL_WIDTH/STILL_HEIGHT;this.camera.updateProjectionMatrix();
+    return saved;
+  }
+  private endCapture(saved:CaptureSnapshot){
+    this.capturing=false;
+    const o=saved.overlays;
+    if(o){
+      this.handleGroup.visible=o.handles;
+      [...this.trajectories.values()].forEach((l,i)=>{l.visible=o.trajectories[i];});
+      this.contactMarkers.forEach((m,i)=>{m.visible=o.contacts[i];});
+      this.onionLines.forEach((l,i)=>{l.visible=o.onion[i];});
+      [this.comMarker,this.comLine,this.supportLoop].forEach((m,i)=>{if(m)m.visible=o.balance[i];});
+    }
+    this.renderer.setPixelRatio(saved.ratio);this.resize(); // pixelRatio first — setSize multiplies by it
+    this.view=saved.view;
+    this.camera.position.copy(saved.cam);this.controls.target.copy(saved.target);this.controls.update();
+    this.time=Math.max(0,Math.min(this.getDoc().duration,saved.time));
+    this.playing=saved.playing;
+    this.solveCurrent();this.notify(true);
+  }
   private animate=()=>{
     if(this.disposed)return;this.raf=requestAnimationFrame(this.animate);
     const dt=Math.min(this.clock.getDelta(),.1);

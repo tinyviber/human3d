@@ -10,7 +10,7 @@ import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from './limits';
 import {analyzePose,rotateHandFrame,solveEffectiveFrame,supportPolygon} from './solver';
-import {onionTimes} from './engine';
+import {onionTimes,SHEET_MAX_TILES,sheetTimes} from './engine';
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
 // frameAt's origin must be the rest root — the same value the engine and the
@@ -626,5 +626,24 @@ describe('onion skin ghost instants',()=>{
   const t=onionTimes(doc(),.05,{onionCount:3,onionMode:'step',onionStep:.1});
   expect(t.every(g=>g.dir===1)).toBe(true);
   expect(t.map(g=>+g.time.toFixed(6))).toEqual([.15,.25,.35]);
+ });
+});
+
+describe('contact-sheet time sampling (WP-D)',()=>{
+ it('keeps every key time when the count fits the tile budget',()=>{
+  expect(sheetTimes([0,.22,.5,.66,.8])).toEqual([0,.22,.5,.66,.8]);
+  expect(sheetTimes([])).toEqual([]);
+ });
+ it('decimates uniformly to the cap, pinning both endpoints',()=>{
+  const ts=Array.from({length:30},(_,i)=>i*.1);
+  const out=sheetTimes(ts);
+  expect(out.length).toBe(SHEET_MAX_TILES);
+  expect(out[0]).toBe(0);
+  expect(out.at(-1)).toBe(ts.at(-1)); // last key time always survives decimation (bit-exact, not re-derived)
+  expect(new Set(out).size).toBe(SHEET_MAX_TILES); // step>1 ⇒ strictly increasing, no dup tiles
+ });
+ it('honours a smaller cap and preserves caller order',()=>{
+  expect(sheetTimes([2,0,1],2)).toEqual([2,1]);
+  expect(sheetTimes([0,.5,1],99)).toEqual([0,.5,1]);
  });
 });
