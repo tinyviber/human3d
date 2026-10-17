@@ -1,4 +1,5 @@
 # Authored → workshop-motion migration report
+Measured against solver 0.3.0 (SERVICE_VERSION) — replay path: envelope → normalizeMotionFile → frameAt → solveEffectiveFrame.
 
 ## idle (自然站立) — 42 keys · 42 instants × 163 bones
 quat angle diff (deg):  max 0.000 · p95 0.000 · mean 0.000
@@ -6,12 +7,12 @@ world pos diff (mm):    max 0.00 · p95 0.00 · mean 0.00
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 ## reach (抬手与转身) — 53 keys · 49 instants × 163 bones
-quat angle diff (deg):  max 0.711 · p95 0.000 · mean 0.001
+quat angle diff (deg):  max 0.274 · p95 0.000 · mean 0.000
 world pos diff (mm):    max 1.16 · p95 0.06 · mean 0.02
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 ## squat (下蹲) — 55 keys · 51 instants × 163 bones
-quat angle diff (deg):  max 1.012 · p95 0.002 · mean 0.003
+quat angle diff (deg):  max 1.012 · p95 0.001 · mean 0.002
 world pos diff (mm):    max 2.57 · p95 0.65 · mean 0.10
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
@@ -21,13 +22,13 @@ world pos diff (mm):    max 0.02 · p95 0.01 · mean 0.00
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 ## forehand (正手挥拍) — 49 keys · 57 instants × 163 bones
-quat angle diff (deg):  max 4.028 · p95 0.003 · mean 0.009
+quat angle diff (deg):  max 3.971 · p95 0.002 · mean 0.008
 world pos diff (mm):    max 2.47 · p95 0.62 · mean 0.11
 over tolerance (>5° / >5mm): 0 quat samples, 0 position samples
 
 Tolerances chosen to cover the measured maxima: quat 5°, world position 5mm.
-Residual sources: second-order Hermite error on the baked hand targets/poles, hand-frame
-quaternion slerp vs authored component-wise Hermite, the poseAt root-y clamp (reproduced by
+Residual sources: second-order Hermite error on the baked hand targets/poles, the hand-frame
+SO(3) cubic (corrected-slerp squad) vs authored component-wise Hermite, the poseAt root-y clamp (reproduced by
 extra keys straddling every clamp crossing — the plateau goes flat), and the WP-C tangent
 clamp: the workshop spline now caps interior tangent magnitude at 2× the smaller adjacent
 secant while the frozen authored capture keeps raw centre differences — a deliberate

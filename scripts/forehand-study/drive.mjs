@@ -11,7 +11,9 @@
 //     {"key":"<id|label>","time":<s>}              — 时间 s field (setKeyTime)
 //     {"key":"..","label":"<text>"}                — 标签 field
 //     {"key":"..","sliders":{"<label>":<v>}}       — 躯干与骨盆/脚部 range sliders
-//     {"key":"..","wrist":{"side":"R","flex":deg,"dev":deg,"twist":deg}} — delta sliders
+//     {"key":"..","wrist":{"side":"R","moves":[[axis,delta],…]}} — ordered delta-slider
+//       sets (axis: flex|dev|twist; on ±60°/±90° range exhaustion the panel is
+//       remounted so the delta control re-zeroes, then the sequence continues)
 //     {"key":"..","hand":{"side":"R","to":[x,y,z]}}      — 2-view pointer drag (front x,y → side z,y)
 //     {"key":"..","poleArm":{"side":"R","to":[x,y,z]}}   — elbow-pole drag, same scheme
 //     {"key":"..","contactTip":[x,y,z]}            — drag the yellow contact marker

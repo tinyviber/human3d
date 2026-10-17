@@ -339,6 +339,13 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
   const r=dist(f.pos['wrist_R'],f.handTarget.R);if(r>armRes.v)armRes={v:r,t:f.t};
   for(const s of ['L','R']as const){const rr=dist(f.pos[`foot_${s}`],f.footTarget[s]);if(rr>legRes.v)legRes={v:rr,t:f.t,side:s};}
   const rr=f.arm.d/f.arm.reach;if(rr>reachMax.r)reachMax={r:rr,t:f.t};
+  /* Two counters on purpose, different deadbands: `clampedFrames` counts
+   * demand exceeding the limit by >0.05° — a deadband that keeps sub-jitter
+   * boundary grazes (a 0.01° exceedance delivers a bend indistinguishable
+   * from the limit) out of the headline clamp percentage. `deficitFrames`
+   * and `transitions` below use the strict >limit edge so the deficit
+   * accounting and switch counting are complete — the two series answer
+   * different questions and are not meant to agree. */
   if(f.arm.wristBend>WRIST_BEND_LIMIT_DEG+0.05)wristClampFrames++;
   if(f.arm.wristBend>wristBendMax.v)wristBendMax={v:f.arm.wristBend,t:f.t};
   if(i>0){

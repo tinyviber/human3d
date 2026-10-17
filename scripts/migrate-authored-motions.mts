@@ -22,6 +22,7 @@ import {footRotation} from '../src/workshop/foot';
 import {motionFileById} from '../src/core/motion-files';
 import {controlsToPoseParams,frameAt,validateDocShape,type KeyConstraints,type WorkshopDoc,type WorkshopKey} from '../src/workshop/document';
 import {solveEffectiveFrame,solvePose} from '../src/workshop/solver';
+import {SERVICE_VERSION} from '../src/core/protocol';
 import {normalizeMotionFile,type MotionCapabilities,type MotionFile} from '../src/core/motion-file';
 import type {RigInfo} from '../src/core/types';
 
@@ -223,7 +224,9 @@ const motionSchema={
 };
 
 const write=(file:string,v:unknown)=>fs.writeFileSync(file,JSON.stringify(v,null,2)+'\n');
-const report:string[]=['# Authored → workshop-motion migration report',''];
+const report:string[]=['# Authored → workshop-motion migration report',
+ `Measured against solver ${SERVICE_VERSION} (SERVICE_VERSION) — replay path: envelope → normalizeMotionFile → frameAt → solveEffectiveFrame.`,
+ ''];
 const goldens=new Map<string,Golden>();
 
 for(const id of IDS){
@@ -279,8 +282,8 @@ for(const id of IDS){
  report.push('');
 }
 report.push(`Tolerances chosen to cover the measured maxima: quat ${TOLERANCE.quatDeg}°, world position ${TOLERANCE.posMm}mm.`,
- 'Residual sources: second-order Hermite error on the baked hand targets/poles, hand-frame',
- 'quaternion slerp vs authored component-wise Hermite, the poseAt root-y clamp (reproduced by',
+ 'Residual sources: second-order Hermite error on the baked hand targets/poles, the hand-frame',
+ 'SO(3) cubic (corrected-slerp squad) vs authored component-wise Hermite, the poseAt root-y clamp (reproduced by',
  'extra keys straddling every clamp crossing — the plateau goes flat), and the WP-C tangent',
  'clamp: the workshop spline now caps interior tangent magnitude at 2× the smaller adjacent',
  'secant while the frozen authored capture keeps raw centre differences — a deliberate',

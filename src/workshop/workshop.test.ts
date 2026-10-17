@@ -491,8 +491,10 @@ describe('document.interpolate hand frame cubic (WP-C squad)',()=>{
   const s=Math.hypot(d.x,d.y,d.z);
   return s<1e-15?new Vector3():new Vector3(d.x,d.y,d.z).multiplyScalar(Math.atan2(s,d.w)/s);
  };
- // One-sided hand-frame angular velocities (rad/s) bracketing t, finite-
- // differenced on the sampled path — no access to private internals.
+ // One-sided hand-frame angular velocities bracketing t, finite-differenced
+ // on the sampled path — no access to private internals. Convention: the
+ // quatLn half-angle rate (vec(q⁻¹q̇)=ω/2, so |ω|=2× these magnitudes) —
+ // left/right share it, so every continuity comparison below is unaffected.
  const omegaAround=(doc:WorkshopDoc,t:number,e:number,side:'L'|'R')=>{
   const q=frameQ(samplePose(doc,t,origin()),side);
   return {left:relLn(frameQ(samplePose(doc,t-e,origin()),side),q).multiplyScalar(1/e),
@@ -514,9 +516,10 @@ describe('document.interpolate hand frame cubic (WP-C squad)',()=>{
   expect(err).toBeLessThan(1e-9); // measured ≤7.3e-16 — exact key pass-through
  });
  it('keeps hand-frame angular velocity continuous through keys (finite difference)',()=>{
-  // e=1e-4s 校准:defaultDocument(骨盆系,非均匀键距)实测最大 |ωL−ωR|=0.017 rad/s;
-  // 旧逐段 slerp 同一探针测得 ~10 rad/s(键时刻 C0 跳变)。阈值取 3×实测、远低于
-  // 缺陷量级——测的是轨迹形态,不是实现细节(learning[1])。
+  // e=1e-4s 校准:defaultDocument(骨盆系,非均匀键距)实测最大 |ωL−ωR|=0.017
+  // (quatLn 半角率口径,见 omegaAround 注释);旧逐段 slerp 同一探针测得 ~10
+  // (键时刻 C0 跳变)。阈值取 3×实测、远低于缺陷量级——测的是轨迹形态,
+  // 不是实现细节(learning[1])。
   const doc=defaultDocument(rig.rest),e=1e-4;
   for(const s of ['L','R']as const)
    for(const k of doc.keys.slice(1,-1)){
@@ -557,7 +560,7 @@ describe('document.interpolate hand frame cubic (WP-C squad)',()=>{
   expect(qD.angleTo(q0)).toBeLessThan(1e-9); // wrap value is the same rotation
   const wl=relLn(frameQ(samplePose(doc,doc.duration-e,origin()),'R'),qD).multiplyScalar(1/e);
   const wr=relLn(q0,frameQ(samplePose(doc,e,origin()),'R')).multiplyScalar(1/e);
-  expect(wl.distanceTo(wr)).toBeLessThan(.05); // measured 0.001 rad/s
+  expect(wl.distanceTo(wr)).toBeLessThan(.05); // measured 0.001 (half-angle rate, as relLn)
  });
  it('interpolates hand frames in pelvis coordinates when handFrames=pelvis',()=>{
   // Both keys store the SAME pelvis-relative frame (world f/n = yaw_j·const):

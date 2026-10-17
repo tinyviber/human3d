@@ -7,8 +7,9 @@
 驱动 `scripts/forehand-study/drive.mjs` 回放 `ops.json` 配方。文档由
 `__WS__.getDoc()` 读出后经 `normalizeDoc` 归一化封装进请求信封。
 
-**没有向文档里注入任何姿态/烘焙帧数据。** 唯一的引擎方法直调是用
-`page.evaluate` 读的 `getDoc()`（读路径，非写路径）。
+**没有向文档里注入任何姿态/烘焙帧数据。** 除读路径与播放控制
+（`page.evaluate` 读出的 `getDoc()`/`setPlaying`/`solveCurrent`/camera
+读数）外，没有任何引擎方法直调——全部写入都走真实 UI 事件。
 
 ## 键位与时间
 

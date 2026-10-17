@@ -151,9 +151,10 @@ const quatExp=(v:Vector3)=>{
   return new Quaternion(v.x*s,v.y*s,v.z*s,Math.cos(h));
 };
 /** One key's squad data on the chain: `q` is the hemisphere-continued frame
- * quaternion; `T` its body-frame angular-velocity tangent (rad/s, shared by
- * the intervals on both sides → C¹); `b` the outgoing secant log
- * ln(q⁻¹q_next) — undefined on the last chain entry. */
+ * quaternion; `T` its body-frame angular-velocity tangent — in the quatLn
+ * half-angle convention (vec(q⁻¹q̇)=ω_body/2, so |T| is half the physical
+ * rad/s rate), shared by the intervals on both sides → C¹; `b` the outgoing
+ * secant log ln(q⁻¹q_next) — undefined on the last chain entry. */
 interface SquadKey{q:Quaternion;T:Vector3;b?:Vector3}
 
 /** Contact plan for one foot over the real keys. A run of planted keys holds
@@ -252,8 +253,10 @@ function buildModel(doc:DocLike,origin:V3|Vector3):Model{
       const lPrev=j>0?quatLn(inv.clone().multiply(qs[j-1])):undefined;   // a = ln(q_j⁻¹q_{j−1})
       const lNext=j<len-1?quatLn(inv.clone().multiply(qs[j+1])):undefined; // b = ln(q_j⁻¹q_{j+1})
       /* Interior key: body-frame angular-velocity tangent T_j = (b−a)/
-       * (t_{j+1}−t_{j−1}) — the exact quaternion analogue of the centre
-       * difference tan() uses for the scalar channels, so the curve is C¹
+       * (t_{j+1}−t_{j−1}) — a quatLn half-angle rate like every T here
+       * (=|ω|/2 physical rad/s); the exact quaternion analogue of the
+       * centre difference tan() uses for the scalar channels, so the curve
+       * is C¹
        * in TIME through non-uniform keys (solving the per-segment
        * derivatives for a shared per-key tangent, not just the per-unit-u
        * match the standard s_i formula gives). Magnitude-capped at
@@ -261,8 +264,11 @@ function buildModel(doc:DocLike,origin:V3|Vector3):Model{
        * as tan(), read on |a|/dt_L and |b|/dt_R.
        * Endpoint convention: zero tangent — the same rest tangent the
        * scalar tan() assigns to chain ends, so a document starts and stops
-       * rotating. Loop real keys always take this interior branch; the
-       * ghost copies get their source key's tangent below. */
+       * rotating. Loop real keys always take this interior branch; the two
+       * INNER ghost entries do too — they have chain neighbours on both
+       * sides, which by periodicity are the same rotations at the same Δt
+       * as their source key's, so the branch already emits the source
+       * key's tangent (the seam stays C¹ with no copy). */
       let T=new Vector3();
       if(lPrev&&lNext){
         const dtL=chain[j].time-chain[j-1].time,dtR=chain[j+1].time-chain[j].time;
@@ -272,11 +278,19 @@ function buildModel(doc:DocLike,origin:V3|Vector3):Model{
       }
       return {q,T,b:lNext};
     });
-    /* Loop ghosts wrap the real keys — copy their source key's tangent too,
-     * or the seam interval would relax into the ghost's endpoint rest
-     * tangent and hand ω would jump at the wrap. Same periodic-copy rule
-     * tan()/chain already apply to the scalar channels. */
-    if(doc.loop&&len>2){sq[0].T.copy(sq[len-2].T);sq[len-1].T.copy(sq[1].T);}
+    /* No ghost-tangent copy step here: the chain is TWO ghosts deep per
+     * side, so the entries bounding the sampled [0, D] span — chain[1] and
+     * chain[len−2], the inner ghosts of the last/first real keys — are
+     * interior nodes whose tangents the map above already computes to the
+     * source key's value. The outermost ghosts chain[0]/chain[len−1] keep
+     * the endpoint rest tangent like scalar tan() does, and no read ever
+     * reaches them: interpolate() resolves intervals with i≥2 for t≥0
+     * (chain[2] is real key 0 at t=0), and i=len−2 occurs only at t=D
+     * where u=0 annihilates every tangent term. A former version copied
+     * sq[0]←sq[len−2]/sq[len−1]←sq[1] — written against a one-deep ghost
+     * chain; on the two-deep chain those indices were ghost←ghost
+     * misplants (the sources would be sq[n]/sq[3]) on entries that are
+     * never consumed. */
     squad[s]=sq;
   }
   return {keys,entries,chain,duration:doc.duration,handFrames:doc.handFrames,origin:o,squad};
@@ -379,7 +393,8 @@ function interpolate(m:Model,time:number):Interpolated{
      * ends (the curve passes through q_i, q_{i+1} exactly) and produces the
      * key tangents: q⁻¹q'(0)/dt = T_i, q⁻¹q'(1)/dt = T_{i+1} — C¹ in time
      * for ANY T_j, including the capped/endpoint values chosen in
-     * buildModel. Chosen over the literal Shoemake double-slerp: with the
+     * buildModel (q⁻¹q̇ is the half-angle body rate, ω_body = 2·vec(q⁻¹q̇)).
+     * Chosen over the literal Shoemake double-slerp: with the
      * sparse large-rotation keys this document family produces (≥90° between
      * 0.15 s keys), Shoemake's inner slerp s_i→s_{i+1} walks ~180° off the
      * chord (dot(A,B)→0), the outer slerp's hemisphere choice flips and the

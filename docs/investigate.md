@@ -276,7 +276,7 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 
 ## 身份与 golden 语义
 
-- 求解运动语义变化 → `SERVICE_VERSION` `0.1.0`→`0.2.0`（`artifactIdPayload` 的 `solver.revision`、`provenance.solverRevision`、capabilities 同步变化）。`spec/examples/idle.pose.json` 重生成：artifact id `mot_6db10f3c7966b541`→`mot_85e6387dda9682db`，轨迹逐位不变——idle 各键邻域对称，钳制不触发（见下表全零行）。
+- 求解运动语义变化 → `SERVICE_VERSION` `0.1.0`→`0.2.0`（`artifactIdPayload` 的 `solver.revision`、`provenance.solverRevision`、capabilities 同步变化）。`spec/examples/idle.pose.json` 重生成：artifact id `mot_6db10f3c7966b541`→`mot_85e6387dda9682db`——身份 bump 正确，但本提交当初声称的「轨迹逐位不变（各键邻域对称，钳制不触发）」经复核证伪，如实更正：钳制在 idle 上**实际触发 22 处（键×通道）**，全部位于 pelvis 系手部目标通道（flatten 通道 7–9/19–21；迁移细分键 6-7、19-20、34-35 的邻域非对称，被钳切线幅值 ≤7.7e-4 m/s）。功能影响可忽略：40fps 包网格（193 采样点）实测解算后仅 upperarm01/lowerarm01/lowerarm02/wrist 双侧 8 条旋转轨出现共 880 个四元数分量差、最大聚合角差 ~0.005°（0.0045°），平移轨逐位相同；下表 idle 行全零是因为 42 个 golden 采样点落在受扰区间内的时刻恰好全是键时刻（Hermite 过键逐位），受扰区间内部无采样。b450e79 提交说明里的 "the clamp never triggers there" 同步证伪，以此处实测为准。
 - `spec/migration/*.golden.json` 语义改写：**迁移等价断言 → 变更探测器基线**。原 golden 是 frozen authoring 管线（`migrate-authored-motions.mts` 内快照 `poseAt`）的捕获；本提交起由 `scripts/recapture-migration-goldens.mts` 走生产回放路径（frameAt→solveEffectiveFrame）重捕获，`migration.test.ts` 容差收紧到 1e-3°/1e-3mm——回放确定性（property.test 钉死逐位重解）意味着该余量只盖平台浮点抖动，任何未来求解语义漂移即红。authoring 参照捕获改落 `evidence/migration-authored/`（gitignored，可复现）；residual 报告仍由 migrate 脚本产出到 `evidence/migration-report.txt`，现含钳制效应（squat max 0.405→1.012°）。
 
 ## 旧↔新迁移 delta（golden 网格，求解骨局部四元数角差，度）
@@ -364,11 +364,11 @@ b  = ln(q_i⁻¹q_{i+1})  —— 段割线对数(体坐标)
 
 **半球链**:log/割线计算前对**整条链**(含 loop 幻影拷贝)做 dot<0 符号连续——同 `unwrapAngle` 之于 `ANGLE_CHANNELS` 的契约,而非旧代码逐段修端点符号。
 
-**loop**:幻影链 `[last−D,…keys…,first+D]` 与 tan() 完全同构;幻影端点额外**回拷**其源键的 T(否则接缝段末端松成端点 rest 切线、接缝 ω 跳变)。实测接缝值差 0、ω 差 0.001 rad/s(ε=1e-4)。
+**loop**:幻影链每侧两个周期拷贝(尾二、末键 −D 在前;首、次键 +D 在后),与 tan() 完全同构;夹住接缝的内侧幻影(末键 −D、首键 +D)是链内节点,内部切线分支按周期性直接算出其源键的 T——无需回拷(最初实现按单层幻影的心智模型回拷 `sq[0]←sq[len−2]`/`sq[len−1]←sq[1]`,在两层链上是 ghost←ghost 误植且条目从不被 [0,D] 采样消费,已移除;400 篇随机 loop 文档 ×204 采样点逐位复算零差异)。实测接缝值差 0、ω 差 0.001(ε=1e-4,quatLn 半角率口径)。
 
 **pelvis 系**:四元数链建在 `interp` 数组上——即已经骨盆旋转后的坐标,world/pelvis 两手同一套代码,转换时点不变(Rt(out yaw) 左乘,learning[16])。
 
-## 键时刻角速度连续(有限差分,rad/s)
+## 键时刻角速度连续(有限差分,quatLn 半角率口径——数值为 |ω|/2,物理 rad/s 需 ×2;修前修后同口径,比较有效)
 
 | 文档 | 指标 | 修前(slerp) | 修后(cubic) |
 |---|---|---|---|
@@ -411,7 +411,7 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 
 ## 回归
 
-- `workshop.test.ts` 新增 `hand frame cubic (WP-C squad)` 七项:①键时刻逐位复现(<1e-9)②键时刻角速度左右有限差分连续(ε=1e-4,|ωL−ωR|<0.05 rad/s;实测 0.017,旧 slerp 同口径 ~10)③稀疏世界系文档 C¹ ④相邻同姿键逐位静止+ω≈0(截幅自然结果,无特判)⑤loop 接缝值逐位相等+ω 连续 ⑥handFrames=pelvis 下立方在骨盆系运行(定姿相对骨盆→世界输出逐位跟随 yaw(t))⑦反极 quat 表示的键取短弧(max<3.1rad,不触 ~205° 长弧)。
+- `workshop.test.ts` 新增 `hand frame cubic (WP-C squad)` 七项:①键时刻逐位复现(<1e-9)②键时刻角速度左右有限差分连续(ε=1e-4,|ωL−ωR|<0.05,半角率口径;实测 0.017,旧 slerp 同口径 ~10)③稀疏世界系文档 C¹ ④相邻同姿键逐位静止+ω≈0(截幅自然结果,无特判)⑤loop 接缝值逐位相等+ω 连续 ⑥handFrames=pelvis 下立方在骨盆系运行(定姿相对骨盆→世界输出逐位跟随 yaw(t))⑦反极 quat 表示的键取短弧(max<3.1rad,不触 ~205° 长弧)。
 - `quality.test.ts` 新增 kick 断言(共享 `probeDocument` 真实求解路径):forehand tip kicks<40(实测 26,修前 62);defaultDocument atKey 步长中位<interior×0.5(实测 0.17°/1.47°,修前 1.38°/1.50°)、tip accelTop<1500 m/s²(实测 1169,修前 2463@keyΔ0ms)。
 - `migration.test.ts` 沿用重捕获机制;`evidence/quality-probe-*.json` 全部重生成。
 
@@ -438,12 +438,12 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 - **C 进**:经工作台真实 UI 写路径制作验收文档 + 探针硬质量门——已交付,见下。
 - **D 推迟**:不在本 WP 交付,列入遗留待后续工单定夺。
 - **E/F 出**:判出本 WP 范围,不做。
-- **锥角不拓宽**:`WRIST_BEND_LIMIT_DEG` 维持 59.8° 不变。defaultDocument 的腕弯曲需求(87.7°、25% 帧被截幅)是种子文档自身的真实超限,不是限幅过紧的证据;验收文档在现有锥内完成(maxBend 48.2°、0/481 帧截幅),不靠放宽限幅凑指标。
+- **锥角不拓宽**:`WRIST_BEND_LIMIT_DEG` 维持 59.8° 不变。defaultDocument 的腕弯曲需求(240fps 实测 maxBend 92.03° @0.600s、46/193 帧=23.8% 超限、deficit 峰 32.23°、clamp 切换 @0.5625/0.7542s)是种子文档自身的真实超限,不是限幅过紧的证据;验收文档在现有锥内完成(maxBend 48.2°、0/481 帧截幅),不靠放宽限幅凑指标。
 
 ## study 夹具与账本位置
 
 - 夹具:`spec/examples/forehand-study.request.json`(2.0s、5 键正手:准备→引拍→触球→随挥→恢复;`handFrames` 双手 pelvis;唯一 contact 键 @1.15s)。
-- 账本:`spec/examples/forehand-study.md`——逐键 UI 编辑路径、~35 轮探针迭代拐点、240/60fps 最终指标表、残余偏差如实记录。全部编辑经真实 UI 写路径(`drive.mjs` 回放 `ops.json`:滑块/字段 input 事件 + 双视角画布指针拖拽),无姿态数据注入;`getDoc()` 仅用于读出。
+- 账本:`spec/examples/forehand-study.md`——逐键 UI 编辑路径、~35 轮探针迭代拐点、240/60fps 最终指标表、残余偏差如实记录。全部编辑经真实 UI 写路径(`drive.mjs` 回放 `ops.json`:滑块/字段 input 事件 + 双视角画布指针拖拽),无姿态数据注入;引擎方法直调仅限读路径/播放控制(`getDoc`/`setPlaying`/`solveCurrent`/camera 读数)。
 - 工具链:`scripts/forehand-study/`(drive/ops 配方、probe、grid、inspect、retune、kickmap、tiptrace、delta-decomp、finalize、pkgcheck),各文件头注明用途与入口参数,保留作复现与后续校准用途。
 - 逐轮指标快照:`evidence/forehand-study/rounds.jsonl`(`final-240`/`final-60` 为定稿读数)+ `doc-*.json` 中间稿。
 

@@ -29,12 +29,12 @@ import {formatProbeReport,probeDocument,stepAngles,PROBE_POINTS,PROBE_QUAT_BONES
  * |Δv|>0.1 m/s almost every frame.
  *
  * defaultDocument (5-key forehand seed, 0.8s, 193 frames):
- *   bones       wrist_R 22.60 rad/s @0.600 · lowerarm02_R peak 25.51 rad/s
+ *   bones       wrist_R 31.2 rad/s @0.600 · lowerarm02_R peak 30.5 rad/s
  *               (channel-chain 'hand' peak 31.2 rad/s — shared key tangents
  *               carry real angular speed through keys instead of slerp's
  *               restart; still inside the 40 rad/s semantic gate)
- *   wristClamp  bend demand max 87.7° @0.600 · clamped 48/193f (25%)
- *               deficit max ~28° med ~13° · transitions @0.563/0.762
+ *   wristClamp  bend demand max 92.03° @0.600 · clamped 46/193f (23.8%)
+ *               deficit max ~32° med ~13° · transitions @0.5625/0.7542
  *   wrist/tip   vmax 6.02 m/s @0.579 (191 kicks) · tip 24.19 m/s @0.596 (191 kicks)
  *               tip accelTop 1169 m/s² @0.563 keyΔ63ms (was 2463 @0.500 keyΔ0ms)
  *   root        maxStep 1.17mm @0.367 · maxV 0.282 m/s · maxA 4.46 m/s² @0.221
@@ -48,8 +48,8 @@ import {formatProbeReport,probeDocument,stepAngles,PROBE_POINTS,PROBE_QUAT_BONES
  *   bones       upperarm01_R/02_R 11.4 rad/s @2.163 · lowerarm01_R/02_R 10.5 @2.421
  *               wrist_R 5.9 rad/s @2.163
  *               kinks: upperarm01_R/02_R 2.7° ×4 @2.421 (keyΔ29ms)
- *   wristClamp  bend demand max 105.4° @1.813 · clamped 590/1249f (47%)
- *               deficit max ~46° med ~17° · 4 transitions @1.342/2.371/2.904/4.338
+ *   wristClamp  bend demand max 105.7° @1.808 · clamped 589/1249f (47%)
+ *               deficit max ~46° med ~17° · 4 transitions @1.342/2.371/2.904/4.333
  *   wrist/tip   wrist vmax 1.60 m/s @2.104 (2 kicks) · tip 4.25 m/s @2.971 (26 kicks, 1 reversal)
  *   ik          arm_R residual 0.91cm @2.288 · reachMax 101.7% @2.288 · leg residual 0.00cm
  *   root        maxStep 0.52mm @2.100 · maxV 0.124 m/s · maxA 0.67 m/s² @1.958
