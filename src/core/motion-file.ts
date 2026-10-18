@@ -58,6 +58,10 @@ export function validateMotionFileShape(raw:unknown):string[]{
   if(typeof f.method!=='string')e.push('method 必须是字符串');
   if(!Array.isArray(f.focus)||f.focus.some(x=>typeof x!=='string'))e.push('focus 必须是字符串数组');
   if(!Array.isArray(f.phases)||f.phases.some(p=>!isObj(p)||!isNum(p.time)||typeof p.label!=='string'))e.push('phases 必须是 {time,label} 数组');
+  // Phase markers must land inside the envelope's own duration — a marker
+  // past the end would sit on the timeline forever unreached (or a negative
+  // one would sort before t=0). Applies to workshop- and clip-motion alike.
+  else if(isNum(f.duration)&&f.phases.some(p=>p.time<0||p.time>f.duration))e.push('phases.time 必须在 0–duration 内');
   if(f.notes!==undefined&&(!Array.isArray(f.notes)||f.notes.some(x=>typeof x!=='string')))e.push('notes 必须是字符串数组');
   if(f.license!==undefined&&typeof f.license!=='string')e.push('license 必须是字符串');
   if(f.oneShot!==undefined&&typeof f.oneShot!=='boolean')e.push('oneShot 必须是布尔值');
@@ -74,6 +78,15 @@ export function validateMotionFileShape(raw:unknown):string[]{
  }
  if(f.kind==='workshop-motion'){
   if(!isObj(f.document))e.push('workshop-motion 必须有 document');
+  else{
+   // Cross-field parity: the envelope's display duration and the embedded
+   // document's duration are two spellings of the same motion and must agree
+   // exactly — both are raw JSON numbers (normalizeDoc never rewrites
+   // duration, so checking the raw value here is equivalent to checking the
+   // normalized one downstream).
+   const dd=f.document.duration;
+   if(isNum(dd)&&isNum(f.duration)&&dd!==f.duration)e.push(`document.duration ${dd} 与 envelope duration ${f.duration} 不一致`);
+  }
   if(f.clip!==undefined)e.push('workshop-motion 不得有 clip（轨迹字段互斥）');
  }
  if(f.kind==='clip-motion'){

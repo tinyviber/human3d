@@ -3,13 +3,26 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig,skeletonSegments} from './rig';
 import {MOTIONS,motionById,muscleActionById} from './motions';
+import {MOTION_FILES} from './motion-files';
+import {motionDefinitionPayload} from './motion-file';
+import {canonical,rigManifestBody} from './protocol';
 import {attachRacket,mountRacket} from './racket';
-import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,type DynamicsSession,type MotionSource} from './motion-source';
+import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,rigMatches,type DynamicsSession,type MotionSource} from './motion-source';
 import type {PosePackage} from './pose-package';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
 import type {DebugOptions,MotionId,MotionSpec,RigInfo,ViewId} from './types';
 export interface FrameState{time:number;duration:number;phase:string;playing:boolean;knee:number;elbow:number;gripError:number;dynamics?:DynamicsReadout}
 const ZERO=new Vector3();
+/** sha256 hex of a canonical string via WebCrypto. `crypto.subtle` only
+ * exists on secure contexts (https/localhost); where absent the hash is
+ * unknowable — return undefined and let callers degrade honestly rather
+ * than fabricate a check that cannot run. */
+const sha256Hex=async(s:string):Promise<string|undefined>=>{
+ const subtle=globalThis.crypto?.subtle;
+ if(!subtle)return undefined;
+ const buf=await subtle.digest('SHA-256',new TextEncoder().encode(s));
+ return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+};
 export class HumanEngine{
  scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
  model?:Group;rig?:HumanRig;mixer?:AnimationMixer;
@@ -21,6 +34,11 @@ export class HumanEngine{
  private _source?:MotionSource;private fade=new PoseFade();private dynSession?:DynamicsSession;
  debug:DebugOptions={surface:true,skeleton:false,axes:false,targets:false,trail:false,muscles:false};
  racket?:Group;private racketSide:'L'|'R'='R';
+ /** Locally computed identities for the pose-package import gate: the rig
+  * manifest hash (compared against a package's rig block — see rigMatches)
+  * and each bundled envelope's definition hash (the trust closure in
+  * openPosePackage). Both stay undefined/empty without WebCrypto. */
+ private manifestHash?:string;private envelopeDefHash=new Map<string,string>();
  skeletonLines?:LineSegments;jointGroup=new Group();axesGroup=new Group();targetGroup=new Group();
  targetMarkers=new Map<string,Mesh>();trail?:Line;trailPoints:Vector3[]=[];
  previousPosition=new Vector3();view:ViewId='front';
@@ -53,14 +71,27 @@ export class HumanEngine{
  async load(){
   try{
    const clipSpecs=MOTIONS.filter(m=>m.source?.kind==='clip');
-   const [gltf,info,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),...clipSpecs.map(async m=>{
+   const [gltf,rigText,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),...clipSpecs.map(async m=>{
     const s=m.source as {kind:'clip';clip:string;meta?:string};
     const data=await fetch(s.clip).then(r=>{if(!r.ok)throw new Error('动作片段加载失败');return r.json()});
     const meta=s.meta?await fetch(s.meta).then(r=>r.json()):undefined;
     return {id:m.id as MotionId,clip:AnimationClip.parse(data),stride:new Vector3().fromArray(meta?.stride??[0,0,0])};
    })]);
    if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
+   const info=JSON.parse(rigText) as RigInfo;
    this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
+   // Local identities for the pose-package import gate — the same
+   // canonical(rigManifestBody)/canonical(motionDefinitionPayload) sha256 the
+   // service stamps into packages (rig.manifestSHA256 / action.definitionSHA256).
+   // Without WebCrypto the hashes stay unknown and openPosePackage degrades to
+   // the structural check instead of trusting what it cannot verify.
+   this.manifestHash=await sha256Hex(canonical(rigManifestBody(info)));
+   if(this.manifestHash===undefined)
+    console.warn('crypto.subtle 不可用：姿态包导入的 rig/定义哈希核验降级为结构检查');
+   for(const f of MOTION_FILES)if(f.kind==='workshop-motion'){
+    const h=await sha256Hex(canonical(motionDefinitionPayload(f)));
+    if(h!==undefined)this.envelopeDefHash.set(f.id,h);
+   }
    this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
    // Sclerae at the original MakeHuman eye pivots, keeping facial silhouette intact.
    for(const side of ['L','R']){
@@ -96,14 +127,28 @@ export class HumanEngine{
   const problems=checkPosePackageShape(pkg,new Set(this.rig.bones.keys()));
   if(problems.length){this.onError?.(new Error(`姿态包不可用：${problems[0]}${problems.length>1?`（共 ${problems.length} 处问题）`:''}`));return undefined;}
   const p=pkg as PosePackage;
+  // Rig identity: the package declares the rig manifest it was solved against.
+  // With the local hash known a mismatch is a hard refusal — the delivered
+  // local rotations would decode onto the wrong skeleton and fail silently.
+  // Hash unknowable (non-secure context): degrade to the bone-name check that
+  // already ran, and let the spec description say the rig was not verified.
+  if(!rigMatches(p,this.manifestHash)){
+   this.onError?.(new Error(`姿态包不可用：rig manifest 哈希与本地骨架不一致（声明 ${typeof p.rig?.manifestSHA256==='string'?p.rig.manifestSHA256.slice(0,12):'?'}…），FK 重放会错位`));
+   return undefined;
+  }
   // Key the temp entry on the package's artifact id (content-addressed), not
   // the action id: two packages solved for the same action stay distinct
   // entries, and reopening the same package is idempotent.
   const specId=`pkg:${typeof p.id==='string'&&p.id?p.id:`unkeyed-${this.pkgSeq++}`}`;
   // The display spec is derived from what the package carries: bundled
-  // envelopes (matched by action.id) restore capabilities/name/phases, the
-  // ad-hoc parameters channel carries documentName and presentation hints.
-  const spec=posePackageSpec(p,specId);
+  // envelopes (matched by action.id) restore capabilities/name/phases — but
+  // only when the package's action.definitionSHA256 reproduces the envelope's
+  // own recomputed definition hash (a claimed-but-unproven bundled id falls
+  // back to the ad-hoc parameters channel); ad-hoc packages carry
+  // documentName and presentation hints there by design.
+  const spec=posePackageSpec(p,specId,
+   actionId=>this.envelopeDefHash.get(actionId)!==undefined&&this.envelopeDefHash.get(actionId)===p.action?.definitionSHA256,
+   this.manifestHash!==undefined);
   this.specs.set(spec.id,spec);this.sources.set(spec.id,new PosePackageSource(this.rig,p,spec.capabilities?.prop,this.racket));
   this.setMotion(spec.id,false);return spec;
  }
@@ -219,7 +264,14 @@ export class HumanEngine{
   if(this.playing&&duration>0){
    this.time+=dt*this.speed;
    if(this.time>=duration){
-    if(this.loop&&!spec.oneShot){this.time%=duration;src.loopWrapAdvance?.();}
+    if(this.loop&&!spec.oneShot){
+     // One tick can skip several periods (a long frame at high speed): the
+     // playhead wraps modulo duration and the per-wrap side effect — walk's
+     // stride accumulation — fires once per crossed period, not once per tick.
+     const wraps=Math.floor(this.time/duration);
+     this.time%=duration;
+     for(let i=0;i<wraps;i++)src.loopWrapAdvance?.();
+    }
     else{this.time=duration;this.playing=false;}
    }
   }

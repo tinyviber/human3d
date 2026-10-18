@@ -125,6 +125,27 @@ describe('motion file envelopes',()=>{
    expect(()=>normalizeMotionFile(b)).toThrow();
   }
  });
+ it('refuses envelopes whose cross-field data disagrees',()=>{
+  const idle=readMotion('idle');
+  const walk=readMotion('walk');
+  // The JSON schema cannot express field-to-field consistency — the runtime
+  // validator is the gate. Assert the schema accepts these shapes so the
+  // runtime check is proven to add coverage rather than restate the schema.
+  const durationMismatch={...idle,duration:idle.duration+1};
+  expect(check(durationMismatch)).toBe(true);
+  expect(()=>normalizeMotionFile(durationMismatch)).toThrow(/不一致/);
+  const phasePastEnd={...idle,phases:[{time:idle.duration+.5,label:'越界'}]};
+  expect(check(phasePastEnd)).toBe(true);
+  expect(()=>normalizeMotionFile(phasePastEnd)).toThrow(/phases/);
+  // The same phases range applies to clip-motion envelopes.
+  const clipPhasePastEnd={...walk,phases:[{time:walk.duration+.5,label:'越界'}]};
+  expect(()=>normalizeMotionFile(clipPhasePastEnd)).toThrow(/phases/);
+  const negativePhase={...idle,phases:[{time:-.1,label:'负'}]};
+  expect(()=>normalizeMotionFile(negativePhase)).toThrow(/phases/);
+  // Legal envelopes are untouched by the new guards.
+  expect(()=>normalizeMotionFile(idle)).not.toThrow();
+  expect(()=>normalizeMotionFile(walk)).not.toThrow();
+ });
  it('validates dynamics.action against the dynamics-action schema',()=>{
   for(const name of ['baseball-throw','punch']){
    const raw=readMotion(name);

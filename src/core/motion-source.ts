@@ -3,9 +3,11 @@ import {angleAt} from './kinematics';
 import {gripFrame} from './racket';
 import type {HumanRig} from './rig';
 import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
+import {RIG_ID} from './protocol';
 // Type-only: the decoder never runs the capture path, so a value import would
-// just add solver/sampler weight to the lab bundle.
-import type {PosePackage} from './pose-package';
+// just add solver/sampler weight to the lab bundle. (RIG_ID is a plain string
+// constant — importing it does not pull the solver.)
+import type {PackageEvent,PosePackage} from './pose-package';
 import type {MotionCapabilities} from './motion-file';
 import {motionFileById} from './motion-files';
 import {frameAt,type WorkshopDoc} from '../workshop/document';
@@ -108,6 +110,8 @@ export class DocumentSource implements MotionSource{
 
 const isObj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const isVec=(v:unknown):v is number[]=>Array.isArray(v)&&v.every(Number.isFinite);
+/** The events enum of spec/pose-package.schema.json — keep in lockstep. */
+const PACKAGE_EVENT_TYPES=new Set<string>(['phase','keyframe','contact','support-start','support-end']);
 
 /** Structural self-check for a delivered pose package: wire constants, the
  * timestamp contract (strictly increasing, `timestamps.at(-1) === duration`),
@@ -134,6 +138,48 @@ export function checkPosePackageShape(pkg:unknown,validBones?:ReadonlySet<string
   else for(const tr of p.tracks.rotations){
     if(validBones&&!validBones.has(tr?.bone))e.push(`旋转轨引用了 rig 外的骨骼 ${tr?.bone}`);
     if(!isVec(tr?.values)||tr.values.length!==c*4)e.push(`${tr?.bone??'?'} 的旋转值长度不是 count×4`);
+  }
+  // The rig block the package claims to be solved against (schema requires id
+  // + manifestSHA256 + bones). A foreign rig id is refused here; the manifest
+  // hash itself is verified by the caller (rigMatches) where the local hash
+  // is known — the shape check can only insist it is a string.
+  if(!isObj(p.rig))e.push('rig 必须是对象');
+  else{
+    if(p.rig.id!==RIG_ID)e.push(`rig.id 必须是 ${RIG_ID}`);
+    if(typeof p.rig.manifestSHA256!=='string')e.push('rig.manifestSHA256 必须是字符串');
+    if(!Number.isInteger(p.rig.bones)||p.rig.bones<1)e.push('rig.bones 必须是 ≥1 的整数');
+  }
+  // events is optional to the DECODER, but a present-but-malformed array would
+  // silently lose timeline markers — reject loudly instead. Element shape
+  // mirrors spec/pose-package.schema.json's events enum plus the validator's
+  // support-event side rule (src/server/validate.ts).
+  if(p.events!==undefined){
+    if(!Array.isArray(p.events))e.push('events 必须是数组');
+    else for(const ev of p.events){
+      if(!isObj(ev)){e.push('events 元素必须是对象');continue;}
+      if(!PACKAGE_EVENT_TYPES.has(ev.type as string)){e.push(`events 元素 type 非法：${String(ev.type)}`);continue;}
+      if(!Number.isFinite(ev.time)||ev.time<0)e.push(`events.${ev.type} 的 time 必须是 ≥0 的有限数`);
+      if(typeof ev.label!=='string')e.push(`events.${ev.type} 的 label 必须是字符串`);
+      if((ev.type==='support-start'||ev.type==='support-end')&&ev.side!=='L'&&ev.side!=='R')
+        e.push(`events.${ev.type} 需要 side 'L'|'R'`);
+    }
+  }
+  // Minimum shape of the consumed metadata fields — posePackageSpec already
+  // filters defensively; flagging them here makes a malformed package refuse
+  // at the door rather than degrade quietly at render time.
+  if(p.action!==undefined){
+    if(!isObj(p.action))e.push('action 必须是对象');
+    else if(p.action.id!==undefined&&typeof p.action.id!=='string')e.push('action.id 必须是字符串');
+  }
+  if(p.quality!==undefined){
+    if(!isObj(p.quality))e.push('quality 必须是对象');
+    else if(p.quality.warnings!==undefined&&(!Array.isArray(p.quality.warnings)||p.quality.warnings.some(w=>typeof w!=='string')))
+      e.push('quality.warnings 必须是字符串数组');
+  }
+  if(p.provenance!==undefined){
+    if(!isObj(p.provenance))e.push('provenance 必须是对象');
+    else for(const k of ['solver','solverRevision','source']as const)
+      if(p.provenance[k]!==undefined&&typeof p.provenance[k]!=='string')e.push(`provenance.${k} 必须是字符串`);
   }
   return [...new Set(e)];
 }
@@ -188,6 +234,17 @@ export class PosePackageSource implements MotionSource{
   diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined,this.propSide);}
 }
 
+/** Rig identity gate for a delivered package, used by engine.openPosePackage.
+ * When the engine computed the local manifest hash at load (WebCrypto needs a
+ * secure context — undefined means unknowable, not absent), the package's
+ * declared manifestSHA256 must equal it: a package solved for another rig
+ * would decode its local rotations against the wrong skeleton. An unknown
+ * local hash degrades to "true" — the caller then notes the unverified rig in
+ * the spec description, and the bone-name subset check inside
+ * checkPosePackageShape remains the only line of defence. */
+export const rigMatches=(p:PosePackage,manifestHash:string|undefined)=>
+  manifestHash===undefined||p.rig?.manifestSHA256===manifestHash;
+
 /** Derive the lab's MotionSpec for a delivered pose package — the inverse of
  * what solveWorkshop + workshopMeta stamped at solve time. Field priority:
  * the bundled envelope (`action.id` matching motionFileById) > the ad-hoc
@@ -198,10 +255,20 @@ export class PosePackageSource implements MotionSource{
  * data rather than whatever the action id claims. The description is the
  * honesty surface: solver provenance, the quality warnings the package
  * carries, and the constant-prop caveat (a v2 package cannot express the
- * document's per-frame grip ramp, so the prop is constantly shown). */
-export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
+ * document's per-frame grip ramp, so the prop is constantly shown).
+ * `trust(actionId)` gates envelope restore: the engine recomputes each
+ * bundled envelope's definition hash at load and passes a closure that
+ * accepts only when the package's `action.definitionSHA256` equals it — a
+ * forged or stale action.id then plays through the ad-hoc parameters channel
+ * instead of wearing foreign capabilities/name/phases. Callers with nothing
+ * to check against may omit `trust` (bare id-match, the pre-gate behaviour).
+ * `rigVerified=false` marks the degraded path where no local manifest hash
+ * exists to compare (recorded on the description, honestly). */
+export function posePackageSpec(p:PosePackage,id:MotionId,trust?:(actionId:string)=>boolean,rigVerified=true):MotionSpec{
  const actionId=typeof p.action?.id==='string'&&p.action.id?p.action.id:'pose-package';
- const envelope=motionFileById(actionId);
+ const hit=motionFileById(actionId);
+ const trusted=hit!==undefined&&(trust===undefined||trust(actionId));
+ const envelope=trusted?hit:undefined;
  const params=isObj(p.action?.parameters)?p.action.parameters:{};
  const pres=isObj(params.presentation)?params.presentation:{};
  // 'racket' is the only prop kind the lab can mount — the ad-hoc hint maps to
@@ -217,7 +284,9 @@ export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
  // Loop semantics are authored in the document, not the package: bundled
  // envelopes carry the document, ad-hoc packages carry presentation.loop.
  const authoredLoop=envelope?envelope.document?.loop:(typeof pres.loop==='boolean'?pres.loop:undefined);
- const events=Array.isArray(p.events)?p.events:[];
+ // isObj filter is belt-and-suspenders: the shape check already rejects
+ // malformed events when it ran, but this function is also called standalone.
+ const events=(Array.isArray(p.events)?p.events:[]).filter(e=>isObj(e));
  const phases=events.filter(e=>e.type==='phase').map(({time,label})=>({time,label}));
  const keys=events.filter(e=>e.type==='keyframe').map(({time,label})=>({time,label}));
  const warnings=(Array.isArray(p.quality?.warnings)?p.quality.warnings:[]).filter((w):w is string=>typeof w==='string');
@@ -230,6 +299,8 @@ export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
   source,
   warnings.length?`质量警告 ${warnings.length} 条：${warnings.slice(0,3).join('；')}${warnings.length>3?' …':''}`:'质量警告 0 条',
   prop?`v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示${prop.side==='L'?'（左手持拍）':''}`:'',
+  hit&&!trusted?'action.id 命中本地信封但 definitionSHA256 不符，按外部包回放（信封能力未采用）':'',
+  rigVerified?'':'rig 未验证：本地 manifest 哈希不可知，降级为骨骼名匹配',
  ].filter(Boolean).join(' · ');
  const documentName=typeof params.documentName==='string'&&params.documentName?params.documentName:undefined;
  return {id,name:envelope?.name||documentName||actionId,
@@ -255,6 +326,11 @@ export class DynamicsSource implements MotionSource{
    * the panel reports the attempted profile even when the load fails). */
   profile:DynamicsCase='baseline';
   private motionId='';private debug?:DebugOptions;
+  /** Load generation: load/deactivate/dispose each bump it, so a stale
+   * in-flight load can recognize that somebody else (a newer load, a source
+   * switch, engine teardown) owns the session now — and must not apply
+   * `status='ready'`/`root.visible=true` after the fact. */
+  private gen=0;
   private constructor(private session:DynamicsSession){}
   static create(session:DynamicsSession){return new DynamicsSource(session);}
   get physics(){return this.session.replay;}
@@ -266,20 +342,27 @@ export class DynamicsSource implements MotionSource{
    * `records` URLs take precedence inside the replay; a bare spec falls back
    * to the per-action `/dynamics/<id>/<case>` path convention. */
   async load(id:string,profile:DynamicsCase,muscleAction?:MuscleActionFile,records?:DynamicsRecords):Promise<'applied'|'superseded'|'error'>{
+    const g=++this.gen;
     this.motionId=id;this.profile=profile;this.status='loading';this.error=undefined;
     const s=this.session;
     try{
       s.promise??=import('./dynamics').then(m=>m.DynamicsReplay.create(s.rig));
       const replay=await s.promise;
-      if(s.retired){if(s.replay!==replay)replay.dispose();return 'superseded';}
+      if(this.gen!==g||s.retired){
+        // Only a RETIRED session disposes the fresh replay — it can never be
+        // adopted. A merely superseded one keeps it: the shared session
+        // promise hands the same object to whichever load owns it now.
+        if(s.retired&&s.replay!==replay)replay.dispose();
+        return 'superseded';
+      }
       if(!s.replay){s.replay=replay;s.parent.add(replay.root);}
       const accepted=await replay.load(id,profile,muscleAction,records);
-      if(!accepted||this.motionId!==id)return 'superseded';
+      if(!accepted||this.gen!==g||s.retired)return 'superseded';
       this.status='ready';replay.root.visible=true;if(this.debug)replay.setOptions(this.debug);
       return 'applied';
     }catch(err){
       s.promise=undefined;
-      if(this.motionId!==id)return 'superseded';
+      if(this.gen!==g||s.retired)return 'superseded';
       this.status='error';this.error=err instanceof Error?err.message:String(err);
       return 'error';
     }
@@ -290,8 +373,11 @@ export class DynamicsSource implements MotionSource{
   wantsProp(){return false;}
   setDebug(o:DebugOptions){this.debug=o;this.session.replay?.setOptions(o);}
   diagnostics(){return null;}
-  deactivate(){if(this.session.replay)this.session.replay.root.visible=false;}
-  dispose(){const s=this.session;s.retired=true;if(s.replay){const r=s.replay;s.replay=undefined;r.dispose();}}
+  /** The bump retires any in-flight load of this source: switching away while
+   * a record is still loading must not let the stale await resurrect the
+   * replay (status='ready', root.visible=true) over the new source. */
+  deactivate(){this.gen++;if(this.session.replay)this.session.replay.root.visible=false;}
+  dispose(){const s=this.session;this.gen++;s.retired=true;if(s.replay){const r=s.replay;s.replay=undefined;r.dispose();}}
 }
 
 /** Cross-source pose blend (~.32 s): snapshots the whole skeleton at switch

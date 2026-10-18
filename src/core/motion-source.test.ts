@@ -1,16 +1,18 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import fs from 'node:fs';
-import {AnimationClip,AnimationMixer,Quaternion,Vector3,type Group} from 'three';
+import {AnimationClip,AnimationMixer,Group,Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
 import {attachRacket,mountRacket} from './racket';
-import {checkPosePackageShape,ClipSource,DocumentSource,PosePackageSource,posePackageSpec} from './motion-source';
-import {normalizeMotionFile} from './motion-file';
+import {checkPosePackageShape,ClipSource,createDynamicsSession,DocumentSource,DynamicsSource,PosePackageSource,posePackageSpec,rigMatches} from './motion-source';
+import {motionDefinitionPayload,normalizeMotionFile} from './motion-file';
 import {motionFileById} from './motion-files';
 import {buildPosePackageLocal,subtleDigest} from './package-export';
 import {buildRigManifest,sha256,type RigManifest} from '../server/rig-manifest';
+import {actionDefinitionHash} from '../server/pose-package';
 import {createService,handleRequest,type ServiceContext} from '../server/service';
 import {blankDocument,defaultDocument,serializeDoc} from '../workshop/document';
+import type {DynamicsReplay} from './dynamics';
 import type {PosePackage} from './pose-package';
 
 /* MotionSource coverage: the package shape gate on the golden artifact and on
@@ -45,6 +47,20 @@ describe('checkPosePackageShape',()=>{
    ['rotation values 长度',p=>{p.tracks.rotations[0].values=p.tracks.rotations[0].values.slice(0,-4);},/count×4/],
    ['未知 bone',p=>{p.tracks.rotations[0].bone='no_such_bone';},/rig 外的骨骼/],
    ['schemaVersion',p=>{(p as {schemaVersion:number}).schemaVersion=3;},/schemaVersion/],
+   // events / metadata-element gates: well-formed packages carry them, so a
+   // malformed copy must be refused with a readable reason.
+   ['events 非数组',p=>{(p as unknown as {events:unknown}).events=42;},/events 必须是数组/],
+   ['events 元素非对象',p=>{(p as unknown as {events:unknown}).events=[null];},/events 元素必须是对象/],
+   ['events.type 非法',p=>{(p.events as {type:string}[])[0].type='bounce';},/type 非法/],
+   ['events.time 非有限数',p=>{(p.events as {time:number}[])[0].time=NaN;},/time/],
+   ['events.label 缺失',p=>{(p.events as {label?:string}[])[0].label=undefined;},/label/],
+   ['support-start 缺 side',p=>{p.events.push({time:0,label:'x',type:'support-start'});},/side/],
+   ['support-end side 非法',p=>{p.events.push({time:0,label:'x',type:'support-end',side:'X' as 'L'});},/side/],
+   ['rig.id 不符',p=>{p.rig.id='other-rig';},/rig\.id/],
+   ['rig.manifestSHA256 非字符串',p=>{(p.rig as {manifestSHA256:unknown}).manifestSHA256=42;},/manifestSHA256/],
+   ['action.id 非字符串',p=>{(p.action as {id:unknown}).id=42;},/action\.id/],
+   ['quality.warnings 非字符串数组',p=>{(p.quality as {warnings:unknown}).warnings=[7];},/quality\.warnings/],
+   ['provenance.solver 非字符串',p=>{(p.provenance as {solver:unknown}).solver=7;},/provenance\.solver/],
   ];
   for(const [name,mutate,pattern]of cases){
    const p=clone(golden);mutate(p);
@@ -52,6 +68,15 @@ describe('checkPosePackageShape',()=>{
    expect(errs.length,`${name}: expected problems`).toBeGreaterThan(0);
    expect(errs.join('|'),`${name}: expected a matching message`).toMatch(pattern);
   }
+ });
+ it('a package with null events is refused by the decoder while the spec derivation stays total',()=>{
+  const p=clone(golden);(p as unknown as {events:unknown}).events=[null];
+  expect(checkPosePackageShape(p,validBones()).length).toBeGreaterThan(0);
+  expect(new PosePackageSource(rig,p).status).toBe('error');
+  // Deep defence: standalone spec derivation must not throw on the same
+  // input — the isObj guard drops non-object events before the type reads.
+  const spec=posePackageSpec(p,'pkg:test');
+  expect(spec.phases).toEqual([]);
  });
  it('fails closed on a non-object package',()=>{
   expect(checkPosePackageShape('nope').length).toBeGreaterThan(0);
@@ -240,6 +265,114 @@ describe('posePackageSpec — ad-hoc presentation channel',()=>{
   const src=new PosePackageSource(rig,pkg,spec.capabilities?.prop,racket);
   src.seek(.6);
   expect(src.wantsProp()).toBe(false);
+ });
+});
+
+/* DynamicsSource's load is two awaits deep (module fetch, then the record);
+ * the engine can switch sources or start a newer load in between. The gen
+ * counter must retire the stale continuation so a late resolution cannot
+ * resurrect the replay (root.visible/status) over whoever owns the session
+ * now. The session promise is injected with a fake replay — the source under
+ * test is load's own guard logic, not DynamicsReplay.create. */
+describe('DynamicsSource — load supersession',()=>{
+ const fakeReplay=()=>{
+  const root=new Group();root.visible=false; // mirrors the real constructor
+  return {root,duration:2.5,ready:true,
+   load:async()=>true,seek(){},point:()=>undefined,setOptions(){},
+   dispose(){root.visible=false;}} as unknown as DynamicsReplay;
+ };
+ it('a load superseded by deactivate never makes the replay visible',async()=>{
+  const session=createDynamicsSession(rig,new Group());
+  const replay=fakeReplay();session.promise=Promise.resolve(replay);
+  const src=DynamicsSource.create(session);
+  const pending=src.load('x','baseline');
+  src.deactivate();             // engine switched to another source mid-flight
+  expect(await pending).toBe('superseded');
+  expect(session.replay).toBeUndefined();      // never adopted into the scene
+  expect(replay.root.visible).toBe(false);     // the stale await did not resurrect it
+  expect(src.status).not.toBe('ready');
+ });
+ it('applies the replay when the load still owns the session',async()=>{
+  const session=createDynamicsSession(rig,new Group());
+  const replay=fakeReplay();session.promise=Promise.resolve(replay);
+  const src=DynamicsSource.create(session);
+  expect(await src.load('x','baseline')).toBe('applied');
+  expect(session.replay).toBe(replay);
+  expect(session.parent.children).toContain(replay.root);
+  expect(replay.root.visible).toBe(true);
+  expect(src.status).toBe('ready');
+ });
+ it('a newer load supersedes the one still in flight',async()=>{
+  const session=createDynamicsSession(rig,new Group());
+  session.promise=Promise.resolve(fakeReplay());
+  const src=DynamicsSource.create(session);
+  const first=src.load('a','baseline');
+  const second=src.load('b','baseline');
+  expect(await first).toBe('superseded');
+  expect(await second).toBe('applied');
+  expect(src.status).toBe('ready');
+ });
+ it('a disposed session reports superseded and disposes the unadopted replay',async()=>{
+  const session=createDynamicsSession(rig,new Group());
+  const replay=fakeReplay();let disposed=false;
+  (replay as {dispose:()=>void}).dispose=()=>{disposed=true;};
+  session.promise=Promise.resolve(replay);
+  const src=DynamicsSource.create(session);
+  const pending=src.load('x','baseline');
+  src.dispose();
+  expect(await pending).toBe('superseded');
+  expect(disposed).toBe(true);
+ });
+});
+
+/* The envelope-restore trust gate (engine.openPosePackage): the package's
+ * action.definitionSHA256 must reproduce the local envelope's recomputed
+ * definition hash before capabilities/name/phases may come from it. The
+ * trust closure here is built on the same inputs the engine uses —
+ * actionDefinitionHash(motionDefinitionPayload(file)) — so a tampered or
+ * foreign-definition package degrades to the ad-hoc channel. rigMatches is
+ * the pure rig-identity half of the same gate. */
+describe('posePackageSpec — envelope trust + rig identity',()=>{
+ const served=(id:string)=>handleRequest(ctx,'POST','/v1/motions',{action:{id}}).body as PosePackage;
+ /** Same inputs the engine's closure uses: precomputed per-envelope
+  * definition hashes, matched against the package's declared one. */
+ const envelopeDef=(id:string)=>{
+  const f=motionFileById(id);
+  return f?.kind==='workshop-motion'?actionDefinitionHash(motionDefinitionPayload(f)):undefined;
+ };
+ const trustFor=(pkg:PosePackage)=>(actionId:string)=>
+  envelopeDef(actionId)!==undefined&&envelopeDef(actionId)===pkg.action.definitionSHA256;
+ it('a proven definitionSHA256 restores the envelope exactly as before',()=>{
+  const pkg=served('forehand');
+  const spec=posePackageSpec(pkg,'pkg:test',trustFor(pkg));
+  expect(spec.capabilities?.prop).toEqual({kind:'racket',trail:true,handView:true});
+  expect(spec.name).toBe(motionFileById('forehand')!.name);
+  expect(spec.oneShot).toBe(true);
+ });
+ it('a tampered definitionSHA256 drops to the ad-hoc channel',()=>{
+  const pkg=clone(served('forehand'));
+  pkg.action.definitionSHA256='0'.repeat(64);
+  const spec=posePackageSpec(pkg,'pkg:test',trustFor(pkg));
+  // Bundled packages ship parameters:{} — nothing survives in the ad-hoc
+  // channel, so capabilities are simply absent (or prop-hint only).
+  expect(spec.capabilities).toBeUndefined();
+  expect(spec.name).toBe('forehand');          // the claimed id, not the envelope display name
+  expect(spec.method).toBe('服务交付轨迹 · FK 采样重放');
+  expect(spec.description).toMatch(/definitionSHA256 不符/);
+  // The trajectory still plays — phases keep coming from the package's own events.
+  expect(spec.phases).toEqual(motionFileById('forehand')!.phases);
+ });
+ it('a missing definitionSHA256 is equally untrusted',()=>{
+  const pkg=clone(served('forehand'));
+  (pkg.action as {definitionSHA256?:string}).definitionSHA256=undefined;
+  const spec=posePackageSpec(pkg,'pkg:test',trustFor(pkg));
+  expect(spec.capabilities).toBeUndefined();
+ });
+ it('rigMatches compares the declared manifest hash only when the local one is known',()=>{
+  const pkg=served('idle');
+  expect(rigMatches(pkg,manifest.manifestSHA256)).toBe(true);
+  expect(rigMatches(pkg,'0'.repeat(64))).toBe(false);
+  expect(rigMatches(pkg,undefined)).toBe(true); // unknowable → caller degrades, notes it
  });
 });
 
