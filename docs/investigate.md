@@ -487,3 +487,31 @@ eval 裁决语义:**确定性出图参数的静帧导出 + 关键帧 contact-she
 - **UI**:动作文档卡姿态包区旁新增「静帧渲染」子区——「渲染静帧」按 `e.time` 导 `<docId>.t<秒>.png`、「关键帧拼图」导 `<docId>.sheet.png`,复用既有 `download`/`safeName`;注释与 hint 写明固定相机预设+固定出图尺寸、不含编辑器手柄、播放/视角导出后恢复。
 - **测试/QA**:`workshop.test.ts` 补 `sheetTimes` 纯函数断言(键数 ≤ 上限全保留、30 键均匀抽 12 且端点钉死+无重复、自定义上限与调用序保持);`browser-qa.mjs` 新增 `workshopStillExport`——真实点击 → `waitForEvent('download')` → PNG magic(\x89PNG)+ IHDR 钉 640×720 与文件名约定,拼图断言 3 格宽度(1920×748)与体积大于单帧,并分别验证暂停态导出后 time/playing 原样恢复、播放中导出后 playing 恢复为 true。
 - **文档**:WORKSHOP.md 导出矩阵三行→五行(静帧/拼图归入「渲染品」,不携带 artifact 身份);QA.md 检查表补 `workshopStillExport` 行。
+
+## WP-D(补)— 文档镜像(mirrorDoc):同一动作换边
+
+eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` 产出新 WorkshopDoc——右手正手变成左手正手,文档级变换而非求解开关。
+
+### 镜像约定表(与 grip-side.test.ts 的 M·q·M 实测约定对齐)
+
+| 字段 | 变换 |
+|---|---|
+| `pose.root` | `x→−x`,y/z 保持 |
+| `pose.yaw` / `chest` / `side` | 取反(YXZ 中的 Y/Z 分量;`rig.rotate` 与 `footRotation` 同为 YXZ Euler,M 共轭逐因子作用:Rx 保持、Ry/Rz 取反) |
+| `pose.lean` / 脚 `pitch` | 保持(X 分量) |
+| `handL⇄handR` | 对调;target/pole/forward/normal 全部 x→−x——Mf·Mn 逐位等于 f·n=0,正交框架契约 bit-for-bit 保持,`parseDoc`/`canonicalizeHands` 对镜像输出是恒等 |
+| `footL⇄footR` | 对调;target/pole x→−x、yaw→−yaw、pitch 保持 |
+| `constraints` | `plantL⇄plantR` 对调;`grip`/`contact` 为侧别无关布尔,保持 |
+| 接触区间 | 不存独立数据——区间语义由 plant 旗标 + 区间首帧存储脚位定义,随上述字段自动镜像:接触点、离地帧摆动中点、落地帧同一套存储重写 |
+| `handFrames` | `{L←R, R←L}` 随手换侧(插值坐标系跟随该手原样);对现有双手 pelvis 配置是恒等。骨盆系无需特判:rest root.x=0,M 与 buildModel 的 yaw 旋转换算可交换 |
+| `gripSide` | 翻转:缺省/`'R'`→`'L'`;`'L'`→缺省(镜回右手时写回规范形态,显式 `'R'` 不落盘) |
+| `clavicleLift`/`loop`/`duration`/`inbetweens`/键时间/标签/`videoTime` | 原样保留(标量与时间轴不变) |
+| `id`/`name`/`english` | 可回切标记:`.mirrored` / ` · 镜像` / ` · MIRRORED`,已带标记则剥除 |
+
+### 关键不变量与实测
+
+- **对合性**:`mirror∘mirror` 对规范字段序文档逐字节相等(seeds、shipped 资产、parseDoc/mirrorDoc 输出全在此类);手写乱序字段的文档按值相等(输出恒为规范字段序)。
+- **几何硬断言**(mirror.test.ts,真实 `frameAt→solveEffectiveFrame`,全部采样时刻 × inbetweens 双模式,163 骨位置+世界四元数):实测最大残差 位置 ≤2.8e-15 m、朝向 ≤5.96e-8 rad——与 grip-side 镜像断言同量级(其记录 ≤5e-16 m / ≤5e-8 rad)。
+- **两侧等价**:非对称 handFrames({L:'world',R:'pelvis'})、左握文档、loop 随机文档(seed 11/222)同口径通过——handFrames 换侧是该断言成立的必要条件。
+- **UI 事务**:「镜像动作」把镜像文档作为新库条目入库并选中(原文档保留);新文档的撤销书预存源文档快照——一步撤销回到源文档(undo/redo 在恢复 id ≠ 当前 id 时由 applyDoc + selectDoc 跟随,反向步经 `DocHistory.pushPast`/`pushFuture` 存到恢复文档的书上,双向对称)。
+- **QA**:`workshopMirror`——真实点击 → 新文档、`gripSide` 翻转、t=.5 腕位左右互换(容差 1e-5)、球拍重挂 `wrist_R`、撤销一步回源文档。

@@ -405,6 +405,54 @@ const handAfter=await page.evaluate(()=>{const ks=[...window.__WS__.getDoc().key
 assert(Math.hypot(handAfter.l.x-handBefore.l.x,handAfter.l.y-handBefore.l.y,handAfter.l.z-handBefore.l.z)>.005,'tip drag did not edit the left hand target');
 assert.deepEqual(handAfter.r,handBefore.r,'left-grip tip drag must not touch handR.target');
 result.checks.workshopGripSide=true;
+// --- WP-D workshopMirror: real click on 「镜像动作」 → a NEW document enters
+// the editing state (source doc stays in the library). The QA doc currently
+// grips LEFT, so its mirror must arrive as right-hand grip; at t=.5 the new
+// doc's solved wrists must be the x=0 reflection of the source's (same motion
+// on the other side), and one undo step must land back on the source doc.
+const preMirror=await page.evaluate(()=>{
+ const e=window.__WS__;e.setPlaying(false);e.seek(.5);e.solveCurrent();
+ return {id:e.getDoc().id,name:e.getDoc().name,gripSide:e.getDoc().gripSide??'R',
+  wL:e.rig.point('wrist_L').toArray(),wR:e.rig.point('wrist_R').toArray(),
+  count:JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.length};
+});
+assert.equal(preMirror.gripSide,'L','precondition: QA doc should be on left grip before mirroring');
+await page.getByRole('button',{name:'镜像动作',exact:true}).click();
+await page.waitForTimeout(200);
+const postMirror=await page.evaluate(()=>{
+ const e=window.__WS__;e.setPlaying(false);e.seek(.5);e.solveCurrent();
+ const d=e.getDoc(),lib=JSON.parse(localStorage.getItem('kinesis-workshop-library'));
+ return {id:d.id,name:d.name,gripSide:d.gripSide??'R',activeId:lib.activeId,
+  wL:e.rig.point('wrist_L').toArray(),wR:e.rig.point('wrist_R').toArray(),
+  racketParent:e.racket.parent?.name,racketVisible:e.racket.visible,
+  count:lib.docs.length,mirroredEntry:lib.docs.some(x=>x.id.endsWith('.mirrored')&&x.name.includes('镜像'))};
+});
+assert.notEqual(postMirror.id,preMirror.id,'mirror must produce a new document id');
+assert.equal(postMirror.id,`${preMirror.id}.mirrored`,'mirrored doc id must carry the .mirrored marker');
+assert(postMirror.mirroredEntry&&postMirror.count===preMirror.count+1,'library must gain the mirrored entry and keep the source');
+assert.equal(postMirror.activeId,postMirror.id,'mirrored doc should become the active edit target');
+assert.equal(postMirror.gripSide,'R','mirror of a left-grip doc must grip right');
+assert(postMirror.name.includes('镜像'),'mirrored doc name must carry the 镜像 marker');
+assert.equal(postMirror.racketParent,'wrist_R','mirrored doc should mount the racket back on the right wrist');
+// The hard geometric contract on the real solved rig: the mirrored doc's
+// wrist_L is the x-reflection of the source's wrist_R and vice versa.
+const near=(a,b,tol=1e-5)=>Math.abs(a-b)<tol;
+assert(near(postMirror.wL[0],-preMirror.wR[0])&&near(postMirror.wL[1],preMirror.wR[1])&&near(postMirror.wL[2],preMirror.wR[2]),
+ `mirrored wrist_L ${postMirror.wL} is not the x-mirror of source wrist_R ${preMirror.wR}`);
+assert(near(postMirror.wR[0],-preMirror.wL[0])&&near(postMirror.wR[1],preMirror.wL[1])&&near(postMirror.wR[2],preMirror.wL[2]),
+ `mirrored wrist_R ${postMirror.wR} is not the x-mirror of source wrist_L ${preMirror.wL}`);
+// One undo step returns the SOURCE document (cross-document history step).
+await page.getByRole('button',{name:'撤销',exact:true}).click();
+await page.waitForTimeout(200);
+const undone=await page.evaluate(()=>{
+ const e=window.__WS__;e.setPlaying(false);e.seek(.5);e.solveCurrent();
+ const d=e.getDoc();
+ return {id:d.id,gripSide:d.gripSide??'R',wL:e.rig.point('wrist_L').toArray(),wR:e.rig.point('wrist_R').toArray()};
+});
+assert.equal(undone.id,preMirror.id,'one undo step did not return to the source document');
+assert.equal(undone.gripSide,'L','undo should restore the source doc with its left grip');
+assert(near(undone.wL[0],preMirror.wL[0],1e-4)&&near(undone.wR[0],preMirror.wR[0],1e-4),'restored doc solves differently than the source');
+result.checks.workshopMirror=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 

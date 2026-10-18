@@ -42,6 +42,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 - `src/workshop/solver.ts`：采样帧的唯一求解入口是 `solveEffectiveFrame`（支撑权重淡入淡出、握拍渐变、抬肩辅助随帧传入，不再单独推导），落到 `solvePose` 把参数写到骨架（复用 `rig.limb`/`rig.hand`/`applyGrip`，含支撑脚背屈超限时的骨盆后移二分修正）。`analyzePose` 输出运动学合理性：膝/肘/肩限位、支撑脚残差、分段质量近似质心在支撑多边形（锁定脚脚印凸包）内的投影。
 - `src/workshop/engine.ts`：Three.js 场景、手柄拾取与拖拽平面、轨迹线（拍头/手腕）、触球标记、质心投影与地面支撑多边形。
 - `src/workshop/WorkshopApp.tsx`：文档/视频/约束/检查面板 + 关键帧时间轴。
+- `mirrorDoc`（`document.ts`）整档镜像：以 x=0 平面（该骨架左=+X、右=−X）把同一动作换边——右手正手变左手正手。逐键约定：`root.x`、骨盆 `yaw`、`chest`/`side`（YXZ 中的 Y/Z 分量）与脚 `yaw` 取反，`lean`、脚 `pitch` 保持；`handL⇄handR`、`footL⇄footR` 对调且 target/pole/forward/normal 全部 x→−x（正交框架逐位保持）；`plantL⇄plantR` 对调使接触区间挪到另一侧脚（接触点、离地帧摆动中点经同一存储重写随动镜像）；`handFrames` 随手换侧（惯用的双手 pelvis 配置下等价于不变）；`gripSide` R↔L 翻转（镜像回右手时写回规范缺省形态）；`clavicleLift`、`loop`、`duration`、`inbetweens`、键时间/标签/`videoTime` 原样保留；`id`/`name`/`english` 追加可回切的镜像标记（`.mirrored` / ` · 镜像` / ` · MIRRORED`）——再镜像一次逐字节回到原文档。文档卡「镜像动作」按钮把镜像文档作为**新动作**入库并选中（原文档保留），且在新文档的撤销书上预存源文档快照：一步撤销即回到镜像前的文档（选择跟随恢复的 id；重做对称地回到镜像文档）。`mirror.test.ts` 在真实 `frameAt → solveEffectiveFrame` 路径上逐骨断言世界位置/朝向互为 x 镜像（实测位置残差 ≤2.8e-15 m、朝向 ≤6e-8 rad），随机文档与 shipped 资产同口径覆盖。
 
 ## 动作库与存储
 

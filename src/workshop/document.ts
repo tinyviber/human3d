@@ -609,6 +609,79 @@ export function normalizeDoc(raw:unknown):WorkshopDoc{
 }
 export function parseDoc(text:string):WorkshopDoc{return normalizeDoc(JSON.parse(text));}
 
+/** Document mirror across the rig's bilateral plane x=0 (left = +X, right =
+ * −X): the same motion on the other side — a right-hand forehand becomes a
+ * left-hand one. A document-level transform, not a solver flag: every
+ * side-keyed input is swapped L↔R and x-mirrored, so the sampled trajectory
+ * of the mirrored document is the exact reflection of the source's. The
+ * convention is the one grip-side.test.ts pins on the real solve
+ * (M·q·M for the x-reflection M):
+ *
+ *   field                         mirror
+ *   root                          x→−x, y/z kept
+ *   yaw                           −yaw (rotation about Y)
+ *   lean                          kept (rotation about X)
+ *   chest / side                  negated (Y-twist / Z-roll — see solver
+ *                                 rig.rotate's YXZ Euler and foot.ts's YXZ)
+ *   handL ⇄ handR                 swapped; target/pole/forward/normal x→−x
+ *                                 (mirroring keeps forward·normal = 0
+ *                                 exactly, so the orthonormal contract holds
+ *                                 bit-for-bit and parseDoc stays a no-op)
+ *   footL ⇄ footR                 swapped; target/pole x→−x, yaw→−yaw,
+ *                                 pitch kept (footRotation YXZ)
+ *   constraints.plantL ⇄ plantR   swapped — contact intervals move to the
+ *                                 other foot: run-start contact points,
+ *                                 release swings' mid-waypoints and landing
+ *                                 contacts all mirror through the same
+ *                                 stored-target rewrite the sampler applies
+ *   constraints.grip / contact    kept (side-agnostic booleans)
+ *   handFrames                    side-swapped {L←R, R←L}: the interpolation
+ *                                 frame follows the hand — a right 'world'
+ *                                 hand becomes a left 'world' hand, so the
+ *                                 sampled path mirrors exactly. For the
+ *                                 (universal) symmetric config this is a
+ *                                 no-op; the pelvis frame needs no special
+ *                                 mirroring because x→−x commutes with the
+ *                                 yaw-rotation conversion in buildModel
+ *                                 (origin.x = 0 on this rig).
+ *   clavicleLift                  kept (scalar assist flag; the solver
+ *                                 re-derives the side from gripSide)
+ *   gripSide                      flipped — absent/'R' → 'L', 'L' → absent
+ *                                 (canonical form: the R side stays implicit)
+ *   duration / inbetweens / loop  kept; key times, ids, labels and videoTime
+ *                                 kept — contact-interval timing is
+ *                                 preserved verbatim
+ *   id / name / english           mirror markers that TOGGLE so the transform
+ *                                 is an involution: `id + '.mirrored'`,
+ *                                 `name + ' · 镜像'`, `english + ' · MIRRORED'`,
+ *                                 stripped when already present.
+ *
+ * The output is emitted in canonical field order, so mirror∘mirror is a
+ * byte-exact identity on every document the pipeline materialises (seeds,
+ * shipped assets, parseDoc output, mirrorDoc output itself); hand-scrambled
+ * property order round-trips value-exact, not byte-exact. */
+export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
+  const mv=(v:V3):V3=>({x:-v.x,y:v.y,z:v.z});
+  const hand=(h:HandTarget):HandTarget=>({target:mv(h.target),pole:mv(h.pole),forward:mv(h.forward),normal:mv(h.normal)});
+  const foot=(f:FootTarget):FootTarget=>({target:mv(f.target),pole:mv(f.pole),yaw:-f.yaw,pitch:f.pitch});
+  const toggle=(s:string,suffix:string)=>s.endsWith(suffix)?s.slice(0,s.length-suffix.length):s+suffix;
+  const keys=doc.keys.map(k=>{
+    const c=k.constraints,p=k.pose;
+    const key:WorkshopKey={id:k.id,time:k.time,label:k.label,
+      pose:{root:mv(p.root),yaw:-p.yaw,lean:p.lean,chest:-p.chest,side:-p.side,
+        handL:hand(p.handR),handR:hand(p.handL),footL:foot(p.footR),footR:foot(p.footL)},
+      constraints:{plantL:c.plantR,plantR:c.plantL,grip:c.grip,contact:c.contact}};
+    if(k.videoTime!==undefined)key.videoTime=k.videoTime;
+    return key;
+  });
+  return {schemaVersion:2,id:toggle(doc.id,'.mirrored'),name:toggle(doc.name,' · 镜像'),english:toggle(doc.english,' · MIRRORED'),
+    duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
+    handFrames:{L:doc.handFrames.R,R:doc.handFrames.L},
+    ...(doc.clavicleLift!==undefined?{clavicleLift:doc.clavicleLift}:{}),
+    ...(doc.gripSide==='L'?{}:{gripSide:'L' as const}),
+    keys};
+}
+
 /** Retiming rule: scaling duration preserves phase proportions and strict
  * ordering — never clamps times onto duplicates (repeated times would leave
  * zero-length intervals and NaN Hermite tangents). Keys live inside the valid

@@ -1,11 +1,11 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,LayoutGrid,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,FlipHorizontal2,LayoutGrid,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
-import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,nearestKey,normalizeDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
+import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
 import {MotionLibrary} from './library';
 import {HistoryBook,RecordGate} from './history';
 import {clampDuration,WORKSHOP_LIMITS} from './limits';
@@ -131,8 +131,14 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const recordBefore=(doc:WorkshopDoc)=>{if(gate.current.should(doc.id,performance.now()))books.current.of(doc.id).record(doc);};
  const edit=(fn:(d:WorkshopDoc)=>void)=>{recordBefore(L.active());fn(L.active());L.save();engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return;L.docs[i]=next;L.save();gate.current.reset();wristEpoch.current++;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);};
- const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(prev)applyDoc(prev);};
- const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(next)applyDoc(next);};
+ /* A history step can restore a DIFFERENT library document: the mirrored
+  * document's first undo step is the source document it was made from.
+  * applyDoc only writes content back under the restored doc's own id, so the
+  * selection must follow it — and the direction's counterpart snapshot is
+  * deposited on the restored doc's book, keeping undo/redo symmetric across
+  * the switch (the departing doc also keeps its own copy of the step). */
+ const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(!prev)return;applyDoc(prev);if(prev.id!==cur.id){books.current.of(prev.id).pushFuture(cur);selectDoc(prev.id);}};
+ const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(!next)return;applyDoc(next);if(next.id!==cur.id){books.current.of(next.id).pushPast(cur);selectDoc(next.id);}};
  shortcuts.current={undo,redo};
  useEffect(()=>{
   // Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes. Text fields keep their native undo.
@@ -157,6 +163,20 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const selectDoc=(id:string)=>{const doc=L.select(id);setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const createDoc=()=>{const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
+ // Mirror across x=0 (same motion on the other side): the mirrored document
+ // enters the library as a NEW doc (the source stays untouched) carrying the
+ // '.mirrored'/' · 镜像' markers, and becomes the active edit target. One undo
+ // step is seeded on the new document's book — its first "previous state" is
+ // the source it was mirrored from, so 撤销 lands back on the source.
+ const mirrorActiveDoc=()=>{
+  const src=L.active(),m=mirrorDoc(src);
+  while(L.docs.some(x=>x.id===m.id))m.id=newDocId(m.name); // a second mirror of the same source regenerates
+  const added=L.add(m);
+  books.current.of(added.id).record(src); // seed under the id that actually entered the library
+  setSelected(sortedKeys(added)[0]?.id??'');
+  engine.current?.setPlaying(false);engine.current?.seek(0);engine.current?.markDirty();
+  bump(v=>v+1);setHint(`已生成镜像动作「${added.name}」——左右互换，原文档保留在动作库中。`);
+ };
  const removeDoc=(id:string)=>{const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const addKey=()=>{
   if(d.keys.length>=WORKSHOP_LIMITS.maxKeys&&!nearestKey(d,frame.time)){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，请先删除不再需要的关键帧。`);return;}
@@ -296,6 +316,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button onClick={exportDoc}><Download size={13}/>导出 JSON</button>
       <button onClick={()=>importRef.current?.click()}><Upload size={13}/>导入</button>
       <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={e=>{const f=e.target.files?.[0];if(f)void importDoc(f);e.target.value='';}}/>
+     </div>
+     <div className="ws-row">
+      {/* x=0 平面整档镜像：同一动作换边（右手正手→左手正手）。产出入库并选
+          中，原文档保留；撤销一步回到镜像前的文档。 */}
+      <button onClick={mirrorActiveDoc} title="生成当前动作的左右镜像副本（换握拍侧，几何 x→−x）"><FlipHorizontal2 size={13}/>镜像动作</button>
      </div>
      <div className="ws-sub"><h3>姿态包 <small>本地求解 · 与服务同一条管线</small></h3>
       <label className="ws-field"><span>采样率 fps</span><input type="number" min={1} max={60} step={1} value={exportFps} disabled={!subtleOk||exporting} onChange={e=>setExportFps(Math.max(1,Math.min(60,Math.round(Number(e.target.value)||40))))}/></label>

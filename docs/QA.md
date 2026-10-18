@@ -77,6 +77,7 @@
 | `workshopOnion` | 「洋葱皮」开关 → 场景中 3 前 + 3 后幽灵 LineSegments 池存在；keys 模式只画播放头 ±N 键括号（停在中键上前一后一），step 模式数量随「数量」控件 2→4 / 3→6；真实指针拖动期间幽灵缓冲逐字节冻结、松手后随 docDirty 重建刷新；关闭后全部隐藏 |
 | `workshopStillExport` | 「渲染静帧」真实点击下载：PNG magic + IHDR 钉死固定出图 640×720，文件名 `<docId>.t<秒>.png`，导出后 `__WS__` 播放态与时间原样恢复；「关键帧拼图」（播放中点击）下载 `<docId>.sheet.png`，3 键文档为 3 格单行（1920×748），体积大于单帧静帧；每格 `endCapture` 把播放态恢复为 true（tap 恢复点实测——逐格恢复后继续播放属合法行为，文档可能在本断言读取前自然播完） |
 | `workshopGripSide` | 「握拍侧」真实下拉选「左手」→ `doc.gripSide==='L'`、约束行重标为「左手握拍」、真实勾选两键握拍；求解后球拍 `parent===wrist_L` 且原点距左腕 <0.15 m、比右腕更近；随后真实指针拖动拍头手柄：写入 `handL.target`，`handR.target` 逐字节不变 |
+| `workshopMirror` | 「镜像动作」真实点击 → 新文档入库并选中（id 带 `.mirrored`、名称带「镜像」，库计数 +1 且原文档保留）；左握 QA 文档镜像后 `gripSide` 回右手、球拍重挂 `wrist_R`；t=.5 真实求解腕位左右互换（镜像 `wrist_L` ≈ 源 `wrist_R` 的 x 反射，容差 1e-5）；「撤销」一步回到源文档 id 且求解一致 |
 
 ### WP-C 追加的检查与证据（求解语义变更：切线限界 + 手部 SO(3) 三次）
 

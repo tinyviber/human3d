@@ -1,6 +1,6 @@
 {
   "date": "2026-10-17",
-  "browser": "156.0.8078.4",
+  "browser": "155.0.8059.80",
   "viewport": [
     1536,
     1024
@@ -424,7 +424,8 @@
     "workshopWaypointDrag": true,
     "workshopOnion": true,
     "workshopStillExport": true,
-    "workshopGripSide": true
+    "workshopGripSide": true,
+    "workshopMirror": true
   },
   "samples": {
     "idle": [
@@ -13881,10 +13882,5 @@
     ]
   },
   "errors": [],
-  "warnings": [
-    "[.WebGL-0x10c00ae3600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
-    "[.WebGL-0x10c00ae3600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
-    "[.WebGL-0x10c00ae3600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels",
-    "[.WebGL-0x10c00ae3600]GL Driver Message (OpenGL, Performance, GL_CLOSE_PATH_NV, High): GPU stall due to ReadPixels (this message will no longer repeat)"
-  ]
+  "warnings": []
 }
