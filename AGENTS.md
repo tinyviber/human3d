@@ -2,12 +2,15 @@
 
 ## 调查与经验记录
 
-- **PR #1 完整调查记录**：[`docs/investigate.md`](docs/investigate.md) —— Motion protocol v1 + 工作台的四轮 review 历程、每个问题的提案、被否方案的证据、最终确认的实现与测试。
+- **PR #1 完整调查记录**：[`docs/investigate.md`](docs/investigate.md) —— Motion protocol v1 + 工作台的四轮 review 历程、每个问题的提案、被否方案的证据、最终确认的实现与测试；文末另含**消融（简化）**与 **PR #8 workspaces 拆分**两节。
+- **架构与包边界**：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) —— npm workspaces 三包的结构、依赖方向、迁移裁决与维护规则。
 - **跨任务通用规则**：[`docs/learning.md`](docs/learning.md) —— 从上述历程沉淀的十条工程规则（轨迹形态断言、哈希绑定真实数据、转换事件语义、真实路径测试、UI 可写性、显示/编辑分离、死数据提示、边界等式契约、契约兑现、真实交互 E2E）。
 
 在修改运动服务、工作台、姿态包相关代码前，请先读这两份文件：investigate.md 解释了现有语义为什么长这样，learning.md 解释了哪些错误模式已被 review 抓过。
 
 ## 工作区布局（npm workspaces，依赖方向单向）
+
+完整设计记录（迁移裁决、被否备选、phase 2/3、维护规则）见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 | 包 | 拥有 | 边界规则 |
 |---|---|---|

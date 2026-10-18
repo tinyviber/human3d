@@ -71,7 +71,7 @@ npm run qa:dynamics       # 肌骨投掷阶段截图、握拳特写与实时投�
 
 ## 项目结构
 
-npm workspaces 三个包，依赖方向单向（web / server → motion-core）：
+npm workspaces 三个包，依赖方向单向（web / server → motion-core）；设计记录、边界规则与后续阶段见 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)。
 
 | 包 | 职责 |
 |---|---|

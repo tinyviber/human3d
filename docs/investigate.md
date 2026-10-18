@@ -578,3 +578,42 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 第二轮修复的独立复核抓到一处必修:密度上限公式 `count > duration×240+1+1e-6` 与生产者的真实采样网格不符——`pose-package.ts` `capture()` 的网格是「均匀 1/fps 步进 + 追加精确末端点」,最大合法计数是 `⌈duration·fps⌉+1`。反例:`duration=0.502s @240fps` 产出 `count=122`(网格顶到 0.5,补 0.502),而旧门限 `121.48` 会拒收本服务同款产线的合法包。修法:上限改 `⌈duration·fps−1e-6⌉+1`,且 `fps` 取包自己声明的 `timeline.fps`(顺带新增校验:声明值须在 (0,240] 内,缺省回退 240 外沿与 validate.ts 同容差)——声明 fps=60 却携带 240 密度的包是不一致数据,收紧到声明网格正好拒掉。回归:motion-source.test.ts 新增两例——真实 `solveWorkshop(rig,doc,240)` 在 0.502s 上产出 count=122 的包必须零问题通过;声明 fps=60+duration=.5 的黄金包篡改体按密度上限拒收。顺手 nit:`CaptureMutex.run` 改 `Promise.resolve().then(fn)` 把同步抛纳入 finally 链(busy 不再被同步异常楔死);四元数逐样本检查从「先 hypot 再查」换成逐分量 `Number.isFinite`(非强转,挡 `"0.5"` 这类字符串分量);mirror.test.ts 的 app-复演注释显式标注与 WorkshopApp.tsx 同步。
 
 **验证**:`npx tsc -b`(随 build)✓、`npm test`(259 项,257+2 新增)✓、`npm run spec:check`(19 项)✓、`npm run build` ✓。未跑浏览器 QA/dynamics:*——改动限导入校验门与互斥器同步路径,浏览器路径由前一轮 QA 覆盖,CI 全量兜底。
+
+---
+
+# 消融（简化）：删除不必要实现与抽象
+
+> 前置：PR #4–#7 合并后的基线（`261a315`）。授权口径：全仓范围、可退役 v1 兼容面（不考虑历史包袱）、允许门禁容差内的浮点微差。六批一提交，逐批走「residue grep → 定向测试 → tsc → 全量 vitest → spec:check → build → diff audit」。
+
+## 退役的义务（六批）
+
+1. **零消费者符号**：`MotionSource.object3d`（含 getter）、`HumanRig.snapshot()`+`types.Pose`、`cloneConstraints`、`insidePolygon`；13 个仅本文件使用的 export 收窄为模块内符号（`GRIP_TRANSITION_S`、`HISTORY_LIMIT`、`ankleDorsiflexion`、`clonePose`、`createRacket`、`distanceToPolygon`、`estimateCoM`、`fromV`、`insertKey`、`legDorsiflexion`、`legShiftForLimit`、`legShiftForReach`、`limitItems`）。
+2. **中继层**：`server/rig-manifest.ts` 的「Compatibility re-exports」块、`server/pose-package.ts` 整文件（纯 `export *` 转发 + 一个 hash 包装，`actionDefinitionHash` 落到 `service.ts`）、`core/pose-package.ts` 的常量再导出、`service.ts` 为测试保留的 `{SERVICE_VERSION,normalizedRequest}` 再导出。
+3. **v1 兼容与迁移装置**：`upgradeDoc` 整段（v1 文档静默迁移 → 现在明确拒绝）、`MotionLibrary` 的 v1 容器读取（其余整体进隔离区，原文不覆盖）、`scripts/migrate-authored-motions.mts`（271 行，含冻结的已删 `authoring.ts` 快照）与 `evidence/migration-report.txt`；`spec/migration` → `spec/solver-baseline`、`migration.test.ts` → `solver-baseline.test.ts`、`recapture-migration-goldens.mts` → `recapture-solver-baseline.mts`（golden 本身保留：它是当前求解器的变更探测器，不是迁移等价断言）。测试改写为「v1 文档被明确拒绝」+「不可读容器整体隔离且原文不被自动覆盖」（learning[14]）。
+4. **一次性工具链**：`scripts/forehand-study/` 的 9 个研究期脚本（probe/grid/retune/inspect/kickmap/tiptrace/delta-decomp/finalize/pkgcheck；保留 `drive.mjs`+`ops.json` 作夹具重制入口）、`record-walk.mjs`；`random-document-stats.mts` 与 `regressions.test.ts` 的内联 mulberry32 改为共享实现。
+5. **剩余死符号与摘要去重**：`v3()`、`SeedControls`/`controlsToPoseParams` 收窄；`engine.ts` 的 WebCrypto digest+hex 复用 `package-export.subtleDigest`（只保留"无 subtle → undefined"的缺席策略差异）。
+6. **证据索引外的废弃制品**：shotput/pitch/diag/punch-review/punch-current/baseball-yaw/left-fixed 等 51 个文件（~15MB）+ `delivery-manifest.json` + `revision-before/`；`evidence/` 43M → 28M。索引（`docs/QA.md`「证据索引」）内的一律保留。
+
+## 被否的候选（避免下一轮重开）
+
+- **合并 `checkPosePackageShape` 与 `validatePosePackage` 的结构半段**：两者保护不同信任边界（浏览器不可信文件导入 vs 服务端契约门）、可用上下文不同（bone set vs 完整 manifest）、文案语言不同（中文用户面 vs 英文 API）。合并需要参数化 + 文案层，属复杂度搬家，且会把导入闸耦合到服务契约上。
+- **Ajv 进浏览器**替代手写结构校验：新增依赖 + 首包体积，净义务增加。
+- **`buildModel` 加缓存**提升性能：增加缓存状态与失效义务，且无性能问题证据。
+- **哈希化压缩 `spec/examples/idle.pose.json` 等 golden**：见 WP-D 文档裁决——漂移可定位的价值高于体积。
+- **保留**：`spec/solver-baseline` golden + 测试、`quality-probe.ts`/`random-document.ts`（质量门与属性测试的共享实现）、15 个测试文件、README 与 PLAN 的状态表述重复（受众不同，learning[9] 要求 README 每条声明可查实现）。
+
+## 验证
+
+`npx tsc -b` ✓；`npm test` 260/260 ✓（串行；并行偶发 vitest worker fork 崩溃、无断言失败）；`npm run spec:check` 19/19 ✓；`npm run build` ✓；`npm run protocol:example` 逐字节不变；`recapture-solver-baseline` 往返逐字节不变；`random-document-stats 1 8` 重生成的 seed1-doc2 与 `spec/examples/rejected-pelvis-fold.request.json` 深比较相等（PRNG 去重同流）；`QA_BROWSER_CHANNEL=chrome npm run qa` 全绿（errors/warnings 空）。
+
+净效果：103 文件 **+99/−1013** 行；追踪文件 358 → 294；`src/` 生产代码 −37 行 + 导出面收窄 20+ 处；`scripts/` −740 行。
+
+---
+
+# PR #8 — npm workspaces 三包拆分
+
+> 完整设计记录见 [`ARCHITECTURE.md`](ARCHITECTURE.md)：结构、依赖方向、七条迁移裁决、被否备选、验证证据、phase 2/3 与维护规则。
+
+要点：按**依赖方向**而非现有目录名切包（`packages/motion-core` 纯域 / `apps/web` 场景与 DOM / `apps/server` 传输与 node 设施），消除 `core → server` 与 `server → workshop` 两处反向依赖；`validate.ts`、`package-export`、`glb-export`、`quality-probe`、`random-document` 进 core（它们有 Node CLI / 测试消费者），`motion-source.ts` 拆成 core 的 `package-inspect.ts` 与 web 的播放源。
+
+行为不变的迁移：姿态包逐字节一致、`SERVICE_VERSION` 与 artifact id 不变、两个入口页可用、原有 `npm run` 命令可用；门禁全绿（260/260、19/19、build、QA 22 项）；240fps 质量探针全量重跑逐值相同（求解零漂移）；结构自检 5 条（无反向依赖、无深路径导入、core 无 DOM/node）全过。
