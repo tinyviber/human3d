@@ -49,6 +49,10 @@ describe('boundary checker — syntax coverage',()=>{
     ['deep path',synth('apps/web','a.ts',`import {rig} from '@human3d/motion-core/src/rig';`),/\[deep-path\]/],
     ['undeclared workspace dep',synth('apps/server','a.ts',`import {x} from '@human3d/web';`),/\[server→web\]|\[undeclared\]/],
     ['core escaping its package',synth(CORE,'a.ts',`import x from '../../../../scripts/lib/filereader-shim.mts';`),/\[core-escape\]/],
+    ['web reaching server through a relative path',synth('apps/web','a.ts',`import type {Contract} from '../../server/src/contract';`),/\[web-escape\]/],
+    ['server reaching web through a relative path',synth('apps/server','a.ts',`import {HumanEngine} from '../../web/src/lab/engine';`),/\[server-escape\]/],
+    ['web reaching motion-core through a relative path',synth('apps/web','a.ts',`import {rig} from '../../../packages/motion-core/src/rig';`),/\[web-escape\]/],
+    ['core reaching an app through a relative path',synth(CORE,'a.ts',`import {createContract} from '../../../apps/server/src/contract';`),/\[core-escape\]/],
     ['globalThis.window',synth(CORE,'a.ts',`const w=globalThis.window;`),/\[core-dom\].*window/],
     ["globalThis['document']",synth(CORE,'a.ts',`const d=globalThis['document'];`),/\[core-dom\].*document/],
     ['bare DOM identifier',synth(CORE,'a.ts',`const w=window.innerWidth;`),/\[core-dom\].*window/],
@@ -68,6 +72,9 @@ describe('boundary checker — syntax coverage',()=>{
     ['core importing three',synth(CORE,'a.ts',`import {Vector3} from 'three';`)],
     ['a test file importing the server package',synth('apps/web','a.test.ts',`import {createService} from '@human3d/server';`)],
     ['web importing its own workspace dependency',synth('apps/web','a.ts',`import {rig} from '@human3d/motion-core';`)],
+    ['a relative import that stays inside the package',synth('apps/web','a.ts',`import {HumanEngine} from './lab/engine';`)],
+    ['server importing a sibling module',synth('apps/server','a.ts',`import {createContract} from './contract';`)],
+    ['a test file reaching the shared Node shim',synth('apps/server','a.test.ts',`import {installFileReaderShim} from '../../../scripts/lib/filereader-shim.mts';`)],
   ];
   for(const [name,file] of clean)
     it(`accepts ${name}`,()=>{expect(check([file]),check([file]).join('\n')).toEqual([]);});

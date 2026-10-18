@@ -10,6 +10,11 @@ import ts from 'typescript';
  * `import '…'` side-effect form), re-exports (`export … from '…'`), literal
  * dynamic imports (`import('…')`) and `import('…').T` type nodes.
  *
+ * Covered rules: package purity and direction, declared workspace dependencies,
+ * package-internal deep paths, and — for every workspace, not just core —
+ * relative paths that leave the importing package (a relative path is a
+ * dependency like any other).
+ *
  * Known limits (a deliberate, documented line — the alternative is a compiler
  * plugin): dynamic imports built from variables (`import(name)`), and DOM access
  * through an alias (`const g = globalThis; g.window`). */
@@ -124,10 +129,21 @@ export function findViolations(files:SourceFileLike[],{root,packages}:BoundaryOp
       if(pkg.name==='@human3d/motion-core'){
         if(specifier.startsWith('node:'))out.push(`[core-node] ${where} → ${specifier}`);
         if(/^@human3d\/(web|server)(\/|$)/.test(specifier))out.push(`[core→app] ${where} → ${specifier}`);
-        if(specifier.startsWith('.')){
-          const target=path.resolve(path.dirname(file),specifier);
-          if(!target.startsWith(path.join(root,'packages/motion-core')+path.sep)&&!REGISTRY.test(target))
-            out.push(`[core-escape] ${where} → ${specifier}（包外路径，仅 assets/motions/*.json 例外）`);
+      }
+      /* Relative paths must not leave the importing package — for EVERY
+       * workspace, not just core: `import type {Contract} from
+       * '../../server/src/contract'` inside apps/web is a web → server
+       * dependency wearing a relative-path disguise. The single documented
+       * exception is core reading the toolchain-owned envelope registry at the
+       * repo root (see docs/ARCHITECTURE.md「已知泄漏」). */
+      if(specifier.startsWith('.')){
+        const target=path.resolve(path.dirname(file),specifier);
+        const pkgRoot=path.join(root,pkg.dir);
+        const escaped=!target.startsWith(pkgRoot+path.sep);
+        const registryException=pkg.name==='@human3d/motion-core'&&REGISTRY.test(target);
+        if(escaped&&!registryException){
+          const tag=pkg.name==='@human3d/motion-core'?'core-escape':pkg.name==='@human3d/web'?'web-escape':'server-escape';
+          out.push(`[${tag}] ${where} → ${specifier}（越出 ${pkg.dir}${pkg.name==='@human3d/motion-core'?'；仅 assets/motions/*.json 例外':'；相对路径不得跨包'}）`);
         }
       }
       if(pkg.name==='@human3d/web'&&/^@human3d\/server(\/|$)/.test(specifier))out.push(`[web→server] ${where} → ${specifier}`);
