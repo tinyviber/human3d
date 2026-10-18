@@ -13,18 +13,22 @@
 //                     （forehand: k-back retime +B；squat: sub2 trunk phase +P），
 //                     再对受损文档跑同一优化器
 //
-// 每个 case 写 evidence/generate-<case>.json（metrics 表 + constraints +
-// diagnostics + 候选文档），stdout 打印 A/B 摘要。
+// 每个 case 默认写入 .out/<worktree>/<run>/generate-motion/，可用 --out-dir 覆盖；
+// 写入跟踪文件需要显式传 --update-evidence。stdout 打印 A/B 摘要。
 import fs from 'node:fs';
 import path from 'node:path';
 import {createService} from '@human3d/server';
 import {attachRacket,motionFileById,generateMotion,subsampleDoc,
  buildGenContext,applyGenMove,retimeStep,
  type ChannelGroup,type MotionGenResult,type WorkshopDoc} from '@human3d/motion-core';
+import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
 
-const which=process.argv[2]??'all';
+const root=process.cwd();
+const output=resolveOutputDir('generate-motion',process.argv.slice(2),root,process.env);
+const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root,updateEvidence:output.updateEvidence});
+const which=output.args[0]??'all';
 const ctx=await createService(path.resolve('public'));
-fs.mkdirSync('evidence',{recursive:true});
+fs.mkdirSync(output.dir,{recursive:true});
 
 const forehandSrc=()=>(JSON.parse(fs.readFileSync('spec/examples/forehand-study.request.json','utf8'))
  .action.parameters.document)as WorkshopDoc;
@@ -90,11 +94,11 @@ for(const id of ids){
   const failed=cand.constraints.filter(g=>!g.ok);
   console.log(`  constraints: ${cand.constraints.map(g=>`${g.ok?'✓':'✗'}${g.code}`).join('  ')}${failed.length?` — ${failed.map(g=>g.detail).join('；')}`:''}`);
  }
- fs.writeFileSync(`evidence/generate-${id}.json`,JSON.stringify({
+ fs.writeFileSync(outputFile(`generate-${id}.json`),JSON.stringify({
   case:id,damage:dmg.damage??null,
   request:{lockedKeyIds:c.lockedKeyIds??[],tip:!!c.tip},
   diagnostics:res.diagnostics,baseline:res.baseline,rejected:res.rejected,
   candidates:res.candidates.map(({probe,...rest})=>({...rest,probe:{...probe,frames:undefined}})),
  },null,1));
- console.log(`  → evidence/generate-${id}.json`);
+ console.log(`  → ${path.join(output.dir,`generate-${id}.json`)}`);
 }

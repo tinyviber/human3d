@@ -15,6 +15,12 @@ import {motionFileById} from '@human3d/motion-core';
 import {frameAt} from '@human3d/motion-core';
 import {solveEffectiveFrame} from '@human3d/motion-core';
 import type {RigInfo} from '@human3d/motion-core';
+import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
+
+const root=process.cwd();
+const output=resolveOutputDir('recapture-solver-baseline',process.argv.slice(2),root,process.env);
+if(output.args.length)throw new Error(`unexpected baseline arguments: ${output.args.join(' ')}`);
+const updateTrackedDefaults=output.updateEvidence&&!process.argv.some(arg=>arg==='--out-dir'||arg.startsWith('--out-dir='));
 
 const IDS=['idle','reach','squat','ready','forehand'];
 const assetDir=path.resolve('public');
@@ -25,12 +31,15 @@ const rig=new HumanRig(gltf.scene,JSON.parse(rigJson.toString('utf8')) as RigInf
 const bones=[...rig.bones.keys()];
 const origin=rig.rest.get('root')!;
 const goldenDir=path.resolve('spec/solver-baseline');
+const destinationDir=updateTrackedDefaults?goldenDir:output.dir;
+fs.mkdirSync(destinationDir,{recursive:true});
 
 interface GoldenFile{schema:string;id:string;times:number[];root:number[][];bones:string[];quats:number[][][]}
 for(const id of IDS){
- const file=path.join(goldenDir,`${id}.golden.json`);
+ const sourceFile=path.join(goldenDir,`${id}.golden.json`);
+ const file=assertTrackedWriteAllowed(path.join(destinationDir,`${id}.golden.json`),{root,updateEvidence:output.updateEvidence});
  // Keep the golden's own instant grid so pre/post files stay comparable.
- const old=JSON.parse(fs.readFileSync(file,'utf8')) as GoldenFile;
+ const old=JSON.parse(fs.readFileSync(sourceFile,'utf8')) as GoldenFile;
  const doc=motionFileById(id)!.document!;
  const root:number[][]=[],quats:number[][][]=[];
  for(const t of old.times){

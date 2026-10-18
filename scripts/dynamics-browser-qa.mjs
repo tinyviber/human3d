@@ -1,7 +1,15 @@
 import {chromium} from 'playwright';
 import fs from 'node:fs';
+import path from 'node:path';
 import assert from 'node:assert/strict';
+import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
 
+const repoRoot=process.cwd();
+const output=resolveOutputDir('dynamics-browser-qa',process.argv.slice(2),repoRoot,process.env);
+if(output.args.length)throw new Error(`unexpected dynamics QA arguments: ${output.args.join(' ')}`);
+fs.mkdirSync(output.dir,{recursive:true});
+const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root:repoRoot,updateEvidence:output.updateEvidence});
+const webUrl=process.env.QA_WEB_URL??`http://127.0.0.1:${process.env.HUMAN3D_WEB_PORT??5173}/`;
 const envelope=id=>JSON.parse(fs.readFileSync(`assets/motions/${id}.json`,'utf8'));
 const throwEnv=envelope('baseball-throw'),punchEnv=envelope('punch');
 assert.equal(throwEnv.kind,'dynamics-motion');assert.equal(punchEnv.kind,'dynamics-motion');
@@ -21,7 +29,7 @@ try{
  const errors=[],warnings=[];
  page.on('pageerror',e=>errors.push(e.message));
  page.on('console',m=>{if(m.type()==='error')errors.push(m.text());if(m.type()==='warning')warnings.push(m.text());});
- await page.goto('http://127.0.0.1:5173/');
+ await page.goto(webUrl);
  await page.waitForFunction(()=>window.__LAB__?.ready,{timeout:60000});
  await page.locator('.loading-state').waitFor({state:'hidden'});
  assert.equal(new URL(page.url()).pathname,'/');
@@ -50,7 +58,7 @@ try{
     toeOutRightDeg:toeOut('R'),toeOutLeftDeg:toeOut('L'),hasCarriedObject:!!r.model.carriedObject,
     activeSceneProps:r.root.children.filter(o=>/ball|sphere/i.test(o.name)).map(o=>o.name)};
   });
-  await page.screenshot({path:`evidence/${name}.png`});result.poses.push({name,time,view,file:`${name}.png`,...metrics});
+  await page.screenshot({path:outputFile(`${name}.png`)});result.poses.push({name,time,view,file:`${name}.png`,...metrics});
  }
  await pose('baseball-throw-front',0,'front');
  await pose('baseball-throw-side',0,'side');
@@ -115,7 +123,7 @@ try{
   setTimeout(()=>{if(recorder.state==='recording'){clearInterval(poll);recorder.stop();}},12000);
   return stopped;
  });
- const download=await downloadPromise;await download.saveAs('evidence/baseball-throw.webm');result.video='baseball-throw.webm';result.videoBytes=fs.statSync('evidence/baseball-throw.webm').size;
+ const download=await downloadPromise;await download.saveAs(outputFile('baseball-throw.webm'));result.video='baseball-throw.webm';result.videoBytes=fs.statSync(outputFile('baseball-throw.webm')).size;
  result.checks.fullActionVideo=videoBytes>100000&&result.videoBytes===videoBytes;assert.equal(result.checks.fullActionVideo,true);
  // Check the physical record and continuous skin both form a fist and use the wrist.
  const punchRow=page.locator('.motion-row').filter({hasText:'后手直拳'});await punchRow.click();
@@ -166,7 +174,7 @@ try{
  result.punch=fist;
  await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(1.7);e.setView('hand');});
  result.checks.handCameraTargetsPhysicsWrist=await page.evaluate(()=>window.__LAB__.controls.target.distanceTo(window.__LAB__.physics.point('lunate_r'))<.05);await page.waitForTimeout(250);
- await page.screenshot({path:'evidence/punch-fist-close.png'});result.punchHandClose='punch-fist-close.png';
+ await page.screenshot({path:outputFile('punch-fist-close.png')});result.punchHandClose='punch-fist-close.png';
  const peak=fist.frames.find(f=>f.time===1.7),hold=fist.frames.find(f=>f.time===1.975);result.checks.fistJointTargets=peak.skinMcp3Deg>45&&peak.skinPip3Deg>55&&peak.skinDip3Deg>25&&peak.thumbIndexContactM<.015;
  result.checks.wristMotion=Math.max(...fist.frames.map(f=>f.pronationDeg))-Math.min(...fist.frames.map(f=>f.pronationDeg))>10;
  result.checks.wristFlexesDuringPunch=Math.max(...fist.frames.map(f=>f.wristFlexionDeg))-Math.min(...fist.frames.map(f=>f.wristFlexionDeg))>3;
@@ -185,10 +193,10 @@ try{
  console.log('Punch fist diagnostic:',JSON.stringify({checks:result.checks,keyFrames:punchKeyFrames},null,2));
  assert.equal(result.checks.fistJointTargets,true);assert.equal(result.checks.wristMotion,true);assert.equal(result.checks.wristFlexesDuringPunch,true);assert.equal(result.checks.wristAlignedAtExtension,true);assert.equal(result.checks.throwAndPunchHaveDifferentHandPaths,true);assert.equal(result.checks.thumbWrapsIndex,true);assert.equal(result.checks.punchElbowMatchesMuscleState,true);assert.equal(result.checks.punchArmDirectionMatchesMuscleState,true);assert.equal(result.checks.skinArmLengthsStayFixed,true);assert.equal(result.checks.handRemainsClosedDuringRecovery,true);assert.equal(result.checks.leftGuardFormsFist,true);
  await page.evaluate(()=>{const e=window.__LAB__;e.setView('threeQuarter');e.seek(1.7);});await page.waitForTimeout(200);
- await page.screenshot({path:'evidence/punch-extension.png'});result.punchExtension='punch-extension.png';
+ await page.screenshot({path:outputFile('punch-extension.png')});result.punchExtension='punch-extension.png';
  await page.evaluate(()=>{const e=window.__LAB__;e.setView('hand');e.seek(1.975);});await page.waitForTimeout(200);
- await page.screenshot({path:'evidence/punch-fist-hold.png'});result.punchFistHold='punch-fist-hold.png';
+ await page.screenshot({path:outputFile('punch-fist-hold.png')});result.punchFistHold='punch-fist-hold.png';
  result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
- fs.writeFileSync('evidence/dynamics-results.json',JSON.stringify(result,null,2));
+ fs.writeFileSync(outputFile('dynamics-results.json'),JSON.stringify(result,null,2));
  console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:result.videoBytes,punchKeyFrames},null,2));
 }finally{await browser.close();}

@@ -6,17 +6,18 @@
 //
 // Usage:
 //   npx tsx scripts/bench-workshop.mts [--scenario <name|all>] [--fps 40,60,240]
-//     [--warmup 2] [--reps 7] [--seed 1] [--out evidence/bench-workshop.json]
-//     [--report evidence/bench-workshop-report.md] [--compare <old.json>] [--quick]
+//     [--warmup 2] [--reps 7] [--seed 1] [--out <file>]
+//     [--report <file>] [--compare <old.json>] [--quick]
+//   Outputs default to .out/<worktree>/<run>/bench-workshop/; --out-dir selects
+//   another directory. Writes to tracked files require --update-evidence.
 //   --quick = warmup 1, reps 2, fps 60, default-5k only (smoke).
 //   --profile = solver-internal counters instead of the baseline sweep:
 //   per-cell runSolveProfile (patch-instrumented flush/read/method counts)
-//   → evidence/bench-solve-profile.json + printed table.
+//   → bench-solve-profile.json + printed table, in the same output directory.
 //   --profile-skip-flush = --profile plus the flush-stub equivalence
 //   experiment per cell (experiment-only label in the output).
 //   --compare must point at a DIFFERENT file than --out: comparing the output
-//   target against itself is vacuous and would clobber the old baseline, so
-//   the CLI refuses it.
+//   target against itself is vacuous and would clobber it, so the CLI refuses.
 // For the post-gc heap trend run with GC exposed:
 //   node --import tsx --expose-gc scripts/bench-workshop.mts --quick
 //   (equivalently NODE_OPTIONS=--expose-gc npx tsx scripts/bench-workshop.mts)
@@ -30,21 +31,26 @@ import {diffBaselines,formatProfileReport,formatReport,hotspotRanking,resolveBen
  runSkipFlushExperiment,runSolveProfile,runStageLoop,runWholeCalls,SOLVE_PROFILE_DISCLOSURES,
  summarizeProfileCell,summarizeScenario,
  type BaselineFile,type BenchDocSpec,type SolveProfileFile} from './lib/bench.mts';
+import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
 
-const arg=(k:string)=>{const i=process.argv.indexOf(k);return i>=0?process.argv[i+1]:undefined;};
-const has=(k:string)=>process.argv.includes(k);
+const root=process.cwd();
+const output=resolveOutputDir('bench-workshop',process.argv.slice(2),root,process.env);
+const cliArgs=output.args;
+
+const arg=(k:string)=>{const i=cliArgs.indexOf(k);return i>=0?cliArgs[i+1]:undefined;};
+const has=(k:string)=>cliArgs.includes(k);
+const profile=has('--profile')||has('--profile-skip-flush');
 const quick=has('--quick');
 const seed=Number(arg('--seed')??1);
 const warmup=quick?1:Number(arg('--warmup')??2);
 const reps=quick?2:Number(arg('--reps')??7);
 const fpsList=(quick?'60':arg('--fps')??'40,60,240').split(',').map(Number);
-const out=arg('--out')??'evidence/bench-workshop.json';
-const reportPath=arg('--report')??'evidence/bench-workshop-report.md';
+const out=assertTrackedWriteAllowed(arg('--out')??path.join(output.dir,profile?'bench-solve-profile.json':'bench-workshop.json'),{root,updateEvidence:output.updateEvidence});
+const reportPath=assertTrackedWriteAllowed(arg('--report')??path.join(output.dir,'bench-workshop-report.md'),{root,updateEvidence:output.updateEvidence});
 const comparePath=arg('--compare');
-/* --compare must name a DIFFERENT file than --out: the default --out IS the
- * committed baseline, so a same-path invocation reads back the just-written
- * file (a vacuous +0% diff) after destroying the old baseline. Refuse before
- * any measurement, and read the comparand into memory before writing --out. */
+/* --compare must name a DIFFERENT file than --out. A same-path invocation
+ * reads back the just-written file (a vacuous +0% diff) after destroying the
+ * old baseline, so refuse before measurement and load the comparand first. */
 if(comparePath&&path.resolve(out)===path.resolve(comparePath)){
  console.error(`--compare '${comparePath}' resolves to the --out target — comparing a baseline to itself is vacuous and would clobber it; pass a different --out or --compare file.`);
  process.exit(2);
@@ -100,10 +106,10 @@ const run:BaselineFile['run']={command,commit:git('git rev-parse HEAD'),
 /* --profile / --profile-skip-flush: solver-internal counters instead of the
  * baseline sweep — per-cell runSolveProfile (patch-instrumented flush/read/
  * method counts on the real solveEffectiveFrame) + the optional flush-stub
- * equivalence experiment → evidence/bench-solve-profile.json + table. */
-if(has('--profile')||has('--profile-skip-flush')){
+ * equivalence experiment → bench-solve-profile.json + table. */
+if(profile){
  const skipFlush=has('--profile-skip-flush');
- const profileOut=arg('--out')??'evidence/bench-solve-profile.json';
+ const profileOut=out;
  const cells:SolveProfileFile['scenarios']=[];
  for(const spec0 of specs){
   const spec={...spec0,seed:spec0.builder==='bench'?spec0.seed??seed:undefined};
