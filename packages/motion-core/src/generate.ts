@@ -26,7 +26,7 @@ import type {Side} from './foot';
 import {WORKSHOP_LIMITS} from './limits';
 import {solveEffectiveFrame} from './solver';
 import {compileMotion,constraintsAt,flattenPose,frameAtCompiled,isReleaseKey,
- sampleMotion,samplePose,sortedKeys,unflattenPose,validateDocShape,
+ sampleMotion,sortedKeys,unflattenPose,validateDocShape,
  type CompiledMotion,type WorkshopDoc,type WorkshopKey} from './document';
 import {analyzeProbeFrames,probeFrames,stepAngles,PROBE_QUAT_BONES,
  type ProbeFrame,type ProbeReport,type ProbeTip,type Quat,type Vec3} from './quality-probe';
@@ -108,11 +108,12 @@ export function subsampleDoc(doc:WorkshopDoc,times:number[],rest:ReadonlyMap<str
  const origin=rest.get('root')!;
  const keys=sortedKeys(doc);
  const ts=[...times].sort((a,b)=>a-b);
+ const compiled=compileMotion(doc,origin);
  const out:WorkshopDoc={schemaVersion:2,id:`${doc.id}-sub`,name:`${doc.name} · 子采样`,
   english:`${doc.english} SUBSAMPLED`,duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
   handFrames:{...doc.handFrames},keys:ts.map((t,i)=>({
    id:`sub${i}`,time:t,label:keys[constraintsAt(keys,t).keyIndex].label??'',
-   pose:samplePose(doc,t,origin),constraints:{...constraintsAt(keys,t).constraints}}))};
+   pose:sampleMotion(compiled,t),constraints:{...constraintsAt(keys,t).constraints}}))};
  if(doc.clavicleLift!==undefined)out.clavicleLift=doc.clavicleLift;
  if(doc.gripSide!==undefined)out.gripSide=doc.gripSide;
  const problems=validateDocShape(out);
@@ -373,12 +374,9 @@ interface EvalDetail{metrics:Record<string,number>;report:ProbeReport;worstCode:
 
 /** One probe at `fps` folded into the flat metric map — the single
  * implementation behind evalCost, the emitted baseline, the metrics table and
- * the public measureDoc (learning[4]: no second copy to drift). compileMotion
- * is part of the cost contract (it exercises the frozen-snapshot path the
- * emitter's solves then reuse); probeFrames compiles its own snapshot
- * internally, the canonical sampling path stays single-sourced. */
+ * the public measureDoc (learning[4]: no second copy to drift). probeFrames
+ * compiles once and samples through the canonical frozen-snapshot path. */
 function evalDetail(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTip):EvalDetail{
- compileMotion(doc,rig.rest.get('root')!);
  const frames=probeFrames(rig,doc,fps,tip);
  const report=analyzeProbeFrames({doc,fps,frames,rest:rig.rest});
  const gs=report.gripSide,times=frames.map(f=>f.t);

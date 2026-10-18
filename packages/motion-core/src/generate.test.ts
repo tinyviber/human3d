@@ -141,7 +141,8 @@ describe('real action inputs and the shared solve/probe path',()=>{
   const source=forehandStudy(),{doc,lockedKeyIds}=detuneForehand(source);
   const before=clone(doc),racket=attachRacket(rig,'R');
   const req:MotionGenRequest={doc,lockedKeyIds,tip:racket};
-  const result=generateMotion(rig,req);
+  const result=generateMotion(rig,{...req,evalFps:12,reportFps:18,
+   budget:{maxEvals:8,maxSweeps:1}});
   expect(doc).toEqual(before);
   expect(result.candidates).toHaveLength(1);
   expect(result.rejected).toEqual([]);
@@ -177,7 +178,11 @@ describe('real action inputs and the shared solve/probe path',()=>{
  });
 
  it('omits racket-tip rows when the candidate was measured without a racket',()=>{
-  const result=generateMotion(rig,{doc:squatSubsample()});
+  // This assertion only needs a valid no-racket candidate. Keep its real solve
+  // path, but sample coarsely because this regression checks metric omission,
+  // not high-rate search quality.
+  const result=generateMotion(rig,{doc:squatSubsample(),evalFps:8,reportFps:12,
+   budget:{maxEvals:120,maxSweeps:4}});
   expect(result.candidates).toHaveLength(1);
   const metrics=result.candidates[0].metrics;
   for(const key of ['tip.pathLen','tip.vmax','tip.jerkInt','contact.tipSpeed','contact.tipDevMm'])
