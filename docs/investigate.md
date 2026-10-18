@@ -640,10 +640,20 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 
 四个 CLI 样例保存在 `evidence/generate-{forehand,forehand-detuned,squat,squat-detuned}.json`。真实 forehand 用 114 次求解评估、接受 11 次局部调整：末端 jerk 982.09→510.56 m/s²、角 jerk 9679.89→5329.73 rad/s²、球拍 tip jerk 791.28→419.29 m/s²；contact deviation 保持 0 mm，所有硬约束门禁通过。单步 detuned forehand 也能恢复平滑代理（末端 jerk 2190.70→509.15 m/s²），但接触速度同时 5.08→2.97 m/s——速度的好坏取决于动作目标，所以表中仅报告、不着色成普遍改善。Squat 候选仅为 neutral；另一个受损 squat 样例被报告采样门拒绝。视图中的“改善”只表示指定代价和有限主指标变化，**不代表动作自然或运动学符合网球教练 / 运动员判断**。same-view A/B 与人工评审仍是职责边界。
 
-## 本轮验证
+## Review rework 与验证
 
-- `npm test -- packages/motion-core/src/generate.test.ts packages/motion-core/src/quality.test.ts --maxWorkers=1 --no-file-parallelism`：24/24 通过（真实 GLB rig、真实求解、输入 / 资源上限、接触 tip 身份、锁定与硬门禁、时间感知 jerk / 向量角加速度、确定性与回归负例）。
-- `npm run build`：`tsc -b` 与 Vite 生产构建通过。Vite 报告既有 dynamics 动态导入同时静态导入及 bundle chunk >500 kB 警告；未阻断构建。
-- `npx tsx scripts/generate-motion.mts all`：四个 case 重生成完整 evidence；正手接受、下蹲 neutral、损伤下蹲拒绝。
-- `QA_BROWSER_CHANNEL=chrome npm run qa`：26 项浏览器 checks 全过，`errors=[]`、`warnings=[]`；含动态端点锁回归、Worker cancel、同视角 A/B、Keep/export/undo/redo。结果字段 `mobileOverflow:false` 表示没有横向溢出（对应断言已通过）。
-- 没有运行全量 `npm test`、`npm run spec:check` 或 CI；合并前仍由 CI 执行全量门禁。运动自然度还需要网球专业人员对代表性动作样例做人工评审；本轮没有此类评审数据。
+首轮 PR CI 在 `6496f1b` 上全量 Vitest 为 350/352：`generate.test.ts` 第 140、179 行两项集成测试分别超过 5 秒默认超时，报告耗时约 6.7 秒与 16.7 秒。它们没有断言失败，原因需区分生成算法成本、测试组合成本及 runner 并行竞争，不能仅据超时判定生产逻辑错误。
+
+调查时在本机单 worker 下分别运行两项测试，耗时约 1.57 秒和 3.70 秒，整份 `generate.test.ts` 约 6.24 秒。修复保持 Vitest 全局超时不变，针对只验证局部搜索 / 无球拍分支的测试降低采样率和 evaluation budget，同时继续使用真实 GLB rig、Solver 与硬约束门禁；生产默认预算仍由完整 CLI evidence 覆盖。`evalDetail()` 移除了随后会被 `probeFrames()` 再做一次的冗余编译，`subsampleDoc()` 则改成一次 `compileMotion()` 后批量 `sampleMotion()`。Worker 的 warm rig 缓存没有改动：其启动收益尚未测量，且需另行设计 warm worker 与 terminate 取消的生命周期。
+
+修复提交 `b91ac00` 的验证结果：
+
+- `npm test -- packages/motion-core/src/generate.test.ts packages/motion-core/src/compiled.test.ts --maxWorkers=1 --no-file-parallelism`：28/28 通过，3.15 秒。
+- `npm test -- --maxWorkers=1 --no-file-parallelism`：全量 352/352 通过，Vitest 用时 20.91 秒。此前本机默认并行全量也曾 352/352 通过（7.82 秒）；CI 的首轮失败与本机运行差异说明应记录环境和运行方式。
+- `npm run spec:check`：22/22 通过。
+- `npm run build`：TypeScript 与 Vite 构建通过；仍有 dynamics 同时动态 / 静态导入及 bundle chunk 大于 500 kB 的既有警告。
+- GitHub Actions 对 `b91ac00` 的 `check` 与 `dynamics` 两项 job 均通过；`check` 包含 TypeScript、发布契约、全量 Vitest 与 build。
+- `npx tsx scripts/generate-motion.mts all` 重新生成四个完整 evidence：正手接受、标准下蹲 neutral、损伤下蹲拒绝。
+- `QA_BROWSER_CHANNEL=chrome npm run qa` 在前一 UI 版本通过 26 项 checks，`errors=[]`、`warnings=[]`；覆盖动态端点锁、Worker cancel、同视角 A/B、Keep/export/undo/redo。本轮 rework 没改 UI，因此没有重复跑浏览器 QA。`mobileOverflow:false` 表示没有横向溢出。
+
+性能数值只表示指定代价函数和门禁的变化，不证明动作自然。网球专业人员对代表性样例的人工评审仍未完成；新文档提交还需等待其 PR CI 完成后再合并。
