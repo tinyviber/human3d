@@ -200,8 +200,11 @@ interface Model{keys:WorkshopKey[];entries:Entry[];chain:Entry[];duration:number
  squad:Record<Side,SquadKey[]>}
 
 /** Build the sampling model once per evaluation. For loops the chain is
- * [last−D, …keys…, first+D] so the seam uses real neighbours on both sides. */
-function buildModel(doc:DocLike,origin:V3|Vector3):Model{
+ * [last−D, …keys…, first+D] so the seam uses real neighbours on both sides.
+ * Exported so batch consumers can hoist the per-call preprocessing out of a
+ * sampling loop (frameFromModel); the Model type itself stays private —
+ * callers hold it as ReturnType<typeof buildModel>. */
+export function buildModel(doc:DocLike,origin:V3|Vector3):Model{
   const keys=sortedKeys(doc),n=keys.length,o=new Vector3(origin.x,origin.y,origin.z);
   const raw=keys.map(k=>flattenPose(k.pose));
   const plans={L:contactPlan(keys,'L',doc.loop,raw),R:contactPlan(keys,'R',doc.loop,raw)};
@@ -441,7 +444,15 @@ export function constraintsAt(keys:WorkshopKey[],time:number):{constraints:KeyCo
  * after the contact rewrite (the same numbers the Hermite path reaches at key
  * instants), with no support fades and no grip ramp. */
 export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):EffectiveFrame{
-  const m=buildModel(doc,origin),t=Math.max(0,Math.min(doc.duration,time)),side:Side=doc.gripSide==='L'?'L':'R';
+  return frameFromModel(buildModel(doc,origin),doc,time);
+}
+/** frameAt over an already-built model — the body of frameAt minus the
+ * per-call buildModel, for batch consumers that hoist the preprocessing.
+ * `m` must come from buildModel(doc, …) on THIS document. Param 2 is narrowed
+ * to exactly the doc fields it reads so a CompiledMotion (which carries those
+ * four fields verbatim) satisfies it directly; full WorkshopDocs still fit. */
+export function frameFromModel(m:Model,doc:Pick<WorkshopDoc,'duration'|'inbetweens'|'gripSide'|'clavicleLift'>,time:number):EffectiveFrame{
+  const t=Math.max(0,Math.min(doc.duration,time)),side:Side=doc.gripSide==='L'?'L':'R';
   if(!doc.inbetweens){
     const {keyIndex,constraints}=constraintsAt(m.keys,t),e=m.entries[keyIndex];
     return {pose:unflattenPose(e.flat.slice()),constraints:{...constraints},keyIndex,
@@ -450,6 +461,72 @@ export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):E
   const r=interpolate(m,t),k=m.chain[r.i].real;
   return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift,gripSide:side};
 }
+
+/** Recursively Object.freeze a plain-JSON value — pojos, arrays and
+ * primitives only (WorkshopKey contains no class instances, so the whole
+ * cloned key chain is covered). Mutating a frozen key throws a TypeError in
+ * strict mode instead of silently shifting the sampled trajectory. */
+const freezeDeep=<T,>(v:T):T=>{
+ if(v&&typeof v==='object'){
+  for(const x of Object.values(v))freezeDeep(x);
+  Object.freeze(v);
+ }
+ return v;
+};
+
+/** Immutable compiled snapshot of a WorkshopDoc: every doc-derived input is
+ * cloned at compile time — poses through the flatten/unflatten round-trip
+ * that covers all PoseParams fields, constraints by spread — and each cloned
+ * key is deep-frozen, so sampling can never observe a later in-place edit of
+ * the source document (and an accidental write into the snapshot throws).
+ * `model` is opaque: the Model type stays private and is deliberately NOT
+ * deep-frozen (the PR-C hook) — consumers treat the whole snapshot as
+ * read-only and sample it only through frameAtCompiled/sampleMotion. */
+export interface CompiledMotion{
+ /** Identity of the source document — provenance only; the sampler never reads it. */
+ docId:string;
+ /** Key count at compile time. */
+ keyCount:number;
+ duration:number;
+ inbetweens:boolean;
+ loop:boolean;
+ gripSide?:Side;
+ clavicleLift?:boolean;
+ /** The origin buildModel baked into the snapshot — a fresh Vector3 owned by
+  * the model (compile already clones the caller's argument). Exposed so an
+  * invalidation check can compare the compiled origin against the live
+  * rig.rest root; aliasing the caller's vector would make that check
+  * vacuous. */
+ origin:Vector3;
+ model:Model;
+}
+
+/** Compile `doc` into a frozen sampling snapshot: clone+freeze the keys,
+ * then run buildModel's full preprocessing (contact plans, pelvis-frame
+ * conversion, angle unwrap, tangent caps, squad chain) once over a doc-lite
+ * carrying ONLY the fields buildModel reads — keys, duration, loop,
+ * handFrames. The snapshot's `origin` is model.origin — the vector the
+ * engine's rest-root invalidation check compares against — never an alias
+ * of the caller's argument. */
+export function compileMotion(doc:WorkshopDoc,origin:V3|Vector3=ZERO_V3):CompiledMotion{
+ const keys=doc.keys.map(k=>freezeDeep<WorkshopKey>({...k,pose:clonePose(k.pose),constraints:{...k.constraints}}));
+ const model=buildModel({keys,duration:doc.duration,loop:doc.loop,handFrames:{...doc.handFrames}},origin);
+ return Object.freeze({docId:doc.id,keyCount:keys.length,duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
+  gripSide:doc.gripSide,clavicleLift:doc.clavicleLift,origin:Object.freeze(model.origin),model});
+}
+/** frameAt over a compiled snapshot — the single sampling entry point for
+ * batch consumers: the same EffectiveFrame, with the per-call buildModel
+ * already paid once at compile. */
+export function frameAtCompiled(c:CompiledMotion,time:number):EffectiveFrame{
+ return frameFromModel(c.model,c,time);
+}
+/** Interpolated pose at time t over a compiled snapshot (always Hermite,
+ * regardless of the in-between flag) — samplePose minus the per-call
+ * buildModel, same duration clamp. */
+export function sampleMotion(c:CompiledMotion,time:number):PoseParams{
+ return interpolate(c.model,Math.max(0,Math.min(c.duration,time))).pose;
+}
+
 export const sortedKeys=(doc:{keys:WorkshopKey[]})=>[...doc.keys].sort((a,b)=>a.time-b.time);
 
 /** True when key `index` ends a planted run for this foot (a swing starts here). */

@@ -19,13 +19,13 @@
 | `apps/server`（`@human3d/server`） | `serve.ts` 传输、`service.ts` 编排、`contract.ts` Ajv 契约、`rig-manifest.ts`（node:crypto） | 可以 import motion-core；不得 import web |
 
 - 路径不变的部分：`assets/motions/*.json` 仍是工具链与文档使用的注册表路径（motion-core 以相对路径静态导入）；`spec/` 由 `apps/server/src/contract.ts` 以 `import.meta.url` 相对定位；`public/` 与 `dist/` 仍在仓库根（Vite `publicDir`/`outDir` 指过去）。
-- 命令入口不变：`npm run dev|build|preview|test|spec:check|service|qa` 都在仓库根执行；`npm run dev` 委派给 `@human3d/web`，测试按包分布（core 6 / server 6 / web 3 个测试文件），定向跑用 `npm test -- <path>`。
+- 命令入口不变：`npm run dev|build|preview|test|spec:check|service|qa` 都在仓库根执行；`npm run dev` 委派给 `@human3d/web`，测试按包分布（core 7 / server 6 / web 3 个测试文件），定向跑用 `npm test -- <path>`。
 - 结构性迁移期间的行为契约：浏览器与服务端姿态包逐字节一致、`SERVICE_VERSION` 与 artifact id 不变、两个入口页可用、上述 `npm run` 命令可用。
 
 ## 项目验证命令
 
 - `npx tsc -b` — 类型检查（CI 门禁）
-- `npm test` — vitest（298 项，CI 门禁；含 `tests/architecture.test.ts` 的包边界检查）
+- `npm test` — vitest（352 项，CI 门禁；含 `tests/architecture.test.ts` 的包边界检查）
 - `npm run spec:check` — 契约测试：Ajv 严格编译、OpenAPI 与服务一致、golden 样例（CI 门禁）
 - `npm run build` — 生产构建（CI 门禁）
 - `npm run qa` — 浏览器 E2E（需先 `npm run dev`；无本地 Playwright 浏览器时用 `QA_BROWSER_CHANNEL=chrome npm run qa` 走系统 Chrome；未进 CI）
@@ -35,6 +35,8 @@
 - `npm run dynamics:validate`、`npm run dynamics:test` — 动力学资产与物理记录校验，需要 Python 3.13 与 `scripts/requirements-dynamics.txt`（CI 门禁）
 - `npx tsx scripts/measure-motions.mts` — 测量内置动作的语义峰值，用于阈值校准（见 `docs/validation.md`）
 - `npx tsx scripts/measure-quality-probe.mts [fps=240] [motion|all]` — 高帧率质量探针 CLI；度量实现共享 `packages/motion-core/src/quality-probe.ts`（vitest 同源），基线在 `evidence/quality-probe-*.json`
+- `npx tsx scripts/generate-motion.mts [forehand|squat|forehand-detuned|squat-detuned|all]` — 确定性约束轨迹优化器 CLI（issue #10 PR-D）；实现在 `packages/motion-core/src/generate.ts`（度量与探针同源），输出 `evidence/generate-*.json`
+- `npm run bench`（`scripts/bench-workshop.mts`，`--quick` 冒烟 / `--compare` 对比）— 工作流管线性能基线 CLI；度量实现共享 `scripts/lib/bench.mts`，基线在 `evidence/bench-workshop.json`；仅同机可比，GC 趋势需 `NODE_OPTIONS=--expose-gc`
 - `node scripts/forehand-study/drive.mjs <ops.json> <out.doc.json>` — 工作台真实 UI 写路径回放器（需 dev server :5173，默认走系统 Chrome，`QA_BROWSER_CHANNEL` 可覆盖）；制作 `spec/examples/forehand-study.request.json` 的工具链与账本见 `spec/examples/forehand-study.md`
 
 ## 关键语义速记

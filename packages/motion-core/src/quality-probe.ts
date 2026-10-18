@@ -18,7 +18,8 @@ import {Quaternion,Vector3} from 'three';
 import type {HumanRig} from './rig';
 import {DEG,WRIST_BEND_LIMIT_DEG,solveTwoBone} from './kinematics';
 import {DORSI_LIMIT_DEG,analyzePose,solveEffectiveFrame} from './solver';
-import {frameAt,sortedKeys,toV,type WorkshopDoc} from './document';
+import {compileMotion,frameAtCompiled,sortedKeys,toV,type WorkshopDoc} from './document';
+import {sampleTimes} from './pose-package';
 import {footGeometry,type Side} from './foot';
 
 export type Vec3=[number,number,number];
@@ -79,8 +80,12 @@ export interface ProbeFrame{
  arm:{d:number;reach:number;flexion:number;bendDir:Vec3;wristBend:number};
  /** Leg hip→foot-target distances per side. */
  legD:{L:number;R:number};
- /** analyzePose check values by code (null = not applicable at this frame). */
- check:Record<string,number|null>;
+ /** analyzePose check entries by code: `v` is the measured value (null = not
+  * applicable at this frame), `ok`/`limit` the item's verdict and bound —
+  * carried per frame so downstream consumers (the PR-D optimizer's
+  * violation-count and new-failure gates) can count FAILING frames, which a
+  * bare worst-value per code cannot express. */
+ check:Record<string,{v:number|null;ok:boolean;limit:number|null}>;
 }
 
 export interface ProbeSpike{what:string;t:number;value:number;unit:string;extra?:string}
@@ -92,7 +97,7 @@ export interface ProbeSlip extends ProbeInterval{samples:number;maxResidual:numb
 /** Per-bone rotational stats: peak angular speed (rad/s), largest single
  * step (rad), worst local outlier ratio (a kink stands out from its ±5-step
  * neighbourhood; smooth fast motion does not) and peak angular jerk (rad/s²). */
-export interface ProbeBoneStat{bone:string;peakW:number;peakT:number;maxStep:number;stepT:number;kink:number;kinkT:number;jerk:number;jerkT:number}
+export interface ProbeBoneStat{bone:string;peakW:number;peakT:number;peakAlpha:number;alphaT:number;maxStep:number;stepT:number;kink:number;kinkT:number;jerk:number;jerkT:number}
 /** Kinetic-chain segment peaks: global world-frame, inside the active window,
  * and relative-to-parent inside the window (the biomechanics convention —
  * each link's rotation wrt its parent isolates its own contribution). */
@@ -182,6 +187,23 @@ export function stepAngles(series:Quat[]){
  }
  return out;
 }
+/** World-frame angular velocity vectors on each actual sample interval. The
+ * midpoint timestamp keeps acceleration estimates correct when the final
+ * sample is the exact, non-grid-aligned document duration. */
+function angularVelocities(times:number[],series:Quat[]):{v:Vec3;t:number}[]{
+ const out:{v:Vec3;t:number}[]=[];
+ for(let i=1;i<series.length;i++){
+  const dt=times[i]-times[i-1];
+  const delta=new Quaternion(...series[i])
+   .multiply(new Quaternion(...series[i-1]).invert()).normalize();
+  if(delta.w<0)delta.set(-delta.x,-delta.y,-delta.z,-delta.w);
+  const sin=Math.hypot(delta.x,delta.y,delta.z);
+  const angle=2*Math.atan2(sin,Math.max(0,delta.w));
+  const scale=sin>1e-12?angle/(sin*dt):0;
+  out.push({v:[delta.x*scale,delta.y*scale,delta.z*scale],t:(times[i]+times[i-1])/2});
+ }
+ return out;
+}
 /** Local outlier ratio: step_i vs median of the neighbouring steps. A true
  * kink stands out from its own neighbourhood; smooth fast motion does not. */
 function outlierRatio(steps:number[],i:number){
@@ -200,13 +222,17 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
  // Same sampling origin solveWorkshop and the workshop engine pass
  // (learning[16]): pelvis-frame hands resolve through the rest root.
  const origin=rig.rest.get('root')!;
- const times:number[]=[0];
- while(times[times.length-1]<doc.duration-1e-9)times.push(Math.min(doc.duration,times.length/fps));
- if(times.length<2)times.push(doc.duration);
- times[times.length-1]=doc.duration;
+ /* The document is stable for the whole sweep — one compiled snapshot
+  * instead of a buildModel per frame (same frames the compat path yields). */
+ const compiled=compileMotion(doc,origin);
+ /* Gripping side read once: compiled.gripSide is the compile-time copy of
+  * doc.gripSide — identical while the doc is fixed, and the value every
+  * sampled frame itself reports. */
+ const gs:Side=compiled.gripSide==='L'?'L':'R';
+ const times=sampleTimes(doc.duration,fps);
  const frames:ProbeFrame[]=[];
  for(const t of times){
-  const f=frameAt(doc,t,origin);
+  const f=frameAtCompiled(compiled,t);
   const rep=solveEffectiveFrame(rig,f);
   // Deliberately the same analyzePose call solveWorkshop's sampler makes —
   // check items are identical with or without a tip object; the tip is
@@ -215,11 +241,11 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
   const quat:ProbeFrame['quat']={},pos:ProbeFrame['pos']={};
   for(const b of PROBE_QUAT_BONES)quat[b]=q4(rig.bone(b).getWorldQuaternion(new Quaternion()));
   for(const p of PROBE_POINTS)pos[p]=v3a(rig.point(p));
-  const check:Record<string,number|null>={};
-  for(const it of a.items)check[it.code]=it.value;
-  /* Gripping-arm (doc.gripSide) two-bone internals from the solved shoulder
-   * root — same math rig.limb ran, kept for clamp/saturation diagnostics. */
-  const gs:Side=doc.gripSide==='L'?'L':'R';
+  const check:ProbeFrame['check']={};
+  for(const it of a.items)check[it.code]={v:it.value,ok:it.ok,limit:it.limit};
+  /* Gripping-arm (doc.gripSide — the hoisted `gs` above) two-bone internals
+   * from the solved shoulder root — same math rig.limb ran, kept for
+   * clamp/saturation diagnostics. */
   const r0=rig.rest.get(`upperarm01_${gs}`)!,r1=rig.rest.get(`lowerarm01_${gs}`)!,r2=rig.rest.get(`wrist_${gs}`)!;
   const al=r1.clone().sub(r0).length(),bl=r2.clone().sub(r1).length();
   const root=rig.point(`upperarm01_${gs}`),gp=gs==='L'?f.pose.handL:f.pose.handR;
@@ -299,20 +325,29 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
   if(worst>0.001)push({what:`foot-slip-${iv.side}`,t:wt,value:worst*100,unit:'cm'});
  }
 
- /* [2] per-bone angular speed, step outliers, jerk */
+ /* [2] per-bone angular speed, vector angular acceleration, step outliers */
  const boneStats:ProbeBoneStat[]=[];
  for(const b of PROBE_QUAT_BONES){
-  const steps=stepAngles(frames.map(f=>f.quat[b]));
-  const w=steps.map(s=>s/dt);
-  let peakW=0,peakT=0,maxStep=0,stepT=0,kink=0,kinkT=0,jerk=0,jerkT=0;
+  const quats=frames.map(f=>f.quat[b]),steps=stepAngles(quats);
+  const times=frames.map(f=>f.t),omega=angularVelocities(times,quats);
+  const w=[0,...omega.map(x=>Math.hypot(...x.v))];
+  let peakW=0,peakT=0,peakAlpha=0,alphaT=0,maxStep=0,stepT=0,kink=0,kinkT=0,jerk=0,jerkT=0;
   for(let i=1;i<steps.length;i++){
    if(w[i]>peakW){peakW=w[i];peakT=frames[i].t;}
    if(steps[i]>maxStep){maxStep=steps[i];stepT=frames[i].t;}
    const r=outlierRatio(steps,i);
    if(steps[i]>0.002&&r>kink){kink=r;kinkT=frames[i].t;}
-   if(i>0){const j=Math.abs(w[i]-w[i-1])/dt;if(j>jerk){jerk=j;jerkT=frames[i].t;}}
+   if(i>1){
+    const midDt=omega[i-1].t-omega[i-2].t;
+    const ax=(omega[i-1].v[0]-omega[i-2].v[0])/midDt;
+    const ay=(omega[i-1].v[1]-omega[i-2].v[1])/midDt;
+    const az=(omega[i-1].v[2]-omega[i-2].v[2])/midDt;
+    const alpha=Math.hypot(ax,ay,az),at=(omega[i-1].t+omega[i-2].t)/2;
+    if(alpha>peakAlpha){peakAlpha=alpha;alphaT=at;}
+    const j=Math.abs(w[i]-w[i-1])/midDt;if(j>jerk){jerk=j;jerkT=at;}
+   }
   }
-  boneStats.push({bone:b,peakW,peakT,maxStep,stepT,kink,kinkT,jerk,jerkT});
+  boneStats.push({bone:b,peakW,peakT,peakAlpha,alphaT,maxStep,stepT,kink,kinkT,jerk,jerkT});
  }
  boneStats.sort((a,b)=>b.peakW-a.peakW);
  const kinked=boneStats.filter(s=>s.kink>4&&s.maxStep>0.0035).sort((a,b)=>b.kink*b.maxStep-a.kink*a.maxStep);
@@ -445,9 +480,9 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
  /* [8] solver check worsts (every code seen with a value) */
  const solverChecks:Record<string,{v:number;t:number}>={};
  for(const f of frames)for(const [code,x]of Object.entries(f.check)){
-  if(x===null||x===undefined)continue;
+  if(x.v===null||x.v===undefined)continue;
   const cur=solverChecks[code];
-  if(!cur||x>cur.v)solverChecks[code]={v:x,t:f.t};
+  if(!cur||x.v>cur.v)solverChecks[code]={v:x.v,t:f.t};
  }
  const wc=(code:string)=>solverChecks[code]??{v:-Infinity,t:0};
  const dorsiL=wc('ankle-dorsiflexion-L'),dorsiR=wc('ankle-dorsiflexion-R');
@@ -503,8 +538,8 @@ export function formatProbeReport(r:ProbeReport):string{
  lines.push(`\n=== ${r.name} @ ${r.fps}fps · ${r.frameCount} frames · ${r.keyCount} keys · ${r.duration}s ===`);
  lines.push(`支撑区间: ${r.supportIntervals.map(i=>`${i.side} ${i.from.toFixed(2)}–${i.to.toFixed(2)}s`).join(' · ')||'无'}   rest sole plane L ${(r.groundY.L*1000).toFixed(1)}mm R ${(r.groundY.R*1000).toFixed(1)}mm`);
  lines.push(`[1] foot slip\n${r.footSlip.map(iv=>`  foot_${iv.side} ${iv.from.toFixed(2)}–${iv.to.toFixed(2)}s n=${iv.samples}  |ankle−target| max ${(iv.maxResidual*1000).toFixed(2)}mm @${iv.residualT.toFixed(3)}s  | drift-from-first max ${(iv.maxDrift*1000).toFixed(2)}mm`).join('\n')||'  (no plant intervals)'}`);
- const angTop=r.bones.slice(0,8).map(s=>`  ${s.bone.padEnd(13)} peak ${s.peakW.toFixed(1).padStart(6)} rad/s @${s.peakT.toFixed(3)}s  step ${(s.maxStep*180/Math.PI).toFixed(2)}°@${s.stepT.toFixed(3)}s  jerk ${(s.jerk/1000).toFixed(0)}k rad/s²@${s.jerkT.toFixed(3)}s`);
- lines.push(`[2] 骨角速度 top:\n${angTop.join('\n')}`);
+ const angTop=r.bones.slice(0,8).map(s=>`  ${s.bone.padEnd(13)} peak ${s.peakW.toFixed(1).padStart(6)} rad/s @${s.peakT.toFixed(3)}s  αmax ${s.peakAlpha.toFixed(1)} rad/s²@${s.alphaT.toFixed(3)}s  step ${(s.maxStep*180/Math.PI).toFixed(2)}°@${s.stepT.toFixed(3)}s`);
+ lines.push(`[2] 骨角速度 / 角加速度 top:\n${angTop.join('\n')}`);
  lines.push(`    kink>4x 邻帧: ${r.kinked.length?r.kinked.slice(0,8).map(s=>`${s.bone} ${(s.maxStep*180/Math.PI).toFixed(1)}° x${s.kink.toFixed(0)} @${s.kinkT.toFixed(3)}s(keyΔ${(nearKey(s.kinkT)*1000).toFixed(0)}ms)`).join('  '):'无'}`);
  lines.push(`[3] root: maxStep ${(r.root.maxStep*1000).toFixed(2)}mm @${r.root.stepT.toFixed(3)}s  maxV ${r.root.maxV.toFixed(3)}m/s  maxA ${r.root.maxA.toFixed(1)}m/s² @${r.root.accelT.toFixed(3)}s`);
  lines.push(`    pelvisShift ${(r.pelvis.shiftMin*100).toFixed(1)}–${(r.pelvis.shiftMax*100).toFixed(1)}cm  maxJump ${(r.pelvis.maxJump*1000).toFixed(2)}mm @${r.pelvis.jumpT.toFixed(3)}s  saturated ${r.pelvis.saturatedFrames}f`);

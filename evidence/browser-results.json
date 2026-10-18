@@ -1,5 +1,5 @@
 {
-  "date": "2026-10-17",
+  "date": "2026-10-18",
   "browser": "155.0.8059.80",
   "viewport": [
     1536,
@@ -425,7 +425,11 @@
     "workshopOnion": true,
     "workshopStillExport": true,
     "workshopGripSide": true,
-    "workshopMirror": true
+    "workshopMirror": true,
+    "workshopGenerationEndpointLock": true,
+    "workshopGenerationCancel": true,
+    "workshopGenerationAB": true,
+    "workshopGenerationKeepExportUndo": true
   },
   "samples": {
     "idle": [

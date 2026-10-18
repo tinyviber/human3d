@@ -617,3 +617,43 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 要点：按**依赖方向**而非现有目录名切包（`packages/motion-core` 纯域 / `apps/web` 场景与 DOM / `apps/server` 传输与 node 设施），消除 `core → server` 与 `server → workshop` 两处反向依赖；`validate.ts`、`package-export`、`glb-export`、`quality-probe`、`random-document` 进 core（它们有 Node CLI / 测试消费者），`motion-source.ts` 拆成 core 的 `package-inspect.ts` 与 web 的播放源。
 
 行为不变的迁移：姿态包逐字节一致、`SERVICE_VERSION` 与 artifact id 不变、两个入口页可用、原有 `npm run` 命令可用；门禁全绿（260/260、19/19、build、QA 22 项）；240fps 质量探针全量重跑逐值相同（求解零漂移）；结构自检 5 条（无反向依赖、无深路径导入、core 无 DOM/node）全过。
+
+---
+
+# Issue #10 — 确定性约束轨迹优化与工作台候选审核（WP-D / WP-E）
+
+## WP-D：motion-core 真实求解优化器
+
+- 新增 `packages/motion-core/src/generate.ts` 与纯公共导出 `generateMotion`、`measureDoc`。搜索操作只有两类：在合法区间按晶格步长重排非锁定关键帧时间；把指定躯干 / 左右手 / 左右脚通道按有界相位偏移从源编译轨迹重采样。相位替换不累积；接触事件、plant / release 边界禁止非法越界。候选保留原键集合、原有约束模式、文档级字段与锁定键 pose/time，任何不变量失败直接拒绝，不以自动修复掩盖。
+- 每个候选都通过 `probeFrames → analyzeProbeFrames → evalDetail` 真实 `HumanRig` / `solveEffectiveFrame` 路径。搜索目标按源基线归一化，权重主项为末端 jerk、骨骼角 jerk、姿态超限、支撑脚误差、地面穿透、IK 残差与对源动作的偏移。加加速度对不均匀时间戳做积分，并覆盖精确 duration 末帧；质量探针还输出基于实际采样时间中点的世界向量骨骼峰值角速度 / 角加速度；`measureDoc`、搜索目标、候选表和 CLI 共用这套度量，没有第二份实现。
+- 门禁除输入形状外，还逐帧核验超限数、球拍对象确实挂在本 rig 的握拍侧手腕、拍头触球偏移、支撑接触点和候选报告采样率代价。未过几何 / 求解门禁或报告代价没有严格下降时不产候选。detuned squat 是一条有意保留的回归负例：优化后报告代价 5.1453 高于源 5.0000，故拒绝，不把“搜索执行完”混作成功。
+- 有界执行：默认 `maxEvals=120`（源测量、搜索、报告都计入），默认 4 轮、硬上限 16 轮；fps 为 1–240 整数。以文档 duration、fps 和 evaluation budget 估算采样量，超过 300,000 帧直接拒绝。导出 probe frames 仅进离线 JSON；主线程 Worker 回复只带文档、指标、约束与简短诊断，避免结构化克隆整套逐帧数据。
+- 第一轮独立 review 发现并修复两类边界：公开 `measureDoc` 必须先拒绝无效 fps；contact 的 racket tip 必须是当前 HumanRig 握拍侧腕上的真实 `RacketGrip` 对象（名称相似或 foreign rig 都不够）。随后加了 `maxSweeps≤16` 硬上限及覆盖这三处的真实 rig 回归测试。最终复审另抓出动态端点默认锁会被锁列表快照卡住、未测得的 tip 指标误显示为 0；现改为按当前端点派生默认锁、显式记录用户覆盖，并对不可用指标行直接省略。
+
+## WP-E：非阻塞审核式工作台流程
+
+- `WorkshopApp` 用 module Worker 加载 `public/models/human.glb` / `rig.json` 后跑同一个 core 生成器。搜索中锁住编辑、库写入、撤销/重做，但让视角控制继续工作；Worker 错误显式显示，不在主线程重跑。进度条把模型加载、基线、搜索和报告阶段分别显示，取消直接 terminate Worker。
+- 候选在 `generationPreview` 易失覆盖里供场景渲染，不落 `localStorage`；A/B 仅换当前文档，沿用同一 camera / view / playhead。取消清空候选并恢复源轨迹，不影响库字节、active id、文档或历史。保留则复制为新文档、分配全新 doc/key id、进入动作库并给新历史簿种入回源快照；可同步导出现有 Workshop JSON。真实 QA 覆盖 Keep 后 undo 到源、redo 回候选。
+- 定向浏览器验收走真实 forehand-study JSON 导入、Worker 求解与可视 Three.js 场景：生成期间切到侧面再取消；重新生成后固定 `.9s` 和 45° 视角截图 A/B；断言 ready/contact 键 pose/time 不动、全部 constraints 不变、预览未提前持久化；最终保留+下载，并核对 id、动作库源文档与撤销/重做。结果记录 `evidence/browser-results.json`，同视角图为 `evidence/generate-forehand-ab.png`。
+
+## 数值样例与结论边界
+
+四个 CLI 样例保存在 `evidence/generate-{forehand,forehand-detuned,squat,squat-detuned}.json`。真实 forehand 用 114 次求解评估、接受 11 次局部调整：末端 jerk 982.09→510.56 m/s²、角 jerk 9679.89→5329.73 rad/s²、球拍 tip jerk 791.28→419.29 m/s²；contact deviation 保持 0 mm，所有硬约束门禁通过。单步 detuned forehand 也能恢复平滑代理（末端 jerk 2190.70→509.15 m/s²），但接触速度同时 5.08→2.97 m/s——速度的好坏取决于动作目标，所以表中仅报告、不着色成普遍改善。Squat 候选仅为 neutral；另一个受损 squat 样例被报告采样门拒绝。视图中的“改善”只表示指定代价和有限主指标变化，**不代表动作自然或运动学符合网球教练 / 运动员判断**。same-view A/B 与人工评审仍是职责边界。
+
+## Review rework 与验证
+
+首轮 PR CI 在 `6496f1b` 上全量 Vitest 为 350/352：`generate.test.ts` 第 140、179 行两项集成测试分别超过 5 秒默认超时，报告耗时约 6.7 秒与 16.7 秒。它们没有断言失败，原因需区分生成算法成本、测试组合成本及 runner 并行竞争，不能仅据超时判定生产逻辑错误。
+
+调查时在本机单 worker 下分别运行两项测试，耗时约 1.57 秒和 3.70 秒，整份 `generate.test.ts` 约 6.24 秒。修复保持 Vitest 全局超时不变，针对只验证局部搜索 / 无球拍分支的测试降低采样率和 evaluation budget，同时继续使用真实 GLB rig、Solver 与硬约束门禁；生产默认预算仍由完整 CLI evidence 覆盖。`evalDetail()` 移除了随后会被 `probeFrames()` 再做一次的冗余编译，`subsampleDoc()` 则改成一次 `compileMotion()` 后批量 `sampleMotion()`。Worker 的 warm rig 缓存没有改动：其启动收益尚未测量，且需另行设计 warm worker 与 terminate 取消的生命周期。
+
+修复提交 `b91ac00` 的验证结果：
+
+- `npm test -- packages/motion-core/src/generate.test.ts packages/motion-core/src/compiled.test.ts --maxWorkers=1 --no-file-parallelism`：28/28 通过，3.15 秒。
+- `npm test -- --maxWorkers=1 --no-file-parallelism`：全量 352/352 通过，Vitest 用时 20.91 秒。此前本机默认并行全量也曾 352/352 通过（7.82 秒）；CI 的首轮失败与本机运行差异说明应记录环境和运行方式。
+- `npm run spec:check`：22/22 通过。
+- `npm run build`：TypeScript 与 Vite 构建通过；仍有 dynamics 同时动态 / 静态导入及 bundle chunk 大于 500 kB 的既有警告。
+- GitHub Actions 对 `b91ac00` 的 `check` 与 `dynamics` 两项 job 均通过；`check` 包含 TypeScript、发布契约、全量 Vitest 与 build。
+- `npx tsx scripts/generate-motion.mts all` 重新生成四个完整 evidence：正手接受、标准下蹲 neutral、损伤下蹲拒绝。
+- `QA_BROWSER_CHANNEL=chrome npm run qa` 在前一 UI 版本通过 26 项 checks，`errors=[]`、`warnings=[]`；覆盖动态端点锁、Worker cancel、同视角 A/B、Keep/export/undo/redo。本轮 rework 没改 UI，因此没有重复跑浏览器 QA。`mobileOverflow:false` 表示没有横向溢出。
+
+性能数值只表示指定代价函数和门禁的变化，不证明动作自然。网球专业人员对代表性样例的人工评审仍未完成；新文档提交还需等待其 PR CI 完成后再合并。

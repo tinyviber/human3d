@@ -21,6 +21,11 @@ export interface SolveReport{pelvisShift:number;pelvisSaturated:boolean}
  * amount from the document sampler; without it the discrete constraint flags
  * are used (weight 1 when planted, grip 1 when gripping). */
 export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:SolveState={}):SolveReport{
+ /* One batch: every intermediate world-matrix flush inside the solve is
+  * deferred — reads self-update their ancestor chains — and a single
+  * model.updateMatrixWorld(true) at batch exit restores the postcondition
+  * (a fully-flushed rig) that callers/tests reading .matrixWorld rely on. */
+ return rig.batch(()=>{
   rig.reset();
   const root=rig.bone('root'),origin=rig.rest.get('root')!;
   root.position.copy(origin).add(new Vector3(
@@ -46,7 +51,7 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   const dorsiLegs:DorsiLeg[]=legs.map(l=>({hip:rig.point(`upperleg01_${l.side}`),target:l.target,pole:l.pole,
     upper:l.a,lower:l.b,footQ:l.footQ,weight:support[l.side]}));
   const correction=pelvisDorsiCorrection(dorsiLegs,DORSI_LIMIT_DEG,.15);
-  if(correction.shift>0){root.position.z-=correction.shift;rig.model.updateMatrixWorld(true);}
+  if(correction.shift>0){root.position.z-=correction.shift;rig.syncWorld();}
   for(const l of legs){rig.limb(l.side,'leg',l.target,l.pole);rig.worldRotation(`foot_${l.side}`,l.footQ);}
 
   // Clavicle assist (doc flag): the GRIPPING shoulder girdle rides up with a
@@ -58,7 +63,7 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
     const lift=Math.max(0,(toV(gripSide==='R'?p.handR.target:p.handL.target).y-p.root.y-1.1)/.62);
     const s=gripSide==='R'?-1:1;
     rig.rotate(`clavicle_${gripSide}`,0,0,s*lift*8);rig.rotate(`shoulder01_${gripSide}`,0,0,s*lift*5);
-    rig.model.updateMatrixWorld(true);
+    rig.syncWorld();
   }
   rig.limb('R','arm',toV(p.handR.target),toV(p.handR.pole));
   rig.limb('L','arm',toV(p.handL.target),toV(p.handL.pole));
@@ -68,8 +73,9 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   // side; amount 1 is the full grip. The other hand always relaxes.
   blendGrip(rig,gripSide,gripAmount);
   rig.relaxHand(gripSide==='R'?'L':'R');
-  rig.model.updateMatrixWorld(true);
+  rig.syncWorld();
   return {pelvisShift:correction.shift,pelvisSaturated:correction.saturated};
+ });
 }
 
 /** The single solve entry for a sampled document frame: support fades, the
@@ -81,7 +87,8 @@ export function solveEffectiveFrame(rig:HumanRig,f:EffectiveFrame){
 /** Ankle dorsiflexion (degrees) of the solved rig, from the shank direction
  * in the foot's own frame. Measured on the rig, not on the target geometry. */
 function ankleDorsiflexion(rig:HumanRig,side:Side){
-  const shank=rig.point(`foot_${side}`).sub(rig.point(`lowerleg01_${side}`));
+  const a=new Vector3(),b=new Vector3();
+  const shank=rig.worldPointInto(`foot_${side}`,a).sub(rig.worldPointInto(`lowerleg01_${side}`,b));
   const q=rig.bone(`foot_${side}`).getWorldQuaternion(new Quaternion()).invert();
   const local=shank.applyQuaternion(q);
   return Math.atan2(-local.z,-local.y)/DEG;
@@ -112,10 +119,12 @@ const SEGMENTS:[string,string,number][]=[
   ['upperleg01_L','lowerleg01_L',.1416],['upperleg01_R','lowerleg01_R',.1416],
   ['lowerleg01_L','foot_L',.0433],['lowerleg01_R','foot_R',.0433],
 ];
+/** Sole offset for the CoM foot pseudo-segment — shared read-only const. */
+const COM_SOLE_OFFSET=new Vector3(0,-.03,.05);
 function estimateCoM(rig:HumanRig){
-  const com=new Vector3();let mass=0;
-  for(const [a,b,m]of SEGMENTS){const mid=rig.point(a).add(rig.point(b)).multiplyScalar(.5);com.addScaledVector(mid,m);mass+=m;}
-  for(const side of ['L','R']as const){const foot=rig.point(`foot_${side}`).add(new Vector3(0,-.03,.05));com.addScaledVector(foot,.0137);mass+=.0137;}
+  const com=new Vector3(),a=new Vector3(),b=new Vector3();let mass=0;
+  for(const [s1,s2,m]of SEGMENTS){const mid=rig.worldPointInto(s1,a).add(rig.worldPointInto(s2,b)).multiplyScalar(.5);com.addScaledVector(mid,m);mass+=m;}
+  for(const side of ['L','R']as const){const foot=rig.worldPointInto(`foot_${side}`,a).add(COM_SOLE_OFFSET);com.addScaledVector(foot,.0137);mass+=.0137;}
   return com.multiplyScalar(1/mass);
 }
 /** Convex hull of planted-foot rectangles in the ground plane. */
@@ -158,7 +167,12 @@ const NUMERIC_EPS=1e-3;
  * document's constraint mix. */
 function limitItems(rig:HumanRig):CheckItem[]{
   const items:CheckItem[]=[];
-  const P=(n:string)=>rig.point(n);
+  /* worldPointInto pool: reads the post-syncWorld matrixWorld straight,
+   * ~30× cheaper per read than point()'s ancestor re-walk. Results are
+   * VOLATILE — consume inside the expression; ≤3 concurrent (audit:
+   * angleAt uses all 3, every other site ≤2). */
+  const _pv=[new Vector3(),new Vector3(),new Vector3()];let _pi=0;
+  const P=(n:string)=>{const v=_pv[_pi];_pi=(_pi+1)%_pv.length;return rig.worldPointInto(n,v);};
   const deg=(code:string,label:string,value:number,limit:number,ok=value<=limit+NUMERIC_EPS):CheckItem=>
     ({code,ok,label,detail:`${value.toFixed(0)}° / ≤${limit}°`,value,limit,unit:'deg'});
   for(const side of ['L','R']as const){
@@ -182,7 +196,14 @@ function limitItems(rig:HumanRig):CheckItem[]{
 }
 export function analyzePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,racket?:{localToWorld(v:Vector3):Vector3}):Analysis{
   const items:CheckItem[]=[];
-  const P=(n:string)=>rig.point(n);
+  /* Real flush: analyzePose always runs post-batch (solveEffectiveFrame's
+   * batch-end flush already left the tree current, so this is normally a
+   * no-op repeat) — it also repairs a tree written outside any batch, which
+   * is what the readers below (worldPointInto — no ancestor re-walk) need. */
+  rig.syncWorld();
+  /* Same volatile-pool contract as limitItems' P — ≤3 concurrent results. */
+  const _pv=[new Vector3(),new Vector3(),new Vector3()];let _pi=0;
+  const P=(n:string)=>{const v=_pv[_pi];_pi=(_pi+1)%_pv.length;return rig.worldPointInto(n,v);};
   const limits=limitItems(rig);
   for(const side of ['L','R']as const){
     items.push(...limits.filter(it=>it.code.endsWith(`-${side}`)));
