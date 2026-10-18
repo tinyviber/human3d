@@ -12,7 +12,7 @@ import type {Side} from './foot';
 export interface V3{x:number;y:number;z:number}
 export const v3=(x=0,y=0,z=0):V3=>({x,y,z});
 export const toV=(v:V3)=>new Vector3(v.x,v.y,v.z);
-export const fromV=(v:Vector3):V3=>({x:v.x,y:v.y,z:v.z});
+const fromV=(v:Vector3):V3=>({x:v.x,y:v.y,z:v.z});
 
 export interface HandTarget{target:V3;pole:V3;forward:V3;normal:V3}
 export interface FootTarget{target:V3;pole:V3;yaw:number;pitch:number}
@@ -66,7 +66,7 @@ export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIn
  gripSide?:Side}
 
 /** Grip closes and opens over this window after the key that toggles it. */
-export const GRIP_TRANSITION_S=.25;
+const GRIP_TRANSITION_S=.25;
 /** κ of the Hermite tangent clamp: every interior tangent's magnitude is
  * capped at κ× the SMALLER adjacent secant rate (see the tan() comment for
  * why the larger secant can never bind). κ=3 is the classic monotone-cubic
@@ -117,7 +117,6 @@ export function canonicalizeHands(p:PoseParams){
  }
 }
 export const clonePose=(p:PoseParams):PoseParams=>unflattenPose(flattenPose(p));
-export const cloneConstraints=(c:KeyConstraints):KeyConstraints=>({...c});
 
 /* ---- Channel layout (flattenPose): root 0–2 · yaw 3 · lean 4 · chest 5 · side 6
  * handL target 7–9, pole 10–12, forward 13–15, normal 16–18 · handR 19–21, 22–24, 25–27, 28–30
@@ -478,7 +477,7 @@ export function contactStartKey(doc:DocLike&{keys:WorkshopKey[]},side:Side,time:
 }
 
 export function keyAt(doc:WorkshopDoc,id:string){return doc.keys.find(k=>k.id===id);}
-export function insertKey(doc:WorkshopDoc,key:WorkshopKey){doc.keys.push(key);doc.keys.sort((a,b)=>a.time-b.time);}
+function insertKey(doc:WorkshopDoc,key:WorkshopKey){doc.keys.push(key);doc.keys.sort((a,b)=>a.time-b.time);}
 export function nearestKey(doc:WorkshopDoc,time:number,eps=.02){
   let best:WorkshopKey|undefined,bd=Infinity;
   for(const k of doc.keys){const d=Math.abs(k.time-time);if(d<bd){bd=d;best=k;}}

@@ -5,7 +5,7 @@ import {normalizeDoc,serializeDoc} from './document';
  * document, so restoring is exact and independent of how the edit was made
  * (pointer drag, key insert, retime, label). Callers record the state BEFORE
  * an edit; a new edit clears the redo stack. */
-export const HISTORY_LIMIT=100;
+const HISTORY_LIMIT=100;
 export class DocHistory{
   private past:string[]=[];private future:string[]=[];
   constructor(private limit=HISTORY_LIMIT){}

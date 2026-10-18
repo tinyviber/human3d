@@ -1,4 +1,3 @@
-import type {Vector3,Quaternion} from 'three';
 import type {MotionCapabilities} from './motion-file';
 import type {DynamicsRecords,MuscleActionFile} from './muscle-action';
 import type {WorkshopDoc} from '../workshop/document';
@@ -18,5 +17,4 @@ export type MotionSourceSpec=
  |{kind:'dynamics';action?:MuscleActionFile;records?:DynamicsRecords}
  |{kind:'pose-package';package:unknown};
 export interface MotionSpec{id:MotionId;name:string;english:string;duration:number;description:string;method:string;focus:string[];phases:{time:number;label:string}[];capabilities?:MotionCapabilities;source?:MotionSourceSpec;oneShot?:boolean;objectDescription?:string}
-export interface Pose {root:Vector3;rotations:Map<string,Quaternion>}
 export interface DebugOptions{surface:boolean;skeleton:boolean;axes:boolean;targets:boolean;trail:boolean;muscles:boolean}
