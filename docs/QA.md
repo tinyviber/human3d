@@ -83,7 +83,7 @@
 
 - **质量探针**：`src/workshop/quality-probe.ts` 是共享度量实现（vitest 与 CLI 同源），`npx tsx scripts/measure-quality-probe.mts [fps=240] [motion|all]` 走真实 `frameAt → solveEffectiveFrame → analyzePose` 路径以 240fps 采样；`evidence/quality-probe-*.json` 是 WP-C 后求解器的提交基线。`quality.test.ts` 既有结构断言也有硬质量门（kick 削减、atKey 步长、accelTop 等，实测值写进注释）。
 - **forehand-study 验收夹具**：`spec/examples/forehand-study.request.json` 是 2.0 s、5 键的正手研究文档，**全部由工作台真实 UI 写路径制作**（`scripts/forehand-study/drive.mjs` + `ops.json` 回放：面板滑块/时间字段 input 事件 + 画布双视角真实指针拖拽）；账本在 `spec/examples/forehand-study.md`，逐轮探针快照在 `evidence/forehand-study/rounds.jsonl`。`contract.test.ts` 钉结构与 200 契约，`quality.test.ts` 对其实测值加 ×1.25 上限 / ÷1.25 下限硬门（腕弯曲 0 截幅、IK 残差 ~0、触球键拍头速度 >3 m/s、tip kicks ≤170 回归门等）。
-- **`scripts/forehand-study/` 工具目录**：研究期的探针迭代/驱动脚本（probe/grid/inspect/retune/kickmap/tiptrace/delta-decomp/finalize/pkgcheck + `drive.mjs` UI 驱动器 + `ops.json` 配方），保留作复现与后续校准用途，各文件头注释注明入口参数。
+- **`scripts/forehand-study/` 制作链**：保留 `drive.mjs`（工作台真实 UI 写路径回放器）+ `ops.json`（回放配方）作夹具重制入口；研究期的探针迭代/扫描脚本已随一次性校准退役，重测走共享探针 CLI。
 - 求解语义变更后全量浏览器复验：本记录对应一次 `QA_BROWSER_CHANNEL=chrome npm run qa` 全绿（errors/warnings 为空）与 `node scripts/dynamics-browser-qa.mjs` 29 项全过；`evidence/browser-results.json`、`dynamics-results.json` 与相关截图/录屏随运行刷新。
 
 ## 实测关键姿态

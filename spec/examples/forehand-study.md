@@ -51,7 +51,7 @@ flex−11 dev+1 twist+1；触球 twist−46 dev+30 flex+24 twist−8 dev+3；
 - 手腕 delta 本身是 tip 速度杠杆：按「clamp=0 前提下最大化 contact 点
   速度」贪心重调，contact tip 2.06 → 3.79 m/s。
 
-## 最终探针指标（`probe.mts`，240fps / 60fps）
+## 最终探针指标（共享探针 CLI，240fps / 60fps）
 
 | 指标 | 240fps | 60fps | 预算 | 状态 |
 |---|---|---|---|---|
@@ -100,9 +100,9 @@ flex−11 dev+1 twist+1；触球 twist−46 dev+30 flex+24 twist−8 dev+3；
 
 ## 验证命令输出
 
-- `finalize.mts`：`contract.request → true`；`handleRequest → 200`
-  （pkg 81 帧 @40fps · 13 项质量检查全 OK · 8 事件含 1.15 s contact）。
-- `pkgcheck.mts`：`validatePosePackage → []`（0 错误）。
+- `src/server/contract.test.ts` 的 forehand-study 用例（CI 门禁）：
+  `contract.request → true`、`handleRequest → 200`（定稿包 81 帧 @40fps · 13 项质量检查
+  全 OK · 8 事件含 1.15 s contact）、`validatePosePackage → []`（0 错误）。
 - `npx vitest run src/workshop/quality.test.ts src/server/contract.test.ts`
   → 22 项全过（含本 fixture 的 5 项新断言）。
 - 全量 `npm run spec:check`、`npx tsc -b`、`npm test` 见提交信息/CI。

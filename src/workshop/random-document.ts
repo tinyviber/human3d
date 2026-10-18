@@ -4,9 +4,8 @@ import {blankDocument,canonicalizeHands,contactStartKey,frameAt,toV,validateDocS
 import {ankleYForLift,footGeometry,soleOffset,type Side} from './foot';
 import {WORKSHOP_LIMITS} from './limits';
 
-/** mulberry32 — the seeded PRNG the workshop tests and scripts use. Two copies
- * still live inline (regressions.test.ts, scripts/random-document-stats.mts);
- * new consumers draw from here so a seed means the same stream everywhere. */
+/** mulberry32 — the seeded PRNG the workshop tests and scripts use. Every
+ * consumer draws from here so a seed means the same stream everywhere. */
 export function mulberry32(seed:number):()=>number{
  let s=seed;
  return ()=>{
