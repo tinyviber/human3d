@@ -14,7 +14,7 @@
 
 ## 自动测试
 
-> 2026-10-17 追加（issue #2 修复）：`npx vitest run` 共 **107 项通过**，新增契约、语义校验与工坊回归测试，阈值见 [validation.md](validation.md)。下方 33 项是原验收记录，未改动。
+> 2026-10-17 追加（issue #2 修复）：`npx vitest run` 共 **107 项通过**，新增契约、语义校验与工坊回归测试，阈值见 [validation.md](validation.md)。该计数为当日快照；架构收敛后（2026-10-18）为 **138 项**，最新数量以 `npm test` 输出为准。下方 33 项是原验收记录，未改动。
 
 `npm test -- --maxWorkers=1`：**33 项通过**。真实解析交付的 GLB 与 AnimationClip，并检查直拳握拳各指节、腕部动作和蒙皮—肌肉仿真上肢方向一致性。
 

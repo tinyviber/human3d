@@ -2,7 +2,7 @@ import {Quaternion,Vector3,MathUtils} from 'three';
 import {HumanRig} from '../core/rig';
 import {blendGrip} from '../core/racket';
 import {DEG,LIMITS,angleAt,pelvisDorsiCorrection,solveTwoBone,type DorsiLeg} from '../core/kinematics';
-import type {PoseParams,KeyConstraints,SupportWeights} from './document';
+import type {EffectiveFrame,PoseParams,KeyConstraints,SupportWeights} from './document';
 import {toV} from './document';
 import {FOOT_CLEARANCE_M,footDepth,footGeometry,footRotation,type Side} from './foot';
 
@@ -11,7 +11,7 @@ import {FOOT_CLEARANCE_M,footDepth,footGeometry,footRotation,type Side} from './
  * dynamics for authoring — muscle control stays a later stage. */
 export const DORSI_LIMIT_DEG=20;
 
-export interface SolveState{support?:SupportWeights;gripAmount?:number}
+export interface SolveState{support?:SupportWeights;gripAmount?:number;clavicleLift?:boolean}
 export interface SolveReport{pelvisShift:number;pelvisSaturated:boolean}
 
 /** Solve one frame. `state` carries the interpolated support weights and grip
@@ -45,6 +45,14 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   if(correction.shift>0){root.position.z-=correction.shift;rig.model.updateMatrixWorld(true);}
   for(const l of legs){rig.limb(l.side,'leg',l.target,l.pole);rig.worldRotation(`foot_${l.side}`,l.footQ);}
 
+  // Clavicle assist (doc flag): the right shoulder girdle rides up with a high
+  // hand target — the authored reach behaviour. `target.y − p.root.y` recovers
+  // the control-space height the authored formula used (world y minus root y).
+  if(state.clavicleLift){
+    const lift=Math.max(0,(toV(p.handR.target).y-p.root.y-1.1)/.62);
+    rig.rotate('clavicle_R',0,0,-lift*8);rig.rotate('shoulder01_R',0,0,-lift*5);
+    rig.model.updateMatrixWorld(true);
+  }
   rig.limb('R','arm',toV(p.handR.target),toV(p.handR.pole));
   rig.limb('L','arm',toV(p.handL.target),toV(p.handL.pole));
   rig.hand('R',toV(p.handR.forward).normalize(),toV(p.handR.normal).normalize());
@@ -54,6 +62,12 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   rig.relaxHand('L');
   rig.model.updateMatrixWorld(true);
   return {pelvisShift:correction.shift,pelvisSaturated:correction.saturated};
+}
+
+/** The single solve entry for a sampled document frame: support fades, the
+ * grip ramp and the clavicle assist all come from the frame, never re-derived. */
+export function solveEffectiveFrame(rig:HumanRig,f:EffectiveFrame){
+  return solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift});
 }
 
 /** Ankle dorsiflexion (degrees) of the solved rig, from the shank direction
@@ -135,7 +149,8 @@ export function insidePolygon(p:Vector3,poly:Vector3[],margin=.02){
 const NUMERIC_EPS=1e-3;
 /** Per-side limit checks measured on the solved rig: joint flexion limits,
  * ankle dorsiflexion and sole depth. Independent of which feet are planted,
- * so the package builder can reuse them for keyframed motions too. */
+ * so the package builder can run them on every sampled frame, whatever the
+ * document's constraint mix. */
 export function limitItems(rig:HumanRig):CheckItem[]{
   const items:CheckItem[]=[];
   const P=(n:string)=>rig.point(n);

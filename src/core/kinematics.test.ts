@@ -5,15 +5,29 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {handFrame} from './hand-frame';
 import {HumanRig,mapMyoSimThumbToSkin} from './rig';
 import {solveTwoBone,angleAt,frameRotation,clampJoint,hingedArmRotations,forearmTwist,DEG} from './kinematics';
-import {buildAuthoredClips} from './authoring';
+import {MOTION_FILES,motionFileById} from './motion-files';
+import {frameAt} from '../workshop/document';
+import {solveEffectiveFrame} from '../workshop/solver';
 import {attachRacket,gripFrame,blendGrip} from './racket';
 import type {MotionId} from './types';
-let rig:HumanRig,clips:Map<MotionId,AnimationClip>,racket:ReturnType<typeof attachRacket>;
+let rig:HumanRig,walkClip:AnimationClip,racket:ReturnType<typeof attachRacket>;
 beforeAll(async()=>{
  const bytes=fs.readFileSync('public/models/human.glb');const gltf=await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');
- rig=new HumanRig(gltf.scene,JSON.parse(fs.readFileSync('public/models/rig.json','utf8')));racket=attachRacket(rig);clips=buildAuthoredClips(rig);clips.set('walk',AnimationClip.parse(JSON.parse(fs.readFileSync('public/models/walk.json','utf8'))));
+ rig=new HumanRig(gltf.scene,JSON.parse(fs.readFileSync('public/models/rig.json','utf8')));racket=attachRacket(rig);walkClip=AnimationClip.parse(JSON.parse(fs.readFileSync('public/models/walk.json','utf8')));
 },30000);
-function setPose(id:MotionId,t:number){rig.reset();const mixer=new AnimationMixer(rig.model),clip=clips.get(id)!;const action=mixer.clipAction(clip).play();action.time=t;mixer.update(0);rig.model.updateMatrixWorld(true);return ()=>{mixer.stopAllAction();mixer.uncacheRoot(rig.model)};}
+const durationOf=(id:string)=>id==='walk'?walkClip.duration:motionFileById(id)!.duration;
+function setPose(id:MotionId,t:number){
+ rig.reset();
+ if(id==='walk'){
+  const mixer=new AnimationMixer(rig.model);const action=mixer.clipAction(walkClip).play();action.time=t;mixer.update(0);rig.model.updateMatrixWorld(true);
+  return ()=>{mixer.stopAllAction();mixer.uncacheRoot(rig.model)};
+ }
+ // Document motions replay through the production path: envelope document →
+ // frameAt → solveEffectiveFrame — the same pipeline the service serves.
+ solveEffectiveFrame(rig,frameAt(motionFileById(id)!.document!,t,rig.rest.get('root')!));
+ rig.model.updateMatrixWorld(true);
+ return ()=>{};
+}
 describe('constant-length IK',()=>{
  it('reaches a valid target with exact segment lengths',()=>{const r=new Vector3(0,1,0),t=new Vector3(.15,.2,.2),s=solveTwoBone(r,t,new Vector3(0,.5,1),.45,.44,135);expect(r.distanceTo(s.mid)).toBeCloseTo(.45,10);expect(s.mid.distanceTo(s.end)).toBeCloseTo(.44,10);expect(s.residual).toBeLessThan(1e-8);expect(s.mid.z).toBeGreaterThan(t.z);});
  it('retargets world landmarks without changing the skin arm lengths or direction',()=>{
@@ -35,12 +49,27 @@ describe('constant-length IK',()=>{
 });
 describe('real authored asset and animation data',()=>{
  it('has a skinned continuous human surface, 163 bones and complete fingers',()=>{let mesh:SkinnedMesh|undefined;rig.model.traverse(o=>{if(o instanceof SkinnedMesh)mesh=o;});expect(mesh).toBeDefined();expect(mesh!.geometry.getAttribute('position').count).toBe(53514);expect(rig.bones.size).toBe(163);for(const side of ['L','R'])for(let f=1;f<=5;f++)for(let j=1;j<=3;j++)expect(rig.bones.has(`finger${f}-${j}_${side}`)).toBe(true);const w=mesh!.geometry.getAttribute('skinWeight');for(let i=0;i<w.count;i++)expect(w.getX(i)+w.getY(i)+w.getZ(i)+w.getW(i)).toBeCloseTo(1,5);});
- it('loads all six clips and binds every track to an existing bone',()=>{expect(clips.size).toBe(6);for(const clip of clips.values()){expect(clip.duration).toBeGreaterThan(1);expect(clip.tracks.length).toBe(164);for(const track of clip.tracks){expect(rig.bones.has(track.name.split('.')[0])).toBe(true);expect(track.values.every(Number.isFinite)).toBe(true);}}});
+ it('resolves all six bundled motion files and drives every rig bone',()=>{
+  // The six envelopes are the lab's motion list; five carry an inline
+  // document, walk references its clip asset. Solving any of them writes
+  // every rig bone — the equivalent of the old 164-track clip assertion.
+  expect(MOTION_FILES.map(f=>f.id).sort()).toEqual(['forehand','idle','reach','ready','squat','walk']);
+  for(const f of MOTION_FILES){
+   expect(f.duration).toBeGreaterThan(1);
+   const cleanup=setPose(f.id,f.duration/2);
+   for(const [n,b]of rig.bones){
+    expect(b.quaternion.length(),`${f.id}:${n}`).toBeCloseTo(1,6);
+    expect(b.position.toArray().every(Number.isFinite),`${f.id}:${n}`).toBe(true);
+   }
+   expect(rig.point('root').toArray().every(Number.isFinite)).toBe(true);
+   cleanup();
+  }
+ });
  it('preserves every local bone length and unit rotation at 31 times per motion',()=>{
-  for(const [id,clip]of clips)for(let i=0;i<=30;i++){const cleanup=setPose(id,i/31*clip.duration);for(const [n,b]of rig.bones){if(n!=='root')expect(b.position.distanceTo(rig.restLocal.get(n)!)).toBeLessThan(1e-7);expect(b.scale.toArray()).toEqual([1,1,1]);expect(b.quaternion.length()).toBeCloseTo(1,4);}for(const side of ['L','R']){const knee=angleAt(rig.point(`upperleg01_${side}`),rig.point(`lowerleg01_${side}`),rig.point(`foot_${side}`));const elbow=angleAt(rig.point(`upperarm01_${side}`),rig.point(`lowerarm01_${side}`),rig.point(`wrist_${side}`));expect(knee).toBeLessThanOrEqual(135.1);expect(elbow).toBeLessThanOrEqual(145.1);}cleanup();}
+  for(const f of MOTION_FILES)for(let i=0;i<=30;i++){const cleanup=setPose(f.id,i/31*durationOf(f.id));for(const [n,b]of rig.bones){if(n!=='root')expect(b.position.distanceTo(rig.restLocal.get(n)!)).toBeLessThan(1e-7);expect(b.scale.toArray()).toEqual([1,1,1]);expect(b.quaternion.length()).toBeCloseTo(1,4);}for(const side of ['L','R']){const knee=angleAt(rig.point(`upperleg01_${side}`),rig.point(`lowerleg01_${side}`),rig.point(`foot_${side}`));const elbow=angleAt(rig.point(`upperarm01_${side}`),rig.point(`lowerarm01_${side}`),rig.point(`wrist_${side}`));expect(knee).toBeLessThanOrEqual(135.1);expect(elbow).toBeLessThanOrEqual(145.1);}cleanup();}
  });
  it('keeps hip, shoulder, ankle and wrist within engineering ranges at 80 times per motion',()=>{
-  for(const [id,clip]of clips)for(let i=0;i<80;i++){const cleanup=setPose(id,i/80*clip.duration);
+  for(const f of MOTION_FILES)for(let i=0;i<80;i++){const cleanup=setPose(f.id,i/80*durationOf(f.id));
    for(const side of ['L','R']){
     const hip=rig.point(`lowerleg01_${side}`).sub(rig.point(`upperleg01_${side}`)).applyQuaternion(rig.bone('root').getWorldQuaternion(new Quaternion()).invert());
     const h=Math.atan2(hip.z,-hip.y)*180/Math.PI;expect(h).toBeGreaterThanOrEqual(-20.1);expect(h).toBeLessThanOrEqual(120.1);
@@ -150,13 +179,13 @@ describe('real authored asset and animation data',()=>{
  });
  it('keeps ordinary walking feet in separate tracks and closes the pose seam',()=>{
   let minWidth=Infinity,maxWidth=-Infinity,minSway=Infinity,maxSway=-Infinity;
-  for(let i=0;i<100;i++){const cleanup=setPose('walk',i/100*clips.get('walk')!.duration);const width=rig.point('foot_L').x-rig.point('foot_R').x;minWidth=Math.min(minWidth,width);maxWidth=Math.max(maxWidth,width);const x=rig.point('root').x;minSway=Math.min(minSway,x);maxSway=Math.max(maxSway,x);cleanup();}
+  for(let i=0;i<100;i++){const cleanup=setPose('walk',i/100*walkClip.duration);const width=rig.point('foot_L').x-rig.point('foot_R').x;minWidth=Math.min(minWidth,width);maxWidth=Math.max(maxWidth,width);const x=rig.point('root').x;minSway=Math.min(minSway,x);maxSway=Math.max(maxSway,x);cleanup();}
   expect(minWidth).toBeGreaterThan(.06);expect(maxWidth).toBeLessThan(.18);expect(maxSway-minSway).toBeLessThan(.065);
   const first=setPose('walk',0),pose=new Map([...rig.bones].map(([n,b])=>[n,b.quaternion.clone()]));first();
-  const last=setPose('walk',clips.get('walk')!.duration-1e-6);for(const [n,b]of rig.bones)expect(b.quaternion.angleTo(pose.get(n)!)).toBeLessThan(.01);last();
+  const last=setPose('walk',walkClip.duration-1e-6);for(const [n,b]of rig.bones)expect(b.quaternion.angleTo(pose.get(n)!)).toBeLessThan(.01);last();
  });
  it('keeps both walking elbow creases facing the anatomical flexion plane',()=>{
-  for(let i=0;i<100;i++){const cleanup=setPose('walk',i/100*clips.get('walk')!.duration);
+  for(let i=0;i<100;i++){const cleanup=setPose('walk',i/100*walkClip.duration);
    for(const side of ['L','R']){
     const a=rig.rest.get(`lowerarm01_${side}`)!.clone().sub(rig.rest.get(`upperarm01_${side}`)!),b=rig.rest.get(`wrist_${side}`)!.clone().sub(rig.rest.get(`lowerarm01_${side}`)!);
     const upper=rig.point(`lowerarm01_${side}`).sub(rig.point(`upperarm01_${side}`)),lower=rig.point(`wrist_${side}`).sub(rig.point(`lowerarm01_${side}`));
@@ -170,7 +199,7 @@ describe('real authored asset and animation data',()=>{
   }
  });
  it('keeps both squat ankles planted within 0.1mm at 81 samples',()=>{
-  for(let i=0;i<=80;i++){const cleanup=setPose('squat',i/81*clips.get('squat')!.duration);for(const side of ['L','R']){const expected=new Vector3(side==='L'?.135:-.135,rig.rest.get(`foot_${side}`)!.y,.018);expect(rig.point(`foot_${side}`).distanceTo(expected)).toBeLessThan(.0001);}cleanup();}
+  for(let i=0;i<=80;i++){const cleanup=setPose('squat',i/81*durationOf('squat'));for(const side of ['L','R']){const expected=new Vector3(side==='L'?.135:-.135,rig.rest.get(`foot_${side}`)!.y,.018);expect(rig.point(`foot_${side}`).distanceTo(expected)).toBeLessThan(.0001);}cleanup();}
  });
  it('locks measured walking support intervals in world space within 0.2mm',()=>{
   const meta=JSON.parse(fs.readFileSync('public/models/walk-meta.json','utf8'));
@@ -179,7 +208,7 @@ describe('real authored asset and animation data',()=>{
   }
  });
  it('keeps palm-to-handle transform fixed throughout the forehand',()=>{
-  for(let i=0;i<=100;i++){const cleanup=setPose('forehand',i/101*clips.get('forehand')!.duration);const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone());expect(racket.getWorldPosition(new Vector3()).distanceTo(expected)).toBeLessThan(1e-10);cleanup();}
+  for(let i=0;i<=100;i++){const cleanup=setPose('forehand',i/101*durationOf('forehand'));const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone());expect(racket.getWorldPosition(new Vector3()).distanceTo(expected)).toBeLessThan(1e-10);cleanup();}
  });
  it('wraps every finger around the grip cylinder with contact and bounded distal flexion',()=>{
   const cleanup=setPose('ready',0);const {center,axis,forward,normal}=gripFrame(rig);const wrist=rig.bone('wrist_R');

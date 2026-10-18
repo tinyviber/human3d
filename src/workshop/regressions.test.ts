@@ -6,10 +6,13 @@ import {HumanRig} from '../core/rig';
 import {attachRacket} from '../core/racket';
 import {blankDocument,contactStartKey,flattenPose,frameAt,isReleaseKey,samplePose,validateDocShape,type WorkshopDoc,type WorkshopKey} from './document';
 import {ankleYForLift,footGeometry,footLift,type Side} from './foot';
-import {analyzePose,solvePose} from './solver';
+import {analyzePose,solveEffectiveFrame} from './solver';
 
 /** Regression tests for issue #2 P1-1..P1-5. Every case runs through the same
- * path the engine and the service use: frameAt → solvePose → rig measurements. */
+ * path the engine and the service use: frameAt → solveEffectiveFrame → rig
+ * measurements. solveEffectiveFrame forwards every frame-carried solve state
+ * (support fades, grip ramp, clavicle assist), so the tests stay valid as
+ * EffectiveFrame gains fields. */
 let rig:HumanRig;
 beforeAll(async()=>{
  const bytes=fs.readFileSync('public/models/human.glb');
@@ -23,7 +26,7 @@ const origin=()=>rig.rest.get('root')!;
 function solveAt(doc:WorkshopDoc,t:number,mode?:'stepped'){
   const d=mode==='stepped'?{...doc,inbetweens:false}:doc;
   const f=frameAt(d as WorkshopDoc,t,origin());
-  const r=solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+  const r=solveEffectiveFrame(rig,f);
   return {f,...r};
 }
 const footPoint=(side:Side)=>rig.point(`foot_${side}`).clone();
@@ -149,6 +152,40 @@ describe('review P2-1 only planted and release keys defer to the contact owner',
  });
 });
 
+describe('tail-interval release extrapolation (尾部区间 release 外推)',()=>{
+ it('holds the last key foot target through the tail instead of diverging',()=>{
+  // Regression: non-loop doc whose second-to-last key releases the foot.
+  // Samples in (lastKey.time, duration] still govern on the swing interval,
+  // and the two-piece Hermite ran with uu>1 — cubic extrapolation sent the
+  // foot target metres away. The fix clamps evaluation to [t0, t0+dt] so
+  // the tail holds the next key's stored target.
+  const g=footGeometry(rig.rest,'L');
+  const d=docWith([0,.6,1.2],(i,k)=>{
+   k.constraints={plantL:i===0,plantR:true,grip:false,contact:false};
+   if(i===1)k.pose.footL.target={x:.14,y:.22,z:.3}; // release key: stored mid-swing waypoint
+   if(i===2)k.pose.footL.target={x:.16,y:ankleYForLift(g,0,7,0),z:.25}; // unplanted landing key
+  },1.8);
+  expect(isReleaseKey(d,1,'L')).toBe(true);
+  const stored=d.keys[2].pose.footL.target;
+  for(let i=0;i<=12;i++){
+   const t=.6+i*(d.duration-.6)/12;
+   const {f}=solveAt(d,t);
+   const tgt=f.pose.footL.target;
+   expect(Number.isFinite(tgt.x)).toBe(true);
+   expect(Number.isFinite(tgt.y)).toBe(true);
+   expect(Number.isFinite(tgt.z)).toBe(true);
+   const lowest=Math.min(...g.names.map(n=>rig.point(n).y));
+   expect(lowest-g.groundY).toBeGreaterThanOrEqual(-.002);
+  }
+  // Sampler semantics: the tail holds the governing interval's end value,
+  // which is the last key's stored target (its channels are not overridden).
+  const tail=frameAt(d,d.duration,origin()).pose.footL.target;
+  expect(tail.x).toBeCloseTo(stored.x,6);
+  expect(tail.y).toBeCloseTo(stored.y,6);
+  expect(tail.z).toBeCloseTo(stored.z,6);
+ });
+});
+
 describe('loop seam, grip ramp, and random documents',()=>{
  it('joins the last and first frame of a loop without a visible velocity break',()=>{
   const d=docWith([0,.6,1.2],(i,k)=>{k.constraints={plantL:true,plantR:true,grip:false,contact:false};k.pose.lean=i*6;},1.5);
@@ -183,7 +220,7 @@ describe('loop seam, grip ramp, and random documents',()=>{
    expect(validateDocShape(d)).toEqual([]);
    for(let s=0;s<=10;s++){
     const t=s/10*duration;const f=frameAt(d,t,origin());
-    const out=solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount});
+    const out=solveEffectiveFrame(rig,f);
     expect(Number.isFinite(out.pelvisShift)).toBe(true);
     const a=analyzePose(rig,f.pose,f.constraints);
     for(const it of a.items)expect(Number.isFinite(it.value??0)).toBe(true);

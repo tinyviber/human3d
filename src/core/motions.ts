@@ -1,6 +1,5 @@
 import type {MotionSpec} from './types';
-import {AUTHORED_MOTIONS} from './authored-motions';
-export {AUTHORED_MOTIONS,AUTHORED_KEYFRAMED_IDS} from './authored-motions';
+import {MOTION_FILES} from './motion-files';
 export interface MuscleActionFile{
  id:string;title:string;schemaVersion:number;
  model:{carriedObject?:{massKg:number;radiusM:number;body:string}|null};
@@ -8,6 +7,16 @@ export interface MuscleActionFile{
  reference:{kind:'task-keyframes'|'captured-points';armControl?:'endpoint-keyframes'|'joint-keyframes';keyframes?:{timeSeconds:number;phase:string;elbow?:number[];hand?:number[];leftElbow?:number[];leftHand?:number[];rightShoulderRotvecRad?:number[];rightElbowFlexionRad?:number;jointTargetsDeg?:Record<string,number>}[];source:{frameRangeSeconds?:[number,number]}};
  display:{english:string;description:string;method:string;focus:string[];oneShot?:boolean;durationSeconds?:number;phases?:{time:number;label:string}[];objectDescription?:string;handPoseSource?:'muscle-state'|'task-keyframe-retarget';leftGuardHandPoseDeg?:{thumb:{cmcFlexion:number;cmcOpposition:number;mcp:number;ip:number};fingers:Record<'2'|'3'|'4'|'5',{mcp:number;pip:number;dip:number}>}};
 }
+/** Bundled envelopes → lab specs: the trajectory source stays on `source`
+ * (a clip asset reference or the inline document). Envelope notes are service
+ * metadata; the spec keeps display fields only. */
+const fileMotions:MotionSpec[]=MOTION_FILES.map(f=>({
+ id:f.id,name:f.name,english:f.english,duration:f.duration,description:f.description,method:f.method,
+ focus:f.focus,phases:f.phases,oneShot:f.oneShot,capabilities:f.capabilities,
+ source:f.kind==='clip-motion'
+  ?{kind:'clip' as const,clip:f.clip!.url,meta:f.clip!.meta}
+  :{kind:'document' as const,document:f.document!},
+}));
 const actionFiles=Object.values(import.meta.glob<MuscleActionFile>('../../assets/actions/*.json',{eager:true,import:'default'}))
  .filter((action)=>action.schemaVersion===1&&typeof action.id==='string'&&!!action.display);
 const actionFilesById=new Map(actionFiles.map(action=>[action.id,action]));
@@ -28,9 +37,7 @@ const actionMotions:MotionSpec[]=actionFiles.map((action)=>{
   .map(p=>({...p,time:Math.min(p.time,duration)}));
  return {id:action.id,name:action.title,english:action.display.english,duration,
   description:action.display.description,method:action.display.method,focus:action.display.focus,phases,
-  physics:true,oneShot:action.display.oneShot,objectDescription:action.display.objectDescription};
+  source:{kind:'dynamics' as const},oneShot:action.display.oneShot,objectDescription:action.display.objectDescription};
 });
-export const MOTIONS:MotionSpec[]=[...AUTHORED_MOTIONS,...actionMotions];
-export const DYNAMICS_MOTION_IDS=new Set(actionMotions.map(m=>m.id));
-export const isDynamicsMotion=(id:string)=>DYNAMICS_MOTION_IDS.has(id);
+export const MOTIONS:MotionSpec[]=[...fileMotions,...actionMotions];
 export const motionById=(id:string)=>MOTIONS.find(m=>m.id===id)??MOTIONS[0];

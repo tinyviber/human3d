@@ -3,8 +3,9 @@ import {Activity,ArrowUpRight,Check,ChevronRight,Expand,Info,Layers,Pause,Play,R
 import {DynamicsPanel} from './DynamicsPanel';
 import {HumanEngine} from '../core/engine';
 import type {FrameState} from '../core/engine';
-import {MOTIONS,motionById} from '../core/motions';
-import type {DebugOptions,MotionId,RigInfo,ViewId} from '../core/types';
+import {MOTIONS} from '../core/motions';
+import {checkPosePackageShape} from '../core/motion-source';
+import type {DebugOptions,MotionId,MotionSpec,RigInfo,ViewId} from '../core/types';
 const format=(time:number)=>{const tenths=Math.round(time*10);return `${Math.floor(tenths/600).toString().padStart(2,'0')}:${Math.floor(tenths/10)%60<10?'0':''}${Math.floor(tenths/10)%60}.${tenths%10}`;};
 function Toggle({label,checked,onChange,detail,disabled}:{label:string;checked:boolean;onChange:(v:boolean)=>void;detail?:string;disabled?:boolean}){
  return <label className="toggle-row"><span>{label}{detail?<small>{detail}</small>:null}</span><button type="button" role="switch" aria-label={label} aria-checked={checked} disabled={disabled} className={`switch ${checked?'on':''}`} onClick={()=>onChange(!checked)}><span/></button></label>;
@@ -38,11 +39,21 @@ function InfoDialog({kind,onClose}:{kind:'guide'|'sources'|'kinetics';onClose:()
  </>}</dialog>;
 }
 export function App(){
- const mount=useRef<HTMLDivElement>(null),engine=useRef<HumanEngine|null>(null);
+ const mount=useRef<HTMLDivElement>(null),engine=useRef<HumanEngine|null>(null),fileRef=useRef<HTMLInputElement>(null);
  const [id,setId]=useState<MotionId>('idle'),[info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState(''),[view,setView]=useState<ViewId>('front');
  const [frame,setFrame]=useState<FrameState>({time:0,duration:4.8,phase:'呼气',playing:true,knee:0,elbow:0,gripError:0});
  const [debug,setDebug]=useState<DebugOptions>({surface:true,skeleton:false,axes:false,targets:false,trail:false,muscles:false}),[speed,setSpeed]=useState(1),[loop,setLoop]=useState(true),[dialog,setDialog]=useState<'guide'|'sources'|'kinetics'|null>(null);
- const spec=motionById(id),racket=id==='ready'||id==='forehand',physics=!!spec.physics;
+ const [extras,setExtras]=useState<MotionSpec[]>([]);
+ const allMotions=[...MOTIONS,...extras],spec=allMotions.find(m=>m.id===id)??MOTIONS[0],racket=!!spec.capabilities?.prop,physics=spec.source?.kind==='dynamics';
+ const openPackage=async(file:File)=>{
+  try{
+   const pkg:unknown=JSON.parse(await file.text());
+   const rig=engine.current?.rig,problems=checkPosePackageShape(pkg,rig?new Set(rig.bones.keys()):undefined);
+   if(problems.length){setError(`姿态包不可用：${problems[0]}${problems.length>1?`（共 ${problems.length} 处问题）`:''}`);return;}
+   const spec=engine.current?.openPosePackage(pkg);
+   if(spec){setExtras(x=>x.some(m=>m.id===spec.id)?x:[...x,spec]);setId(spec.id);setError('');}
+  }catch(err){setError(err instanceof Error?err.message:String(err));}
+ };
  useEffect(()=>{
   if(!mount.current)return;let e:HumanEngine;
   try{e=new HumanEngine(mount.current);engine.current=e;e.onFrame=setFrame;e.onView=setView;e.onReady=setInfo;e.onError=err=>setError(err.message);void e.load();}
@@ -50,7 +61,7 @@ export function App(){
   if(import.meta.env.DEV)(window as unknown as {__LAB__:HumanEngine}).__LAB__=e;
   return()=>{engine.current=null;e.dispose();};
  },[]);
- const choose=(next:MotionId)=>{setId(next);const nextSpec=motionById(next);if(nextSpec.oneShot){setLoop(false);if(engine.current)engine.current.loop=false;}engine.current?.setMotion(next);if(view==='hand'){setView('threeQuarter');engine.current?.setView('threeQuarter');}};
+ const choose=(next:MotionId)=>{setId(next);const nextSpec=allMotions.find(m=>m.id===next)??MOTIONS[0];if(nextSpec.oneShot){setLoop(false);if(engine.current)engine.current.loop=false;}engine.current?.setMotion(next);if(view==='hand'){setView('threeQuarter');engine.current?.setView('threeQuarter');}};
  const toggle=(key:keyof DebugOptions,value:boolean)=>{const patch={[key]:value};setDebug(d=>({...d,...patch}));engine.current?.setDebug(patch);};
  const camera=(v:ViewId)=>{setView(v);engine.current?.setView(v);};
  useEffect(()=>{
@@ -58,19 +69,20 @@ export function App(){
   window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
  },[dialog]);
  return <div className="app-shell">
-  <header className="header"><div className="brand"><Activity size={27} strokeWidth={2}/><span>KINESIS</span><i/><h1>人体运动实验室</h1></div><nav><button onClick={()=>location.assign('/workshop.html')}>动作工作台</button><button onClick={()=>setDialog('guide')}>使用指南</button><button onClick={()=>setDialog('sources')}>资料与许可<ArrowUpRight size={14}/></button></nav></header>
+  <header className="header"><div className="brand"><Activity size={27} strokeWidth={2}/><span>KINESIS</span><i/><h1>人体运动实验室</h1></div><nav><button onClick={()=>fileRef.current?.click()}>打开姿态包</button><input ref={fileRef} type="file" accept=".json,application/json" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void openPackage(f);}}/><button onClick={()=>location.assign('/workshop.html')}>动作工作台</button><button onClick={()=>setDialog('guide')}>使用指南</button><button onClick={()=>setDialog('sources')}>资料与许可<ArrowUpRight size={14}/></button></nav></header>
   <main className="workspace">
-   <aside className="motion-panel" aria-label="动作库"><div className="panel-heading"><h2>动作库</h2><span>{String(MOTIONS.length).padStart(2,'0')}</span></div><p className="panel-intro">探索人体，理解运动。</p>
-    <div className="motion-list">{MOTIONS.map((m,i)=><button key={m.id} className={`motion-row ${id===m.id?'selected':''}`} aria-pressed={id===m.id} onClick={()=>choose(m.id)} disabled={!info}><span className="motion-number">{String(i+1).padStart(2,'0')}</span><span className="motion-label">{m.name}<small>{m.english}</small></span>{id===m.id?<ChevronRight size={16}/>:null}</button>)}</div>
+   <aside className="motion-panel" aria-label="动作库"><div className="panel-heading"><h2>动作库</h2><span>{String(allMotions.length).padStart(2,'0')}</span></div><p className="panel-intro">探索人体，理解运动。</p>
+    <div className="motion-list">{allMotions.map((m,i)=><button key={m.id} className={`motion-row ${id===m.id?'selected':''}`} aria-pressed={id===m.id} onClick={()=>choose(m.id)} disabled={!info}><span className="motion-number">{String(i+1).padStart(2,'0')}</span><span className="motion-label">{m.name}<small>{m.english}</small></span>{id===m.id?<ChevronRight size={16}/>:null}</button>)}</div>
     <div className="motion-notes"><div className="mini-heading">观察重点</div><p>{spec.description}</p><div className="focus-list">{spec.focus.map(f=><span key={f}>{f}</span>)}</div></div>
     <div className="asset-note"><Layers size={17}/><div>{physics?'肌骨正向仿真 · 连续蒙皮表面':'连续蒙皮人体'}<small>{physics?'44 个关节自由度 + 6 个根速度自由度 · 416 肌肉执行器':info?`${info.bones.length} 根骨骼 · ${Math.round(info.vertices/1000*10)/10}k 顶点`:'正在读取模型…'}</small></div></div>
    </aside>
    <section className="viewport" aria-label="人体三维视图"><div ref={mount} className="canvas-host"/>
     <div className="viewport-heading"><h2>{spec.name}</h2><p>{spec.method}</p></div>
     <div className="camera-toolbar" aria-label="快速视角">{([['front','正面'],['side','侧面'],['back','背面'],['threeQuarter','45°']] as [ViewId,string][]).map(([v,label])=><button key={v} aria-pressed={view===v} onClick={()=>camera(v)} disabled={!info}>{label}</button>)}</div>
-    {racket?<button className={`hand-view ${view==='hand'?'active':''}`} onClick={()=>camera(view==='hand'?'threeQuarter':'hand')}><Scan size={15}/>手部特写</button>:null}
+    {spec.capabilities?.prop?.handView?<button className={`hand-view ${view==='hand'?'active':''}`} onClick={()=>camera(view==='hand'?'threeQuarter':'hand')}><Scan size={15}/>手部特写</button>:null}
     {physics&&frame.dynamics?.loading?<div className="physics-loading"><div className="loading-orbit"/><strong>读取正向仿真记录</strong><span>加载解剖骨骼、肌腱路径与力学数据</span></div>:null}
     {physics&&frame.dynamics?.error?<div className="physics-loading" role="alert"><strong>{frame.dynamics.error}</strong><button onClick={()=>choose(id)}>重新读取</button></div>:null}
+    {info&&error?<div className="physics-loading" role="alert"><strong>{error}</strong><button onClick={()=>setError('')}>关闭</button></div>:null}
     {!info?<div className="loading-state">{error?<><Info size={26}/><strong>无法加载人体</strong><p>{error}</p><button onClick={()=>location.reload()}>重新加载</button></>:<><div className="loading-orbit"/><strong>正在准备人体与动作</strong><p>加载网格、骨架与蒙皮权重</p></>}</div>:null}
     <div className="canvas-hint"><span className="status-dot"/>{physics?'正向仿真记录回放':info?'模型已就绪':'加载中'}<span className="hint-divider"/>拖动旋转 · 滚轮缩放</div>
     <button className="fit-view" aria-label="完整人体适配视角" title="完整人体适配视角" onClick={()=>camera('threeQuarter')} disabled={!info}><Expand size={18}/></button>
@@ -78,7 +90,7 @@ export function App(){
    <aside className="inspector" aria-label="观察设置"><section><div className="panel-heading"><h2>观察</h2><SlidersHorizontal size={17}/></div><div className="toggle-list">
     <Toggle label="人体表面" checked={debug.surface} onChange={v=>toggle('surface',v)}/><Toggle label={physics?"解剖骨骼与关节":"骨骼与关节"} checked={debug.skeleton} onChange={v=>toggle('skeleton',v)}/><Toggle label="关节坐标轴" checked={debug.axes} onChange={v=>toggle('axes',v)}/><Toggle label={physics?"固定支撑反力":"IK 端点"} checked={debug.targets} onChange={v=>toggle('targets',v)}/>
     {physics?<Toggle label="肌腱作用路径" checked={debug.muscles} onChange={v=>toggle('muscles',v)}/>:null}
-    {racket?<Toggle label="球拍运动轨迹" checked={debug.trail} onChange={v=>toggle('trail',v)}/>:null}
+    {spec.capabilities?.prop?.trail?<Toggle label="球拍运动轨迹" checked={debug.trail} onChange={v=>toggle('trail',v)}/>:null}
    </div></section>
    {physics&&frame.dynamics?<DynamicsPanel objectDescription={spec.objectDescription} data={frame.dynamics} onCase={v=>engine.current?.setPhysicsCase(v)} onResearch={()=>setDialog('kinetics')}/>:null}
    <section className="settings-section"><h2>运动设置</h2><label className="speed-label" htmlFor="speed">播放速度<output>{speed.toFixed(2).replace(/0$/,'')}×</output></label><input id="speed" aria-label="播放速度" type="range" min=".25" max="2" step=".25" value={speed} onChange={e=>{const v=Number(e.target.value);setSpeed(v);if(engine.current)engine.current.speed=v;}}/><div className="range-labels"><span>0.25×</span><span>1×</span><span>2×</span></div><Toggle label="循环播放" detail={spec.oneShot?'动作末端停住，可重播':''} disabled={!!spec.oneShot} checked={spec.oneShot?false:loop} onChange={v=>{setLoop(v);if(engine.current)engine.current.loop=v;}}/></section>

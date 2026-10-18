@@ -173,3 +173,37 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 - `tsc -b` / `vitest run`（115 项）/ `vite build` 通过；浏览器 E2E 见 QA 记录。
 - squash 合并 `main`，远程分支 `fix/issue-2-review-roadmap` 删除。
 - issue #2 阶段 3/4 未做，保持开放不关闭。
+
+---
+
+# PR #4 — WP-A 架构收敛：motion-file 信封 + MotionSource 统一播放
+
+> 分支 `feat/arch-convergence`，覆盖 issue #2 阶段 2 余项（评审建议的 PR #4）；阶段 3（GLB/工作台导出）与阶段 4 未做，issue 保持开放。
+> 历程：`a3e7fa4`（迁移+clavicleLift）→ `74ee39f`（服务统一）→ `b470bc5`（MotionSource）→ `68b9ebe`（属性测试）→ `b6ecf38`（release 尾段修复）→ `954eefc`（review 修复轮）。drones 流程：发现（brainstorm+design）→ 两轮 eval 门 → 三实施 + 一测试 → 两轮 review 门。
+
+## 设计裁决（eval 门）
+
+- **迁移等价性**：`authoring.ts` 的 `world()` 在骨盆背屈修正后求值，手目标含 `−pelvisShift`；`solvePose` 不修正手目标。裁决采纳**转换时逐键烘焙**（迁移器先跑旧 `poseAt` 再解算手目标写进键值），否决 solver 修改义方案——后者会打破「支撑脚存什么解什么」的所见即所得回归（workshop.test.ts:175）与 learning [6]/[16]。
+- **clavicleLift**：reach 的抬肩是数据驱动 hint（`clavicleLift?: boolean`，仅 reach 置 true），solver 在腿部 IK 后、手臂 IK 前施加 `−8°·lift/−5°·lift`，`lift=max(0,(target.y−root.y−1.1)/.62)`；工作台面板有复选框写路径（learning [5] UI 可写性）。
+- **指纹语义**：`normalizedRequest` 对 bundled 文档参数传 `undefined`——请求指纹不含内置文档内容（与 main 逐位一致），artifact `id`/`revision` 随定义哈希变化是正确语义。
+- **MotionSource**：clip/document/dynamics/pose-package 四实现共享单一 playhead；`PoseFade` 仅 skin→skin（动力学保持硬切）；异步竞态三层守卫（motionId 守卫 + loadRevision + `_source!==source`）。
+
+## 验证结果
+
+- 迁移残差（旧 `poseAt` 黄金 fixture 对照）：idle 0.000°/0.00mm、reach 0.711°/0.50mm、squat 0.405°/1.80mm、ready 0.001°/0.00mm、forehand 4.028°/2.44mm（孤立腕部峰，均 <5° 容差）。
+- `tsc -b` / `vitest run`（138 项）/ `spec:check`（12）/ `build` / `QA_BROWSER_CHANNEL=chrome npm run qa` 全绿；`dynamics-browser-qa.mjs` 29/29。
+- 属性扫描（3 seeds × 48 文档，真实 `solveWorkshop` 路径）：有限值/单位四元数/段长刚性/帧间位移界/接触保持/脚尖离地/支撑权重/确定性/循环缝/阶梯模式；随机文档 POST 真实服务区分 200 与语义 422。
+
+## 过程中抓到并修复的缺陷
+
+- **`blendGrip(0)` 拇指残留**（`racket.ts`）：amount=0 时拇指未归位，`identity()` 即 rest。
+- **release 尾段三次外推**（`document.ts` `interpolate()`）：非 loop 文档最后区间 release 分支用未钳制的 `time` 求值，`t=1.8` 处脚目标发散到 `y=−0.82m`、脚尖 −9cm 入地。修复为 `tc=clamp(time,t0,t0+dt)`，尾段钳到下一键存储值。回归断言尾帧逐通道等于存储值。
+- **`browser-qa.mjs` reload 竞态**（main 既有）：自动播放导致腕位断言读的是插值态；断言前 `setPlaying(false);seek(0)`。
+- **姿态包同 action.id 顶替**：`openPosePackage` 键改为 `pkg:${p.id}`（artifact id 去重），无 id 包 `unkeyed-N` 兜底。
+- **信封 kind 互斥**：TS 校验器 + Ajv schema 双层强制 `document xor clip`（Ajv `strictRequired` 禁 `not`，用 `then.properties.clip:false` 实现）。
+- **键时间浮点尾数**：迁移器 `Math.round(t*1e6)/1e6` 归一化（键时间会进 `definitionSHA256`），`squat.json` 末键 5.599999997764826 → 5.6。
+
+## review 门结论
+
+- 正确性视角：PASS（迁移/golden/指纹/MotionSource 竞态/持久化逐项核对，仅 main 既有竞态与 nit）。
+- 测试/契约/文档视角：REWORK → PASS（文档同步欠债一批 + 属性测试位移界补出处注释 + 编号统一）。

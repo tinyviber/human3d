@@ -1,5 +1,6 @@
 import {Quaternion,Vector3} from 'three';
-import {POSE_PACKAGE_SCHEMA_VERSION,type PosePackage} from './pose-package';
+import {POSE_PACKAGE_SCHEMA_VERSION} from '../core/package-const';
+import type {PosePackage} from './pose-package';
 import type {RigManifest} from './rig-manifest';
 
 /** Semantic limits enforced by the validator. A package beyond one of them is
@@ -7,7 +8,7 @@ import type {RigManifest} from './rig-manifest';
  * were calibrated against are recorded in docs/validation.md. */
 export const VALIDATION_LIMITS={
  /** Worst local rotation rate of any bone between consecutive samples (rad/s).
-  * Shipped peak 7.5 (forehand); default workshop flick 29; the pre-fix forehand
+  * Shipped peak 6.8 (forehand); default workshop flick 29; the pre-fix forehand
   * popped at 60–72. */
  angularSpeedRadPerS:40,
  /** Worst root translation rate between consecutive samples (m/s). Shipped peak 0.4. */
@@ -31,7 +32,9 @@ export interface Measurements{
  rootSpeed:Peak;
  knee:Peak;
  elbow:Peak;
- /** null when the package has no support intervals (keyframed motions). */
+ /** null when the package has no support intervals — e.g. a document that
+  * never plants a foot. The bundled motions are planted throughout, so they
+  * always produce intervals. */
  slip:Peak|null;
  /** Largest rate of change of root velocity (m/s²). Catches a pelvis step that a
   * speed limit alone can miss at low frame rates. */

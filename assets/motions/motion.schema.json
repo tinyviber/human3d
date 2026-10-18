@@ -1,0 +1,207 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://kinesis.local/motion.schema.json",
+  "title": "Motion file envelope",
+  "type": "object",
+  "required": [
+    "schemaVersion",
+    "kind",
+    "id",
+    "order",
+    "name",
+    "english",
+    "duration",
+    "description",
+    "method",
+    "focus",
+    "phases"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "schemaVersion": {
+      "const": 1
+    },
+    "kind": {
+      "enum": [
+        "workshop-motion",
+        "clip-motion"
+      ]
+    },
+    "id": {
+      "type": "string",
+      "minLength": 1
+    },
+    "order": {
+      "type": "number"
+    },
+    "name": {
+      "type": "string"
+    },
+    "english": {
+      "type": "string"
+    },
+    "duration": {
+      "type": "number",
+      "exclusiveMinimum": 0
+    },
+    "description": {
+      "type": "string"
+    },
+    "method": {
+      "type": "string"
+    },
+    "focus": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "phases": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "required": [
+          "time",
+          "label"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "time": {
+            "type": "number"
+          },
+          "label": {
+            "type": "string"
+          }
+        }
+      }
+    },
+    "notes": {
+      "type": "array",
+      "items": {
+        "type": "string"
+      }
+    },
+    "license": {
+      "type": "string"
+    },
+    "oneShot": {
+      "type": "boolean"
+    },
+    "capabilities": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "prop": {
+          "type": "object",
+          "required": [
+            "kind",
+            "trail",
+            "handView"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "kind": {
+              "const": "racket"
+            },
+            "trail": {
+              "type": "boolean"
+            },
+            "handView": {
+              "type": "boolean"
+            }
+          }
+        },
+        "camera": {
+          "type": "object",
+          "required": [
+            "targetHeight",
+            "distance"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "targetHeight": {
+              "type": "number"
+            },
+            "distance": {
+              "type": "number"
+            }
+          }
+        },
+        "locomotion": {
+          "enum": [
+            "in-place",
+            "follow"
+          ]
+        }
+      }
+    },
+    "document": {
+      "type": "object"
+    },
+    "clip": {
+      "type": "object",
+      "required": [
+        "url"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "url": {
+          "type": "string"
+        },
+        "meta": {
+          "type": "string"
+        }
+      }
+    }
+  },
+  "allOf": [
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "workshop-motion"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "document"
+        ],
+        "properties": {
+          "document": {
+            "type": "object"
+          },
+          "clip": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "clip-motion"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "clip"
+        ],
+        "properties": {
+          "clip": {
+            "type": "object",
+            "required": [
+              "url"
+            ],
+            "properties": {
+              "url": {
+                "type": "string"
+              }
+            }
+          },
+          "document": false
+        }
+      }
+    }
+  ]
+}

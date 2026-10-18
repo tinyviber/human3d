@@ -115,6 +115,7 @@ try{
  const fist=await page.evaluate(()=>{
   const e=window.__LAB__,r=e.physics;
   const quaternionAngleDeg=q=>2*Math.acos(Math.min(1,Math.abs(q.w)))*180/Math.PI;
+  const distance=(point,a,b)=>{const axis=b.clone().sub(a),u=Math.max(0,Math.min(1,point.clone().sub(a).dot(axis)/axis.lengthSq()));return point.distanceTo(a.addScaledVector(axis,u));};
   const handBend=()=>e.rig.point('wrist_R').sub(e.rig.point('lowerarm01_R')).normalize().angleTo(e.rig.point('finger3-1_R').sub(e.rig.point('wrist_R')).normalize())*180/Math.PI;
   const saved=[...e.rig.bones].map(([name,bone])=>[name,bone.position.clone(),bone.quaternion.clone(),bone.scale.clone()]);
   e.rig.reset();const neutralHandBend=handBend();
@@ -126,7 +127,6 @@ try{
    const simShoulder=r.point('humerus_r'),simElbow=r.point('ulna_r'),simHand=r.point('lunate_r');
    const directionErrorDeg=skinWrist.clone().sub(skinShoulder).normalize().angleTo(simHand.clone().sub(simShoulder).normalize())*180/Math.PI;
    const tip=name=>{const entry=e.rig.info.bones.find(b=>b.name===name),bone=e.rig.bone(name);return wrist.worldToLocal(new (e.rig.point('wrist_R').constructor)().fromArray(entry.tail).sub(e.rig.rest.get(name)).applyMatrix4(bone.matrixWorld));};
-   const distance=(point,a,b)=>{const axis=b.clone().sub(a),u=Math.max(0,Math.min(1,point.clone().sub(a).dot(axis)/axis.lengthSq()));return point.distanceTo(a.addScaledVector(axis,u));};
    const thumbTip=tip('finger1-3_R'),indexProxBase=wrist.worldToLocal(e.rig.point('finger2-1_R'));let thumbIndexContactM=Infinity;
    for(let joint=1;joint<=3;joint++){const name=`finger2-${joint}_R`;thumbIndexContactM=Math.min(thumbIndexContactM,distance(thumbTip,wrist.worldToLocal(e.rig.point(name)),tip(name)));}
    return {time,hand:r.point('lunate_r').toArray(),

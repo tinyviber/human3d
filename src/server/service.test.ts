@@ -6,9 +6,10 @@ import {spawn} from 'node:child_process';
 import {createService,handleRequest,actionCatalog,artifactId,normalizedRequest,SERVICE_VERSION,LIMITS_SVC,type ServiceContext} from './service';
 import {validatePosePackage} from './validate';
 import {canonical,sha256} from './rig-manifest';
-import {keyframedDefinition} from '../core/authoring';
+import {motionFileById} from '../core/motion-files';
+import {motionDefinitionPayload} from '../core/motion-file';
 import {blankDocument,retimeKeys} from '../workshop/document';
-import type {PosePackage} from './pose-package';
+import {actionDefinitionHash,type PosePackage} from './pose-package';
 let ctx:ServiceContext;
 beforeAll(async()=>{ctx=await createService('public');},30000);
 const post=(body:unknown,headers:Record<string,string>={})=>handleRequest(ctx,'POST','/v1/motions',body,headers);
@@ -54,7 +55,7 @@ describe('rig manifest',()=>{
   expect((r.body as {error:{missing:string[]}}).error.missing).toContain('retarget adapter');
  });
 });
-describe('POST /v1/motions — keyframed actions',()=>{
+describe('POST /v1/motions — bundled actions',()=>{
  it('solves squat into a package that passes independent validation',()=>{
   const r=post({action:{id:'squat',parameters:{}}});
   expect(r.status).toBe(200);
@@ -168,14 +169,17 @@ describe('request semantics',()=>{
   ctx.idempotent.get('stale-key')!.at=Date.now()-(LIMITS_SVC.idempotencyTtlSeconds+1)*1000;
   const fresh=post({action:{id:'squat'},sample:{fps:1}},{'idempotency-key':'stale-key'});
   expect(fresh.status).toBe(200);
- });
+ // Filling the cache runs ~300 real document solves — slower than the
+ // pre-convergence baked-definition path, so this test gets the same room as
+ // the HTTP smoke test.
+ },30000);
 });
 describe('preconditions, parameters and idempotency keys',()=>{
  it('enforces a pinned revision or definition hash with 409',()=>{
   const cat=handleRequest(ctx,'GET','/v1/actions/idle').body as {revision:string;definitionSHA256:string};
-  expect(cat.revision).toMatch(/^keyframed-[0-9a-f]{12}$/);
+  expect(cat.revision).toMatch(/^workshop-doc-[0-9a-f]{12}$/);
   expect(post({action:{id:'idle',revision:cat.revision,definitionSHA256:cat.definitionSHA256}}).status).toBe(200);
-  const stale=post({action:{id:'idle',revision:'keyframed-000000000000'}});
+  const stale=post({action:{id:'idle',revision:'workshop-doc-000000000000'}});
   expect(stale.status).toBe(409);
   expect((stale.body as {error:{code:string}}).error.code).toBe('precondition_failed');
   expect(post({action:{id:'idle',definitionSHA256:'0'.repeat(64)}}).status).toBe(409);
@@ -183,7 +187,7 @@ describe('preconditions, parameters and idempotency keys',()=>{
   const doc=blankDocument(ctx.rig.rest,'pin','pinned');
   expect(post({action:{id:'workshop-doc',revision:'workshop-doc/v1',parameters:{document:doc}}}).status).toBe(409);
  });
- it('rejects parameters a keyframed action does not declare',()=>{
+ it('rejects parameters a bundled action does not declare',()=>{
   const r=post({action:{id:'idle',parameters:{speed:2}}});
   expect(r.status).toBe(400);
   expect((r.body as {error:{code:string}}).error.code).toBe('invalid_request');
@@ -195,24 +199,24 @@ describe('preconditions, parameters and idempotency keys',()=>{
  });
 });
 describe('artifact identity and definition hashing',()=>{
- it('ties definitionSHA256 to the real keyframe data, not just id+revision',()=>{
+ it('ties definitionSHA256 to the real envelope payload, not just id+revision',()=>{
   const h=(x:unknown)=>sha256(canonical(x));
-  const mutant=keyframedDefinition('forehand');
-  mutant.keys[2].t+=.01;
-  expect(h(mutant)).not.toBe(h(keyframedDefinition('forehand')));
-  const mutant2=keyframedDefinition('forehand');
-  (mutant2.keys[3].controls as {y:number}).y+=.01;
-  expect(h(mutant2)).not.toBe(h(keyframedDefinition('forehand')));
-  // The exported definition is a deep copy: mutating it cannot corrupt the
-  // module's authored keyframe data.
-  (mutant2.keys[3].controls as {right:number[]}).right[1]=99;
-  (mutant2.keys[0].controls as {stance:number}).stance=9;
-  const fresh=keyframedDefinition('forehand');
-  expect((fresh.keys[3].controls as {right:number[]}).right[1]).not.toBe(99);
-  expect((fresh.keys[0].controls as {stance:number}).stance).not.toBe(9);
-  expect(h(fresh)).toBe(h(keyframedDefinition('forehand')));
+  const file=motionFileById('forehand')!;
+  const payload=()=>motionDefinitionPayload(file);
+  // Every definition-bearing field moves the hash: the document's keys…
+  const mutDoc=payload();const d=JSON.parse(JSON.stringify(file.document));
+  d.keys[2].time+=.01;mutDoc.document=d;
+  expect(h(mutDoc)).not.toBe(h(payload()));
+  // …the phase annotations…
+  expect(h({...payload(),phases:[...file.phases,{time:1,label:'x'}]})).not.toBe(h(payload()));
+  // …and the provenance notes.
+  expect(h({...payload(),notes:['changed']})).not.toBe(h(payload()));
+  // Display-only envelope fields never enter the definition hash — the
+  // payload shares the envelope's document by reference, so the served hash
+  // is exactly the hash of what was normalized off disk.
+  expect(h(motionDefinitionPayload({...file,description:'different'}))).toBe(h(payload()));
   const pkg=post({action:{id:'forehand'}}).body as PosePackage;
-  expect(pkg.action.definitionSHA256).toMatch(/^[0-9a-f]{64}$/);
+  expect(pkg.action.definitionSHA256).toBe(actionDefinitionHash(payload()));
   expect(pkg.action.definitionSHA256).not.toBe((post({action:{id:'squat'}}).body as PosePackage).action.definitionSHA256);
  });
  it('derives the artifact id from request + definition + rig + solver, stable per resolved content',()=>{
@@ -239,11 +243,11 @@ describe('artifact identity and definition hashing',()=>{
   const req={action:{id:'idle'},sample:{fps:5}};
   const served=post(req).body as PosePackage;
   const fp=sha256(canonical(normalizedRequest('idle',undefined,5))),def=served.action.definitionSHA256;
-  expect(artifactId(fp,def,ctx,'keyframe-hermite-ik')).toBe(served.id);
-  expect(artifactId(fp,def,ctx,'keyframe-hermite-ik-v2')).not.toBe(served.id);
-  expect(artifactId(fp,'0'.repeat(64),ctx,'keyframe-hermite-ik')).not.toBe(served.id);
+  expect(artifactId(fp,def,ctx,'workshop-hermite-fk-ik')).toBe(served.id);
+  expect(artifactId(fp,def,ctx,'workshop-hermite-fk-ik-v2')).not.toBe(served.id);
+  expect(artifactId(fp,'0'.repeat(64),ctx,'workshop-hermite-fk-ik')).not.toBe(served.id);
   const otherRig={...ctx,manifest:{...ctx.manifest,manifestSHA256:'f'.repeat(64)}};
-  expect(artifactId(fp,def,otherRig,'keyframe-hermite-ik')).not.toBe(served.id);
+  expect(artifactId(fp,def,otherRig,'workshop-hermite-fk-ik')).not.toBe(served.id);
  });
 });
 describe('HTTP transport smoke',()=>{
