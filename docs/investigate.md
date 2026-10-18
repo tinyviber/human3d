@@ -581,7 +581,7 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 
 ---
 
-# 消融（简化）：删除不必要实现与抽象
+# PR #8 — 消融（简化）：删除不必要实现与抽象
 
 > 前置：PR #4–#7 合并后的基线（`261a315`）。授权口径：全仓范围、可退役 v1 兼容面（不考虑历史包袱）、允许门禁容差内的浮点微差。六批一提交，逐批走「residue grep → 定向测试 → tsc → 全量 vitest → spec:check → build → diff audit」。
 
@@ -610,7 +610,7 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 
 ---
 
-# PR #8 — npm workspaces 三包拆分
+# PR #9 — npm workspaces 三包拆分
 
 > 完整设计记录见 [`ARCHITECTURE.md`](ARCHITECTURE.md)：结构、依赖方向、七条迁移裁决、被否备选、验证证据、phase 2/3 与维护规则。
 

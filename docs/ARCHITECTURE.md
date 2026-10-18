@@ -1,6 +1,6 @@
 # 架构：npm workspaces 三包
 
-状态：已实施（PR #8）。迁移是**结构性、行为不变**的——插值、IK、姿态协议与制品身份一律未动；验证证据见文末。
+状态：已实施（PR #9）。迁移是**结构性、行为不变**的——插值、IK、姿态协议与制品身份一律未动；验证证据见文末。
 
 ## 为什么拆
 
@@ -60,11 +60,23 @@ apps/server @human3d/server ─┘
 | 求解零漂移 | 240fps 质量探针全量重跑：6 个动作与提交基线逐值相同（仅补上报告早已存在但基线未重生成的 `armReachResidual.side` 字段） |
 | 结构自检 | core 不 import apps ✓；core 生产代码无 `node:`/DOM ✓；web 生产代码不 import server ✓；server 不 import web ✓；无 `@human3d/*/src/` 深路径导入 ✓ |
 
+## 自动化边界检查
+
+`tests/architecture.test.ts` 把上表的边界变成可执行断言，随 `npm test`（与 CI）运行——文档与一次性扫描守不住多 Agent 并行编辑：
+
+1. `packages/motion-core` 生产代码不得 import `node:`、不得使用 DOM 全局（`window`/`document`/`localStorage`/`navigator`/`createImageBitmap` 等）、不得 import 两个 app；包外相对路径仅允许 `assets/motions/*.json`；
+2. `apps/web` 生产代码不得 import `@human3d/server`（测试可用，其 devDependency 已声明）；
+3. `apps/server` 不得 import `@human3d/web`；
+4. 任何文件不得使用 `@human3d/<pkg>/src/...` 深路径导入；
+5. 每个 `@human3d/*` 导入都必须在导入方 `package.json` 的 dependencies/devDependencies 里声明。
+
+检查器按注释/字符串剥离后再扫描 DOM 全局（避免注释里的 "window." 误报），并跳过对象/类型键位置（`{document: WorkshopDoc}` 是数据不是 DOM）。**负向对照已实测**：向 core 注入 `node:fs` 与 `window`、向 web 注入 `@human3d/server` 与深路径导入，四类违规全部被报出且带文件与说明；撤销后恢复全绿。
+
 ## 已知泄漏与后续阶段
 
 - **边界泄漏**：motion-core 以相对路径读取仓库根 `assets/motions/*.json`。phase 2 可选：把信封数据移进包内，或让 Python 工具链写包内路径。
 - **包内仍平铺**：只做包边界，未按 `document/ solver/ protocol/` 再分子目录——压低 diff 与风险。
-- **phase 2 候选**：从 motion-core 拆出 `@human3d/protocol`（schema/类型/协议常量）；引入 Project References 做模块级增量类型检查；把 `package-inspect` 与播放源再细分。
+- **phase 2 候选**：从 motion-core 拆出 `@human3d/protocol`（schema/类型/协议常量）；引入 Project References 做模块级增量类型检查；把 `package-inspect` 与播放源再细分；根入口之外提供少量子路径入口（`/solver`、`/protocol`、`/catalog`），避免只想取求解器的消费者连带求值动作目录（`motion-files.ts` 会静态导入并归一化全部内置信封）——**只在 profile 或具体消费者需要按需加载时再做**。
 - **phase 3**：把 `document`/`solver`/`kinematics` 的数值核迁到 C++/WASM。现在它们已在一个无 DOM/node 的包里，替换实现时 web 与 server 都不用动——这也是把这项重构排在 WASM 之前的原因。
 
 ## 维护规则
