@@ -139,14 +139,36 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return false;L.docs[i]=next;L.save();gate.current.reset();wristEpoch.current++;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);return true;};
  /* A history step can restore a DIFFERENT library document: the mirrored
   * document's first undo step is the source document it was made from.
-  * applyDoc only writes content back under the restored doc's own id, so the
-  * selection must follow it — and the direction's counterpart snapshot is
-  * deposited on the restored doc's book, keeping undo/redo symmetric across
-  * the switch (the departing doc also keeps its own copy of the step). When
-  * the restored id no longer names a library document the step is skipped
-  * WITH a hint — silently consuming it would look like undo doing nothing. */
- const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(!prev)return;if(!applyDoc(prev)){setHint(`撤销的目标文档「${prev.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}if(prev.id!==cur.id){books.current.of(prev.id).pushFuture(cur);selectDoc(prev.id);}};
- const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(!next)return;if(!applyDoc(next)){setHint(`重做的目标文档「${next.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}if(next.id!==cur.id){books.current.of(next.id).pushPast(cur);selectDoc(next.id);}};
+  * A cross-document snapshot is POINTER semantics — it only moves the
+  * selection, its content is NEVER written back: the library copy may carry
+  * edits newer than the moment the snapshot was taken (the mirror seeds the
+  * source's state at mirror time), and writing it back would silently erase
+  * those post-mirror edits. The departing doc's current state is still
+  * deposited on the target book's opposite stack, keeping undo/redo
+  * symmetric across the switch (the departing doc also keeps its own copy
+  * of the step, pushed by DocHistory itself). applyDoc — the same-document
+  * overwrite — runs only when the restored id IS the active document's own:
+  * a doc's own history restoring itself is the correct write. A restored id
+  * that no longer names a library document is skipped WITH a hint —
+  * silently consuming it would look like undo doing nothing. */
+ const undo=()=>{
+  const cur=L.active(),prev=books.current.of(cur.id).undo(cur);
+  if(!prev)return;
+  if(prev.id!==cur.id){
+   if(!L.docs.some(x=>x.id===prev.id)){setHint(`撤销的目标文档「${prev.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}
+   books.current.of(prev.id).pushFuture(cur);gate.current.reset();selectDoc(prev.id);return;
+  }
+  applyDoc(prev);
+ };
+ const redo=()=>{
+  const cur=L.active(),next=books.current.of(cur.id).redo(cur);
+  if(!next)return;
+  if(next.id!==cur.id){
+   if(!L.docs.some(x=>x.id===next.id)){setHint(`重做的目标文档「${next.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}
+   books.current.of(next.id).pushPast(cur);gate.current.reset();selectDoc(next.id);return;
+  }
+  applyDoc(next);
+ };
  shortcuts.current={undo,redo};
  useEffect(()=>{
   // Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes. Text fields keep their native undo.

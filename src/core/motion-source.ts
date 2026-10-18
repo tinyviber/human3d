@@ -112,6 +112,11 @@ const isObj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!
 const isVec=(v:unknown):v is number[]=>Array.isArray(v)&&v.every(Number.isFinite);
 /** The events enum of spec/pose-package.schema.json — keep in lockstep. */
 const PACKAGE_EVENT_TYPES=new Set<string>(['phase','keyframe','contact','support-start','support-end']);
+/** Absolute sample bound for a delivered package: 200_000 samples ≈ 13.9 min
+ * at the service's 240 fps ceiling — far past any real take. A giant count
+ * multiplies into every per-track allocation and decode loop at import, so
+ * the bound is a memory-DoS gate, not a motion-quality judgement. */
+export const MAX_PACKAGE_SAMPLES=200_000;
 
 /** Structural self-check for a delivered pose package: wire constants, the
  * timestamp contract (strictly increasing, `timestamps.at(-1) === duration`),
@@ -132,12 +137,39 @@ export function checkPosePackageShape(pkg:unknown,validBones?:ReadonlySet<string
     for(let i=1;i<timestamps.length;i++)if(!(timestamps[i]>timestamps[i-1])){e.push(`timestamps 未严格递增（第 ${i} 项）`);break;}
     if(timestamps[timestamps.length-1]!==p.timeline.duration)e.push('末时间戳不等于 duration');
   }else e.push('timestamps 含非有限数');
+  /* Resource caps on the DECLARED count: the service refuses fps>240, so a
+   * consistent package can never need more than duration×240+1 samples — a
+   * denser declaration is corrupt or hostile. The absolute cap bounds the
+   * same work when duration itself is inflated (MAX_PACKAGE_SAMPLES ≈ 13.9
+   * min @240fps). A one-shot import check, so the cost is negligible. */
+  if(typeof count==='number'&&Number.isFinite(count)){
+    if(count>MAX_PACKAGE_SAMPLES)e.push(`timeline.count=${count} 超过绝对上限 ${MAX_PACKAGE_SAMPLES}`);
+    else if(Number.isFinite(p.timeline?.duration)&&count>(p.timeline!.duration)*240+1+1e-6)
+      e.push(`timeline.count=${count} 超出时长密度上限（${p.timeline!.duration} s × 240 fps + 1）`);
+  }
   const T=p.tracks?.translation,c=typeof count==='number'?count:-1;
   if(!T||T.bone!=='root'||!isVec(T.values)||T.values.length!==c*3)e.push('root 位移轨缺失或长度不是 count×3');
   if(!Array.isArray(p.tracks?.rotations))e.push('tracks.rotations 缺失');
-  else for(const tr of p.tracks.rotations){
-    if(validBones&&!validBones.has(tr?.bone))e.push(`旋转轨引用了 rig 外的骨骼 ${tr?.bone}`);
-    if(!isVec(tr?.values)||tr.values.length!==c*4)e.push(`${tr?.bone??'?'} 的旋转值长度不是 count×4`);
+  else{
+    const rotations=p.tracks.rotations;
+    if(validBones&&rotations.length>validBones.size)e.push(`旋转轨数量 ${rotations.length} 超过 rig 骨骼数 ${validBones.size}`);
+    // One track per bone: a duplicate name decodes last-write-wins with no
+    // warning — ambiguity must be refused, never resolved silently.
+    const seen=new Set<string>();
+    for(const tr of rotations){
+      if(typeof tr?.bone==='string'){if(seen.has(tr.bone))e.push(`骨骼 ${tr.bone} 有重复旋转轨`);else seen.add(tr.bone);}
+      if(validBones&&!validBones.has(tr?.bone))e.push(`旋转轨引用了 rig 外的骨骼 ${tr?.bone}`);
+      if(!Array.isArray(tr?.values)||tr.values.length!==c*4){e.push(`${tr?.bone??'?'} 的旋转值长度不是 count×4`);continue;}
+      // Every delivered quaternion must be unit — the same 1e-3 tolerance
+      // the service validator applies (validate.ts). NaN, all-zero and
+      // non-unit samples are reported with bone + frame and refuse the
+      // package: decoding them would silently produce garbage poses.
+      for(let i=0;i<c;i++){
+        const o=i*4,l=Math.hypot(tr.values[o],tr.values[o+1],tr.values[o+2],tr.values[o+3]);
+        if(!Number.isFinite(l)){e.push(`${tr.bone}: 第 ${i} 帧四元数含非有限分量`);break;}
+        if(Math.abs(l-1)>1e-3){e.push(`${tr.bone}: 第 ${i} 帧四元数非单位（|q|=${l.toFixed(4)}）`);break;}
+      }
+    }
   }
   // The rig block the package claims to be solved against (schema requires id
   // + manifestSHA256 + bones). A foreign rig id is refused here; the manifest

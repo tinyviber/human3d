@@ -61,6 +61,15 @@ describe('checkPosePackageShape',()=>{
    ['action.id 非字符串',p=>{(p.action as {id:unknown}).id=42;},/action\.id/],
    ['quality.warnings 非字符串数组',p=>{(p.quality as {warnings:unknown}).warnings=[7];},/quality\.warnings/],
    ['provenance.solver 非字符串',p=>{(p.provenance as {solver:unknown}).solver=7;},/provenance\.solver/],
+   // Round-2 additions: duplicate bone tracks are last-write-wins ambiguity;
+   // every sample's quaternion must be unit (validate.ts tolerance); the
+   // declared count is capped by duration×240 and an absolute bound.
+   ['重复 bone 轨道',p=>{p.tracks.rotations.push(clone(p.tracks.rotations[0]));},/重复旋转轨/],
+   ['非单位四元数',p=>{const v=p.tracks.rotations[0].values;for(let i=0;i<4;i++)v[i]*=2;},/非单位/],
+   ['全零四元数',p=>{p.tracks.rotations[0].values.splice(0,4,0,0,0,0);},/非单位/],
+   ['NaN 四元数',p=>{p.tracks.rotations[0].values[0]=NaN;},/非有限/],
+   ['count 超密度上限',p=>{p.timeline.duration=.5;},/密度上限/],
+   ['count 超绝对上限',p=>{p.timeline.count=200_001;},/绝对上限/],
   ];
   for(const [name,mutate,pattern]of cases){
    const p=clone(golden);mutate(p);

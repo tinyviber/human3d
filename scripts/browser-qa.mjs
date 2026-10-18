@@ -336,13 +336,14 @@ assert(stillBuf.length>5000,`still suspiciously small for a rendered pose: ${sti
 const stillState=await page.evaluate(()=>({time:window.__WS__.time,playing:window.__WS__.playing}));
 assert.deepEqual(stillState,{time:.5,playing:false},'still export did not restore the transport state');
 // Sheet while playing: the QA doc has 3 keys → a 3×1 grid of fixed tiles plus
-// the caption band; restore must resume playback, not leave it paused. A
-// plain post-download `playing` read is racy here — each tile's endCapture
-// legitimately RESUMES playback, the animate loop then keeps the clock
-// running through the remaining tiles' gaps and the sheet toBlob, and the
-// 1 s QA doc can simply play out before the download resolves (observed on
-// software-GL Chromium: false-vs-true flakes). endCapture is tapped instead,
-// so the assertion measures the restore instant itself, on the real path.
+// the caption band. The whole sheet now runs inside ONE outer capture
+// session — `capturing` is held from entry through the sheet's own toBlob —
+// so each tile's endCapture restores the transport the session left parked
+// (paused), and only the outer session's endCapture hands the RUNNING state
+// back. A plain post-download `playing` read is still racy (the restored
+// clock can play the 1 s QA doc out on software-GL before the download
+// resolves), so endCapture is tapped: the assertion measures every restore
+// instant itself, on the real path.
 await page.evaluate(()=>{
  const e=window.__WS__;e.seek(0);e.setPlaying(true);
  const orig=e.endCapture.bind(e);
@@ -360,8 +361,14 @@ assert.equal(sheetBuf.readUInt32BE(0),0x89504E47,'sheet export is not a PNG');
 assert.equal(sheetBuf.readUInt32BE(16),640*3,'3-key sheet should be three 640 px tiles wide');
 assert.equal(sheetBuf.readUInt32BE(20),720+28,'3-key sheet should be one tile row plus the caption band');
 assert(sheetBuf.length>stillBuf.length,'3-tile sheet should outweigh the single still');
-assert.equal(sheetRestores.length,3,'sheet should restore the transport once per tile');
-assert(sheetRestores.every(r=>r.p===true),'sheet export restored a PAUSED transport instead of the running one');
+assert.equal(sheetRestores.length,4,'sheet should end-capture once per tile plus the outer session release');
+assert(sheetRestores.slice(0,3).every(r=>r.p===false),'per-tile restores must keep the transport paused — the sheet session still owns it');
+const lastRestore=sheetRestores.at(-1);
+assert.equal(lastRestore.p,true,'the outer session end must hand back the RUNNING transport');
+// Every snapshot was taken inside the same outer session, so all four
+// restores land on the one entry instant (however far playback advanced
+// between setPlaying and the click landing).
+assert(sheetRestores.every(r=>r.t===sheetRestores[0].t),'every restore must land on the single entry instant');
 await page.evaluate(()=>{delete window.__WS__.endCapture;});
 await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);});
 result.checks.workshopStillExport=true;

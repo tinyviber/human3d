@@ -9,6 +9,7 @@ import {solveEffectiveFrame} from './solver';
 import {unwrapMotionFile} from '../core/motion-file';
 import {mulberry32,randomDoc} from './random-document';
 import {HistoryBook} from './history';
+import {MotionLibrary} from './library';
 
 /** WP-D 文档镜像 — mirrorDoc is tested against the REAL solve path
  * (frameAt → solveEffectiveFrame), never a re-implementation: a passing
@@ -276,5 +277,77 @@ describe('mirrorDoc — grip side and parse boundary',()=>{
   books.of(fwd.id).pushPast(back);              // app: redo's cross-id deposit
   const back2=books.of(fwd.id).undo(fwd)!;
   expect(back2.id).toBe(src.id);
+ });
+});
+
+describe('mirrorDoc — cross-document undo is pointer semantics',()=>{
+ /* Replays WorkshopApp's undo()/redo() call order verbatim against a REAL
+  * MotionLibrary + HistoryBook (same paradigm as the book-level test above,
+  * extended to the app branch decisions). The pinned contract: a history
+  * step restoring a DIFFERENT id only moves the selection — the snapshot's
+  * content is never written back under a foreign id. The pre-fix applyDoc
+  * overwrote the library doc wholesale, so a post-mirror edit on the source
+  * was silently erased by undoing the mirror. */
+ const appUndo=(l:MotionLibrary,books:HistoryBook)=>{
+  const cur=l.active(),prev=books.of(cur.id).undo(cur);
+  if(!prev)return 'empty';
+  if(prev.id!==cur.id){
+   if(!l.docs.some(x=>x.id===prev.id))return 'hint';
+   books.of(prev.id).pushFuture(cur);l.select(prev.id);return 'switch';
+  }
+  const i=l.docs.findIndex(x=>x.id===prev.id);if(i<0)return 'hint';
+  l.docs[i]=prev;l.save();return 'apply';
+ };
+ const appRedo=(l:MotionLibrary,books:HistoryBook)=>{
+  const cur=l.active(),next=books.of(cur.id).redo(cur);
+  if(!next)return 'empty';
+  if(next.id!==cur.id){
+   if(!l.docs.some(x=>x.id===next.id))return 'hint';
+   books.of(next.id).pushPast(cur);l.select(next.id);return 'switch';
+  }
+  const i=l.docs.findIndex(x=>x.id===next.id);if(i<0)return 'hint';
+  l.docs[i]=next;l.save();return 'apply';
+ };
+ it('undo/redo across ids switch selection only — newer edits survive',()=>{
+  const l=new MotionLibrary(rig.rest).load(),books=new HistoryBook();
+  l.onRemoved=id=>books.drop(id);               // the app's wiring
+  const A=l.active();
+  const B=l.add(mirrorDoc(A));                  // app: mirrorActiveDoc — B enters selected
+  books.of(B.id).record(A);                     // app seeds the source snapshot on B's book
+  // The user then goes BACK to A and edits — after B's snapshot was taken.
+  l.select(A.id);
+  books.of(A.id).record(A);                     // recordBefore (different doc → always records)
+  A.keys[0].pose.lean=31;A.name='改过的A';
+  const aAfter=serializeDoc(A);
+  // Select B, press undo: pops the stale A snapshot. The pre-fix applyDoc
+  // would have overwritten the library's A (erasing the lean/name edit);
+  // the contract is selection-only, so the library keeps A's new content.
+  l.select(B.id);
+  expect(appUndo(l,books)).toBe('switch');
+  expect(l.active().id).toBe(A.id);
+  expect(serializeDoc(l.docs.find(d=>d.id===A.id)!)).toBe(aAfter);
+  // Symmetric redo: A's book future now holds the B snapshot deposited by
+  // the undo. Editing B in between makes that snapshot stale — redo must
+  // still only select B, not write the stale bytes over it.
+  l.select(B.id);books.of(B.id).record(B);B.keys[0].pose.lean=7;B.name='改过的B';
+  const bAfter=serializeDoc(B);
+  l.select(A.id);
+  expect(appRedo(l,books)).toBe('switch');
+  expect(l.active().id).toBe(B.id);
+  expect(serializeDoc(l.docs.find(d=>d.id===B.id)!)).toBe(bAfter);
+ });
+ it('a cross-document step to a deleted doc takes the hint path — no resurrection',()=>{
+  const l=new MotionLibrary(rig.rest).load(),books=new HistoryBook();
+  l.onRemoved=id=>books.drop(id);
+  const A=l.active(),B=l.add(mirrorDoc(A));
+  books.of(B.id).record(A);                     // seeded source snapshot survives on B's book
+  l.remove(A.id);                               // delete drops A's OWN book, not B's snapshot
+  expect(l.docs.some(d=>d.id===A.id)).toBe(false);
+  // Undo on B pops the stale A snapshot; the id no longer names a library
+  // document, so the app branch is the hint — no write, no crash, B stays.
+  expect(appUndo(l,books)).toBe('hint');
+  expect(l.active().id).toBe(B.id);
+  expect(l.docs.some(d=>d.id===A.id)).toBe(false);
+  expect(books.of(B.id).canUndo()).toBe(false); // the step was consumed once
  });
 });

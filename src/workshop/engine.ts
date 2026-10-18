@@ -78,6 +78,20 @@ export function sheetTimes(times:number[],max=SHEET_MAX_TILES):number[]{
  * still must read as the pose itself, not as the editor. */
 export interface CaptureOptions{view?:ViewId;overlays?:boolean}
 interface CaptureSnapshot{time:number;playing:boolean;view:ViewId;cam:Vector3;target:Vector3;ratio:number;overlays:{handles:boolean;trajectories:boolean[];contacts:boolean[];onion:boolean[];balance:boolean[]}|null}
+/** Re-entrancy mutex for export captures: a second programmatic capture must
+ * refuse outright — two interleaved captures would snapshot and restore
+ * transport/camera/overlay state in the wrong order (the UI also disables
+ * the export buttons, but engine calls are not limited to those buttons).
+ * `run` owns the flag so a rejection or throw always releases it. */
+export class CaptureMutex{
+ private busy=false;
+ get held(){return this.busy;}
+ run<T>(fn:()=>Promise<T>):Promise<T>{
+  if(this.busy)return Promise.reject(new Error('已有导出任务进行中'));
+  this.busy=true;
+  return fn().finally(()=>{this.busy=false;});
+ }
+}
 type DragKind='root'|'hand'|'foot'|'swing'|'poleArm'|'poleLeg'|'tip'|'contact';
 /** `passive` handles render but never start a drag — used for the actual foot
  * during a release interval, where the editable control is the swing point. */
@@ -100,12 +114,20 @@ export class WorkshopEngine{
   private onionSig='';private onionStale=true;
   private raycaster=new Raycaster();private pointer=new Vector2();
   private drag?:{h:Handle;plane:Plane;offset:Vector3;key:WorkshopKey};private docDirty=true;
-  /** Set while a still/sheet capture is in flight. The animate loop consults
+  /** Read as "a still/sheet capture is in flight". The animate loop consults
    * it wherever it re-derives overlay visibility (rebuildAux, updateOnion,
    * updateBalance), so overlays hidden for the shot can't be resurrected
    * between the awaits of a multi-tile sheet; it also blocks a mid-capture
-   * pointerdown on the canvas from starting a drag. */
-  private capturing=false;
+   * pointerdown on the canvas from starting a drag.
+   *
+   * Backed by a DEPTH count, not a bare boolean: a contact sheet nests its
+   * per-tile captures inside one outer session, so the flag must only fall
+   * when the LAST session ends — a per-tile endCapture that dropped it would
+   * reopen the overlay/drag windows between tiles. */
+  private captureDepth=0;
+  private get capturing(){return this.captureDepth>0;}
+  /** Hard re-entry gate for programmatic callers — see CaptureMutex. */
+  private readonly captureMutex=new CaptureMutex();
   private latestFrame?:EffectiveFrame;
   private footGeo?:Record<Side,FootGeometry>;
   /** The wrist the racket is currently mounted on — remounted when a solve
@@ -419,9 +441,17 @@ export class WorkshopEngine{
    * toggles Object3D.visible directly, deliberately NOT through
    * WorkshopOptions/docDirty: an export must not trigger rebuildAux and its
    * document-level side effects. Between the awaits of a captureSheet the
-   * `capturing` flag keeps the animate loop from re-showing them. */
+   * `capturing` hold (a depth count — the sheet's outer session keeps it
+   * raised through every inter-tile gap and the sheet's own toBlob) keeps
+   * the animate loop from re-showing them, and the CaptureMutex refuses a
+   * second programmatic capture outright instead of interleaving state. */
   async captureStill(t:number,opts:CaptureOptions={}):Promise<Blob>{
     if(!this.ready||!this.rig)throw new Error('模型尚未加载完成，无法渲染静帧');
+    return this.captureMutex.run(()=>this.renderStill(t,opts));
+  }
+  /** captureStill's render path without the mutex — a contact sheet already
+   * holds the gate, so its per-tile stills re-enter through here. */
+  private async renderStill(t:number,opts:CaptureOptions):Promise<Blob>{
     const saved=this.beginCapture(opts);
     try{
       this.seek(t);this.solveCurrent();
@@ -432,43 +462,56 @@ export class WorkshopEngine{
       return blob;
     }finally{this.endCapture(saved);}
   }
-  /** Keyframe contact sheet: one captureStill tile per instant (default: all
-   * key times, decimated by sheetTimes beyond SHEET_MAX_TILES) composed on an
+  /** Keyframe contact sheet: one still tile per instant (default: all key
+   * times, decimated by sheetTimes beyond SHEET_MAX_TILES) composed on an
    * offscreen 2D canvas as a SHEET_COLS-wide grid with a per-tile timestamp
    * caption — one deterministic PNG for whole-motion pose review. Every tile
-   * shares captureStill's fixed camera preset, output size and overlay
-   * policy, so a sheet cell is exactly what a single still would be. */
+   * shares the still's fixed camera preset, output size and overlay policy,
+   * so a sheet cell is exactly what a single still would be. */
   async captureSheet(times?:number[],opts:CaptureOptions={}):Promise<Blob>{
-    /* Pin the document for the whole sheet: getDoc() reads the live library
-     * slot, and a doc switch or in-place edit landing between the per-tile
-     * awaits (toBlob/createImageBitmap yield to the event loop, where React
-     * can still run) would silently mix two document versions into one image.
-     * A serialized→parsed copy freezes content and identity; swapping the
-     * provider makes every tile's captureStill solve through it. Restored in
-     * finally so a mid-sheet failure can't leave the engine on the stale doc. */
-    const frozen=parseDoc(serializeDoc(this.getDoc()));
-    const ts=sheetTimes(times??sortedKeys(frozen).map(k=>k.time));
-    if(!ts.length)throw new Error('文档没有关键时刻，无法生成拼图');
-    const cols=Math.min(SHEET_COLS,ts.length),rows=Math.ceil(ts.length/cols);
-    const sheet=document.createElement('canvas');
-    sheet.width=cols*STILL_WIDTH;sheet.height=rows*(STILL_HEIGHT+SHEET_LABEL_H);
-    const ctx=sheet.getContext('2d');if(!ctx)throw new Error('无法创建 2D 拼图画布');
-    ctx.fillStyle='#f5f7fa';ctx.fillRect(0,0,sheet.width,sheet.height);
-    const restoreDoc=this.getDoc;this.getDoc=()=>frozen;
-    try{
-      for(let i=0;i<ts.length;i++){
-        const x=(i%cols)*STILL_WIDTH,y=Math.floor(i/cols)*(STILL_HEIGHT+SHEET_LABEL_H);
-        const bmp=await createImageBitmap(await this.captureStill(ts[i],opts));
-        ctx.drawImage(bmp,x,y);bmp.close();
-        ctx.fillStyle='#eef1f6';ctx.fillRect(x,y+STILL_HEIGHT,STILL_WIDTH,SHEET_LABEL_H);
-        ctx.fillStyle='#33415c';ctx.font='600 13px "DM Sans",system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-        ctx.fillText(`t = ${ts[i].toFixed(2)} s`,x+STILL_WIDTH/2,y+STILL_HEIGHT+SHEET_LABEL_H/2);
-        ctx.strokeStyle='#d6dce4';ctx.strokeRect(x+.5,y+.5,STILL_WIDTH-1,STILL_HEIGHT+SHEET_LABEL_H-1);
-      }
-    }finally{this.getDoc=restoreDoc;}
-    const blob=await new Promise<Blob|null>(res=>sheet.toBlob(res,'image/png'));
-    if(!blob)throw new Error('拼图编码失败：canvas.toBlob 返回空');
-    return blob;
+    if(!this.ready||!this.rig)throw new Error('模型尚未加载完成，无法渲染拼图');
+    return this.captureMutex.run(async()=>{
+      /* Pin the document for the whole sheet: getDoc() reads the live library
+       * slot, and a doc switch or in-place edit landing between the per-tile
+       * awaits (toBlob/createImageBitmap yield to the event loop, where React
+       * can still run) would silently mix two document versions into one
+       * image. A serialized→parsed copy freezes content and identity;
+       * swapping the provider makes every tile's renderStill solve through
+       * it. Restored in finally so a mid-sheet failure can't leave the
+       * engine on the stale doc. */
+      const frozen=parseDoc(serializeDoc(this.getDoc()));
+      const ts=sheetTimes(times??sortedKeys(frozen).map(k=>k.time));
+      if(!ts.length)throw new Error('文档没有关键时刻，无法生成拼图');
+      const cols=Math.min(SHEET_COLS,ts.length),rows=Math.ceil(ts.length/cols);
+      const sheet=document.createElement('canvas');
+      sheet.width=cols*STILL_WIDTH;sheet.height=rows*(STILL_HEIGHT+SHEET_LABEL_H);
+      const ctx=sheet.getContext('2d');if(!ctx)throw new Error('无法创建 2D 拼图画布');
+      ctx.fillStyle='#f5f7fa';ctx.fillRect(0,0,sheet.width,sheet.height);
+      /* The whole sheet runs inside ONE outer capture session: `capturing`
+       * is held from here through the sheet's own toBlob (the depth count
+       * only falls when this last endCapture runs), so the between-tile
+       * awaits can no longer drop the flag — a mid-sheet pointerdown can't
+       * start a drag, and the animate loop can't re-show overlays. Per-tile
+       * renderStill calls still take their own begin/end snapshots
+       * (view/camera/transport — restored LIFO per tile); what stays held is
+       * the flag and the frozen document provider. */
+      const outer=this.beginCapture(opts);
+      const restoreDoc=this.getDoc;this.getDoc=()=>frozen;
+      try{
+        for(let i=0;i<ts.length;i++){
+          const x=(i%cols)*STILL_WIDTH,y=Math.floor(i/cols)*(STILL_HEIGHT+SHEET_LABEL_H);
+          const bmp=await createImageBitmap(await this.renderStill(ts[i],opts));
+          ctx.drawImage(bmp,x,y);bmp.close();
+          ctx.fillStyle='#eef1f6';ctx.fillRect(x,y+STILL_HEIGHT,STILL_WIDTH,SHEET_LABEL_H);
+          ctx.fillStyle='#33415c';ctx.font='600 13px "DM Sans",system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText(`t = ${ts[i].toFixed(2)} s`,x+STILL_WIDTH/2,y+STILL_HEIGHT+SHEET_LABEL_H/2);
+          ctx.strokeStyle='#d6dce4';ctx.strokeRect(x+.5,y+.5,STILL_WIDTH-1,STILL_HEIGHT+SHEET_LABEL_H-1);
+        }
+        const blob=await new Promise<Blob|null>(res=>sheet.toBlob(res,'image/png'));
+        if(!blob)throw new Error('拼图编码失败：canvas.toBlob 返回空');
+        return blob;
+      }finally{this.getDoc=restoreDoc;this.endCapture(outer);}
+    });
   }
   /** Snapshot every piece of transport/camera/render state a capture touches
    * (the snapshot records the PRE-pause values — endCapture's restore is what
@@ -490,7 +533,9 @@ export class WorkshopEngine{
       }:null,
     };
     this.setPlaying(false);
-    this.capturing=true;
+    // Depth, not a flag: only the LAST endCapture (the outer session's, after
+    // a sheet's own toBlob) re-opens the overlay/drag windows.
+    this.captureDepth++;
     if(saved.overlays){
       this.handleGroup.visible=false;
       for(const l of this.trajectories.values())l.visible=false;
@@ -503,7 +548,7 @@ export class WorkshopEngine{
     return saved;
   }
   private endCapture(saved:CaptureSnapshot){
-    this.capturing=false;
+    this.captureDepth=Math.max(0,this.captureDepth-1);
     const o=saved.overlays;
     if(o){
       this.handleGroup.visible=o.handles;

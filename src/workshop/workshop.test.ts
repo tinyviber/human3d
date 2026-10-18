@@ -10,7 +10,7 @@ import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from './limits';
 import {analyzePose,rotateHandFrame,solveEffectiveFrame,supportPolygon} from './solver';
-import {onionTimes,SHEET_MAX_TILES,sheetTimes} from './engine';
+import {CaptureMutex,onionTimes,SHEET_MAX_TILES,sheetTimes} from './engine';
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
 // frameAt's origin must be the rest root — the same value the engine and the
@@ -675,5 +675,30 @@ describe('contact-sheet time sampling (WP-D)',()=>{
  it('honours a smaller cap and preserves caller order',()=>{
   expect(sheetTimes([2,0,1],2)).toEqual([2,1]);
   expect(sheetTimes([0,.5,1],99)).toEqual([0,.5,1]);
+ });
+});
+
+describe('capture export mutex (WP-D review)',()=>{
+ /* The engine can't be instantiated without WebGL, so the re-entrancy gate
+  * lives in an exported class — this is the real object captureStill /
+  * captureSheet delegate to. A second capture must reject outright (two
+  * interleaved captures would restore each other's state snapshots), and
+  * the flag must reset even when the capture itself throws. */
+ it('rejects a concurrent capture while one is in flight',async()=>{
+  const m=new CaptureMutex();
+  let release!:(v:string)=>void;
+  const pending=new Promise<string>(res=>{release=res;});
+  const first=m.run(()=>pending);
+  expect(m.held).toBe(true);
+  await expect(m.run(async()=>'nested')).rejects.toThrow('已有导出任务进行中');
+  release('done');
+  await expect(first).resolves.toBe('done');
+  expect(m.held).toBe(false);
+ });
+ it('resets the gate when the capture rejects, so the next export can run',async()=>{
+  const m=new CaptureMutex();
+  await expect(m.run(async()=>{throw new Error('encode boom');})).rejects.toThrow('encode boom');
+  expect(m.held).toBe(false);
+  await expect(m.run(async()=>'ok')).resolves.toBe('ok');
  });
 });

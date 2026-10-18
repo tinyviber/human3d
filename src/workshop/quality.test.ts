@@ -188,7 +188,11 @@ describe('forehand-study fixture — WP-C acceptance quality gates',()=>{
   * record the value measured on THIS fixture @240fps and the ×1.25 ceiling /
   * ÷1.25 floor rule the ticket requires (measured values in
   * evidence/forehand-study/rounds.jsonl tag `final-240`, 60fps corroboration
-  * in tag `final-60`). */
+  * in tag `final-60`).
+  *
+  * 验收边界：本 fixture 只证几何/平滑/接触约束达标，不证明符合真实网球
+  * 正手运动学——已知残余（tip kick、峰领先触球、近端→远端时序）的口径
+  * 与容差在 spec/examples/forehand-study.md「验收边界」一节写明。 */
  const study=()=>JSON.parse(fs.readFileSync('spec/examples/forehand-study.request.json','utf8'))
   .action.parameters.document as WorkshopDoc;
  it('holds every hard physical invariant at 240fps',()=>{
