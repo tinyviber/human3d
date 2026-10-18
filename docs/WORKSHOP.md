@@ -69,9 +69,21 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 内置动作不放在浏览器动作库里，而是按 motion-file 信封（`schemaVersion:1`）存于 `assets/motions/*.json`，由 `assets/motions/motion.schema.json` 与 `normalizeMotionFile` 双侧校验：三种 kind 的轨迹载体互斥——`kind:'workshop-motion'` 内嵌 `document`（与导出的 WorkshopDoc 同构），`kind:'clip-motion'` 指向外部动画片段（`clip.url`，如 walk），`kind:'dynamics-motion'` 携带 `dynamics.action` 肌肉动作参数与 `dynamics.records` 记录 URL（如 punch、baseball-throw）；dynamics-motion 还禁写 `document`/`clip` 与一切显示字段（name/duration/phases/capabilities 等由 `dynamics.action` 派生，`unwrapMotionFile` 与姿态包管线对它显式拒绝）。工作台与服务共用同一条 `normalizeMotionFile → frameAt → solveEffectiveFrame` 求解管线，因此内置动作的姿态与服务交付的姿态包同源。
 
+## 实验功能：约束轨迹生成
+
+「约束轨迹生成」在 `packages/motion-core/src/generate.ts` 中对真实 WorkshopDoc 采样与真实 HumanRig 求解进行确定性局部搜索。搜索空间限于关键帧时间重排和指定姿态通道相位重采样；不新增或删除关键帧、不改姿态约束、不重写文档级字段。触球键始终锁定，用户可额外锁定任意键；首尾键默认锁定。前后端调用共用同一生成器和 `quality-probe.ts` 指标实现。
+
+候选必须先通过硬门禁：文档形状、键集合、文档字段、约束模式、锁定键、球拍握拍侧及实际挂载身份、拍头触球位置、支撑点、求解检查都保持有效；报告采样率下的代价还必须严格低于源动作。超限帧由真实逐帧 `analyzePose` 结果计数，不能靠平滑代价抵消。搜索评估预算默认 120 次（含源测量与报告），扫掠默认最多 4 轮；fps 限 1–240、扫掠硬上限 16、估算求解采样总量硬上限 300,000 帧。
+
+面板把候选保留在易失预览态：Worker 加载同一份人体与 rig 资产并计算，页面保持可切相机；A/B 切换共享播放时刻和相机。取消终止 Worker、丢弃候选，且不改动作库、持久化字节或撤销书。保留会创建新的动作 id 和关键帧 id，再进入现有库；「保留并导出 JSON」导出该新文档。保留后的撤销可回到源动作，重做可回到候选。Worker 失败显示错误，不退回主线程跑搜索。
+
+指标会记录末端 / 球拍 / 手腕加加速度、骨骼峰值角速度与世界向量角加速度、触球偏移和速度、支撑 / IK 残差、地面穿透、超限帧数，以及各链条峰值出现时刻。无球拍或无接触事件时，对应 tip / contact 指标会省略，不显示伪造的零。路径长度、峰值速度、峰值时刻和时序调整量是供人工判断的读数，不自动解释成更好或更差。接触速度下降可能伴随平滑改善，因此目标函数也不等价于竞技效果。界面上的「改善 / 中性」只是基于代价比和少数主指标的实验性数值判断，**不证明动作自然，也未经过运动员或教练评审**；所有候选都应通过同视角 A/B 检查，保留按钮由用户决定。
+
+离线入口：`npx tsx scripts/generate-motion.mts [forehand|squat|forehand-detuned|squat-detuned|all]`。四份 `evidence/generate-*.json` 保存源 / 候选完整度量、门禁结果和候选文档；`evidence/generate-forehand-ab.png` 是真实工作台同视角截图。forehand 样例中末端积分 jerk 从 982.09 降至 510.56 m/s²、角 jerk 从 9679.89 降至 5329.73 rad/s²，触球偏移保持 0 mm；detuned forehand 也能恢复显著平滑读数。下蹲样例被标为 neutral；一个受损下蹲样例在报告采样率上退化，因此明确拒绝。这些数值是有限样本上的实现证据，不是普遍质量或自然度结论。
+
 ## 边界
 
 - 不做动力学：没有质量/惯性的真实积分、没有肌肉。合理性检查是运动学近似（de Leva 式分段质量分数）。
-- 补间是限幅 Hermite（位置/角度通道）+ SO(3) 三次（手部朝向），未做时序优化/滤波；导出只含关键帧与约束，不含烘焙轨迹。质量度量走 `packages/motion-core/src/quality-probe.ts`（CLI：`npx tsx scripts/measure-quality-probe.mts`，校准基线在 `evidence/quality-probe-*.json`）。
+- 补间是限幅 Hermite（位置/角度通道）+ SO(3) 三次（手部朝向），不做连续优化或滤波；实验生成器只在有限时间 / 通道相位邻域里搜索，不作自然动作判定。导出只含关键帧与约束，不含烘焙轨迹。质量度量走 `packages/motion-core/src/quality-probe.ts`（CLI：`npx tsx scripts/measure-quality-probe.mts`，校准基线在 `evidence/quality-probe-*.json`）。
 - 手部 forward/normal 通过增量滑杆编辑；拖动平面默认面向相机。支撑脚锁定在地面高度拖动；离地脚可三维拖动（相机朝向平面）或在右侧面板用「抬升高度」滑块精确设置 `foot.target.y` —— 该高度即摆动路径点。离地帧时刻脚骨骼仍在上一个接触点，因此摆动区间内脚柄只作显示；青色「摆动路径点」手柄直接绑定离地帧存储的 `foot.target`，拖动它即编辑轨迹中点。末尾离地帧没有后续区间，面板会提示先添加落地帧。
 - 与查看器共用 `rig/kinematics/racket` 模块；`gripFrame`/`mountRacket`/`applyGrip`/`blendGrip` 均接收 `side` 参数（缺省 `'R'` 保持旧语义），左挂载是右挂载的精确 x 镜像（手腕局部系在静止位形下与世界系同轴，位置 x 取反、四元数 y/z 取反）。工作台动作不进入主页动作库。

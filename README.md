@@ -45,7 +45,7 @@ npm run build
 - Orbit 摄像机、正面 / 侧面 / 背面 / 45° 视角、时间轴拖动、阶段跳转、暂停 / 播放 / 重播与 0.25–2× 倍速。
 - 人体表面、绑定骨骼、坐标轴、IK 端点、代表性肌腱路径、支持力和肌肉功率显示。
 - 网球拍手柄与持拍手手指刚性握持（左 / 右手均可，工作台按握拍侧参数化）；正常步态肩肘协调和支撑期足部锚定。
-- 动作工作台（页头「动作工作台」或 `/workshop.html`）：动作库支持自定义命名的新建 / 复制 / 删除动作并自动保存到浏览器；拖动 IK 末端手柄摆关键姿态，关键帧携带支撑脚锁定 / 握拍 / 触球约束，Hermite 补间生成连续动作；握拍侧左右手切换与整档「镜像动作」副本、洋葱皮相邻姿态对照、固定相机静帧 / 关键帧拼图渲染导出，含关节限位与重心投影检查、参考视频对齐和 JSON 导入导出。设计依据见 [docs/WORKSHOP.md](docs/WORKSHOP.md)。
+- 动作工作台（页头「动作工作台」或 `/workshop.html`）：动作库支持自定义命名的新建 / 复制 / 删除动作并自动保存到浏览器；拖动 IK 末端手柄摆关键姿态，关键帧携带支撑脚锁定 / 握拍 / 触球约束，Hermite 补间生成连续动作；另有实验性约束轨迹生成（Worker 搜索关键帧时序与通道相位，硬门禁后同视角 A/B 预览，用户选择取消或保留），握拍侧左右手切换与整档「镜像动作」副本、洋葱皮相邻姿态对照、固定相机静帧 / 关键帧拼图渲染导出，含关节限位与重心投影检查、参考视频对齐和 JSON 导入导出。实验生成器只优化数值代理，不证明动作自然；设计依据和边界见 [docs/WORKSHOP.md](docs/WORKSHOP.md)。
 - 动作服务（`npm run service`，仅 loopback `127.0.0.1:8788`）：v1 HTTP 协议提供能力目录、rig manifest（VRM 语义映射 + 内容哈希）和 `POST /v1/motions` 同步求解，返回规范姿态包（逐骨局部旋转 + root 平移、事件、质量检查）。内置动作以 WorkshopDoc 数据文件（`assets/motions/*.json`）驱动，工作台与服务共用同一求解管线；也可提交自定义 WorkshopDoc。工作台可导出同管线的 .pose.json（与 POST 响应对等）与派生 GLB（或 `npm run package-to-glb`）；服务端渲染/VRMA/MCP 未实现。请求经 Host/Origin/Content-Type 守卫并按 JSON Schema（Ajv 2020 严格模式）校验；返回前经语义校验，违反运动学阈值的动作以 422 `motion_rejected` 拒绝，阈值与已知限制见 [docs/validation.md](docs/validation.md)。契约见 [spec/openapi.yaml](spec/openapi.yaml)，方案见 [docs/ANIMATION-PROTOCOL-PLAN.md](docs/ANIMATION-PROTOCOL-PLAN.md)。
 
 键盘：空格播放 / 暂停，1–8 切换动作，R 重播。拖动画布旋转，滚轮缩放，右键拖动平移。
@@ -75,7 +75,7 @@ npm workspaces 三个包，依赖方向单向（web / server → motion-core）�
 
 | 包 | 职责 |
 |---|---|
-| `packages/motion-core`（`@human3d/motion-core`） | 纯运动域：`document.ts`（WorkshopDoc 采样器）、`solver.ts`（FK/IK 求解与合理性检查）、`kinematics.ts` / `rig.ts` / `racket.ts`（骨架、解析 IK、握拍）、`protocol.ts` / `pose-package.ts` / `package-inspect.ts`（姿态包协议、校验与派生）、`motion-file(s).ts`（信封注册表）、`validate.ts`（交付包语义校验）、`quality-probe.ts` / `random-document.ts`（度量与随机文档生成器）、`package-export.ts` / `glb-export.ts`（导出，后者走 `@human3d/motion-core/glb` 子路径）。无 DOM / node 依赖，three 只作数学库 |
+| `packages/motion-core`（`@human3d/motion-core`） | 纯运动域：`document.ts`（WorkshopDoc 采样器）、`solver.ts`（FK/IK 求解与合理性检查）、`kinematics.ts` / `rig.ts` / `racket.ts`（骨架、解析 IK、握拍）、`protocol.ts` / `pose-package.ts` / `package-inspect.ts`（姿态包协议、校验与派生）、`motion-file(s).ts`（信封注册表）、`validate.ts`（交付包语义校验）、`quality-probe.ts` / `generate.ts` / `random-document.ts`（质量度量、实验优化器与随机文档生成器）、`package-export.ts` / `glb-export.ts`（导出，后者走 `@human3d/motion-core/glb` 子路径）。无 DOM / node 依赖，three 只作数学库 |
 | `apps/web`（`@human3d/web`） | 两个页面入口（`index.html` 实验室 / `workshop.html` 工作台）：`src/lab/`（实验室引擎与动力学回放渲染）、`src/playback/`（统一播放源：clip / 文档 / 动力学记录 / 姿态包共用一个 playhead）、`src/workshop/`（工作台场景、动作库、撤销书与 React 面板）。Vite 的 `publicDir` 仍指向仓库 `public/`，构建产物仍在仓库 `dist/` |
 | `apps/server`（`@human3d/server`） | `serve.ts`（loopback HTTP 传输，`node:http` 零新增依赖）、`service.ts`（目录 / 求解编排 / 幂等）、`contract.ts`（Ajv 严格编译 `spec/`）、`rig-manifest.ts`（node:crypto 身份哈希） |
 

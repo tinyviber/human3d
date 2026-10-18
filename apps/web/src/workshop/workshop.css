@@ -19,6 +19,39 @@
 .ws-card h3{font-size:11px;font-weight:600;color:#42536b;margin:0 0 8px;display:flex;justify-content:space-between;align-items:baseline}
 .ws-card h3 small{font-size:9px;color:#93a1b3;font-weight:400}
 .ws-sub{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.ws-generation-locked .ws-left>.ws-card:not(.ws-generator),.ws-generation-locked .ws-right,.ws-generation-locked .ws-footer{pointer-events:none;opacity:.48;user-select:none}
+.ws-generator{border-color:#cfdbf1;background:linear-gradient(160deg,#fff 0%,#fbfcff 100%)}
+.ws-generator>h2{color:#244a8c}
+.ws-lock-list{max-height:176px;overflow:auto;padding-right:3px;scrollbar-width:thin}
+.ws-lock-list .ws-check{padding:4px 0}
+.ws-generation-progress{margin-top:12px;padding:10px;background:#f4f7fc;border-radius:6px}
+.ws-generation-status{font-size:10px;color:#42536b;line-height:1.6}
+.ws-generation-progress progress{display:block;width:100%;height:7px;margin-top:8px;accent-color:var(--blue)}
+.ws-preview-switch{display:flex;gap:5px;margin-top:10px;padding:3px;background:#eef2f8;border-radius:6px}
+.ws-preview-switch button{flex:1;border:1px solid transparent;border-radius:4px;padding:6px 8px;font-size:10px;color:#5c708c}
+.ws-preview-switch button[aria-pressed=true]{background:#fff;border-color:#c9d7eb;color:var(--blue);box-shadow:0 1px 2px #1e35511a}
+.ws-verdict{display:flex;flex-direction:column;gap:3px;padding:9px 10px;margin:10px 0 6px;border-radius:6px;background:#eef5ff;color:#28579a;font-size:10px}
+.ws-verdict.neutral{background:#fff8e9;color:#8d6418}
+.ws-verdict.degraded{background:#fff0ed;color:#a8483c}
+.ws-verdict small{font-size:9px;font-weight:400;color:inherit;opacity:.8}
+.ws-metric-table-wrap{max-height:220px;overflow:auto;border:1px solid var(--line);border-radius:5px}
+.ws-metric-table{width:100%;border-collapse:collapse;font-size:9px;font-variant-numeric:tabular-nums}
+.ws-metric-table th,.ws-metric-table td{padding:5px 6px;border-bottom:1px solid #edf0f5;text-align:right;white-space:nowrap}
+.ws-metric-table thead th{position:sticky;top:0;background:#f7f9fc;color:#77859a;font-weight:500}
+.ws-metric-table th:first-child{text-align:left}
+.ws-metric-table tbody th{font-weight:500;color:#53647c;white-space:normal}
+.ws-metric-table td small{font-size:8px;color:#929fb0}
+.ws-metric-table tr.better td:last-child{color:#278154}
+.ws-metric-table tr.worse td:last-child{color:#b0483c}
+.ws-gen-constraints{margin-top:12px}
+.ws-gen-constraints h3{font-size:10px;font-weight:600;color:#42536b;margin:0 0 5px;display:flex;justify-content:space-between}
+.ws-gen-constraints h3 small{font-size:9px;color:#93a1b3;font-weight:400}
+.ws-gen-constraints>div{padding:5px 0;border-top:1px solid #eff1f5;font-size:9px;color:#3c7655}
+.ws-gen-constraints>div.fail{color:#b0483c}
+.ws-gen-constraints>div small{display:block;color:#8694a8;line-height:1.5;margin:2px 0 0 13px}
+.ws-gen-actions button:last-child{color:#245998;border-color:#bdcfea;background:#f7faff}
+.ws-generation-error{margin-top:10px;padding:9px;background:#fff1ef;border-radius:5px;color:#a8483c;font-size:10px}
+.ws-generation-error p{margin:0}
 .ws-field{display:flex;align-items:center;gap:8px;font-size:11px;margin:8px 0}
 .ws-field span{width:44px;color:#7b899c;flex-shrink:0}
 .ws-field input,.ws-field select{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:6px 8px;font-size:11px;background:#fff}

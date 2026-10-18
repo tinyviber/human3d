@@ -25,7 +25,7 @@ async function choose(id,t=0,view='front'){
  await page.waitForTimeout(250);assert.equal(await page.locator('.viewport-heading h2').textContent(),names[id]);
 }
 const poses=[['idle',0,'front','front'],['idle',0,'side','side'],['idle',0,'back','back'],['walk',.34,'threeQuarter','walk'],['reach',2.7,'front','reach'],['squat',2.7,'side','squat-side'],['squat',2.7,'front','squat'],['ready',0,'threeQuarter','ready'],['ready',0,'hand','grip'],['forehand',1.3,'threeQuarter','backswing'],['forehand',2.55,'front','contact'],['forehand',3.35,'threeQuarter','follow-through']];
-const result={date:'2026-10-17',browser:await browser.version(),viewport:[1536,1024],poses:[],checks:{}};
+const result={date:new Date().toISOString().slice(0,10),browser:await browser.version(),viewport:[1536,1024],poses:[],checks:{}};
 for(const [id,t,view,name]of poses){await choose(id,t,view);await page.screenshot({path:`evidence/${name}.png`});result.poses.push({id,t,view,file:`${name}.png`,metrics:await page.evaluate(()=>window.__LAB__.diagnostics())});}
 await choose('squat',2.7,'threeQuarter');
 for(const label of ['骨骼与关节','关节坐标轴','IK 端点']){await page.getByRole('switch',{name:label,exact:true}).click();assert.equal(await page.getByRole('switch',{name:label,exact:true}).getAttribute('aria-checked'),'true');}
@@ -465,6 +465,142 @@ assert.equal(undone.id,preMirror.id,'one undo step did not return to the source 
 assert.equal(undone.gripSide,'L','undo should restore the source doc with its left grip');
 assert(near(undone.wL[0],preMirror.wL[0],1e-4)&&near(undone.wR[0],preMirror.wR[0],1e-4),'restored doc solves differently than the source');
 result.checks.workshopMirror=true;
+// --- Issue #10 WP-E: real module-Worker generation on a five-key forehand.
+// Import the same action used by the core acceptance evidence through the
+// Workshop's actual JSON import path, then assert cancellation is a byte-stable
+// no-op before running a full A/B → keep → export → undo/redo round trip.
+const forehandDoc=JSON.parse(fs.readFileSync('spec/examples/forehand-study.request.json','utf8')).action.parameters.document;
+await page.locator('input[type=file][accept=".json,application/json"]').setInputFiles({
+ name:'forehand-study.workshop.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(forehandDoc)),
+});
+await page.waitForFunction(()=>window.__WS__?.getDoc().name==='正手击球 · 研究',{timeout:10000});
+// Endpoint defaults must follow the current first/last key ids, even after a
+// user's lock toggle materializes per-document overrides and the last key is
+// replaced by a newly authored endpoint.
+const lockProbeStorage=await page.evaluate(()=>localStorage.getItem('kinesis-workshop-library'));
+const lockProbe=await page.evaluate(()=>window.__WS_GENERATOR__.source());
+const lockProbeInterior=lockProbe.keys.find((k,i)=>i>0&&i<lockProbe.keys.length-1&&!k.constraints.contact);
+assert(lockProbeInterior,'lock regression fixture has no adjustable interior key');
+await page.getByTestId(`generator-lock-${lockProbeInterior.id}`).check();
+await page.locator('.ws-track-labels button').last().click();
+await page.getByRole('button',{name:'删除此关键帧'}).click();
+await page.evaluate(()=>window.__WS__.seek(1.9));
+await page.getByRole('button',{name:'添加关键帧',exact:true}).click();
+await page.waitForFunction(()=>window.__WS_GENERATOR__.source().keys.length===5,{timeout:5000});
+const newEndpoint=await page.evaluate(()=>window.__WS_GENERATOR__.source().keys.at(-1));
+assert.equal(newEndpoint.time,1.9,'lock regression fixture did not create a replacement endpoint');
+assert(await page.getByTestId(`generator-lock-${newEndpoint.id}`).isChecked(),'new last key lost its default lock after lock overrides were created');
+while(await page.evaluate(({id,time})=>window.__WS_GENERATOR__.source().keys.some(k=>k.id!==id&&k.time>time),{id:lockProbeInterior.id,time:lockProbeInterior.time})){
+ await page.locator('.ws-track-labels button').last().click();
+ await page.getByRole('button',{name:'删除此关键帧'}).click();
+}
+const nowEndpointLock=page.getByTestId(`generator-lock-${lockProbeInterior.id}`);
+assert(await nowEndpointLock.isChecked(),'previously locked interior key did not follow its lock after becoming an endpoint');
+await nowEndpointLock.uncheck();
+assert(!(await nowEndpointLock.isChecked()),'a formerly interior key could not be unlocked after becoming an endpoint');
+await page.evaluate(storage=>localStorage.setItem('kinesis-workshop-library',storage),lockProbeStorage);
+await page.reload();
+await page.waitForFunction(()=>window.__WS__?.rig&&window.__WS_GENERATOR__?.source().name==='正手击球 · 研究',{timeout:30000});
+result.checks.workshopGenerationEndpointLock=true;
+await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.9);});
+await page.locator('.ws-cameras').getByRole('button',{name:'45°',exact:true}).click();
+await page.locator('[data-testid="generator-start"]').scrollIntoViewIfNeeded();
+const cancelBefore=await page.evaluate(()=>({
+ storage:localStorage.getItem('kinesis-workshop-library'),
+ active:window.__WS_GENERATOR__.activeId(),
+ source:window.__WS_GENERATOR__.source(),
+ history:window.__WS_GENERATOR__.history(),
+ docs:JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.length,
+}));
+await page.locator('[data-testid="generator-start"]').click();
+await page.waitForFunction(()=>{
+ const p=document.querySelector('progress[data-testid="generator-progress"]');
+ return !!p&&Number(p.value)>0;
+},{timeout:60000});
+// The viewport and camera controls remain usable while search runs in a
+// separate Worker. Change view, then cancel before the candidate is emitted.
+await page.locator('.ws-cameras').getByRole('button',{name:'侧面',exact:true}).click();
+assert.equal(await page.locator('.ws-cameras button[aria-pressed="true"]').textContent(),'侧面');
+await page.locator('[data-testid="generator-cancel"]').click();
+await page.waitForFunction(()=>!window.__WS_GENERATOR__.locked()&&window.__WS_GENERATOR__.preview()===null,{timeout:5000});
+const cancelAfter=await page.evaluate(()=>({
+ storage:localStorage.getItem('kinesis-workshop-library'),active:window.__WS_GENERATOR__.activeId(),
+ source:window.__WS_GENERATOR__.source(),history:window.__WS_GENERATOR__.history(),
+ docs:JSON.parse(localStorage.getItem('kinesis-workshop-library')).docs.length,
+}));
+assert.equal(cancelAfter.storage,cancelBefore.storage,'cancel changed persisted library bytes');
+assert.equal(cancelAfter.active,cancelBefore.active,'cancel changed the active document');
+assert.deepEqual(cancelAfter.source,cancelBefore.source,'cancel changed source document contents');
+assert.deepEqual(cancelAfter.history,cancelBefore.history,'cancel changed source undo/redo history');
+assert.equal(cancelAfter.docs,cancelBefore.docs,'cancel inserted a document into the library');
+result.checks.workshopGenerationCancel=true;
+
+// Full deterministic candidate path: preserve the source bytes, compare both
+// docs at one fixed time/view, and verify the selected locked poses stay exact.
+await page.locator('[data-testid="generator-start"]').click();
+await page.locator('[data-testid="preview-candidate"]').waitFor({state:'visible',timeout:120000});
+const generationPair=await page.evaluate(()=>({
+ source:window.__WS_GENERATOR__.source(),candidate:window.__WS_GENERATOR__.preview(),
+ storage:localStorage.getItem('kinesis-workshop-library'),active:window.__WS_GENERATOR__.activeId(),
+ history:window.__WS_GENERATOR__.history(),
+}));
+assert(generationPair.candidate,'candidate preview is missing');
+assert.notDeepEqual(generationPair.candidate,generationPair.source,'generator only re-labelled the source document');
+assert.equal(generationPair.storage,cancelAfter.storage,'generation persisted before Keep');
+assert.equal(generationPair.active,cancelBefore.active,'generation changed the active document before Keep');
+for(const id of ['k-ready','k-contact']){
+ const a=generationPair.source.keys.find(k=>k.id===id),b=generationPair.candidate.keys.find(k=>k.id===id);
+ assert(a&&b,`missing protected key ${id}`);assert.equal(b.time,a.time,`${id} time moved`);assert.deepEqual(b.pose,a.pose,`${id} pose moved`);
+}
+assert(generationPair.candidate.keys.every(k=>{
+ const source=generationPair.source.keys.find(x=>x.id===k.id);return source&&JSON.stringify(k.constraints)===JSON.stringify(source.constraints);
+}),'candidate changed a source constraint');
+assert.match(await page.locator('[data-testid="generator-status"]').innerText(),/候选已就绪/);
+assert.equal(await page.getByRole('table',{name:'源动作与候选指标比较'}).count(),1,'candidate metric comparison table missing');
+
+await page.locator('.ws-cameras').getByRole('button',{name:'45°',exact:true}).click();
+await page.evaluate(()=>{window.__WS__.setPlaying(false);window.__WS__.seek(.9);});
+await page.waitForTimeout(180);
+const abState=await page.evaluate(()=>({time:window.__WS__.time,view:window.__WS__.view,camera:window.__WS__.camera.position.toArray()}));
+await page.locator('[data-testid="preview-source"]').click();await page.waitForTimeout(180);
+assert.deepEqual(await page.evaluate(()=>window.__WS__.camera.position.toArray()),abState.camera,'A preview changed the camera');
+await page.locator('.ws-canvas canvas').screenshot({path:'evidence/generate-forehand-source.png'});
+await page.locator('[data-testid="preview-candidate"]').click();await page.waitForTimeout(180);
+assert.equal(await page.evaluate(()=>window.__WS__.time),abState.time,'B preview changed the playhead time');
+assert.equal(await page.evaluate(()=>window.__WS__.view),abState.view,'B preview changed the camera preset');
+assert.deepEqual(await page.evaluate(()=>window.__WS__.camera.position.toArray()),abState.camera,'B preview changed the camera');
+await page.locator('.ws-canvas canvas').screenshot({path:'evidence/generate-forehand-candidate.png'});
+result.checks.workshopGenerationAB=true;
+
+const keptIdBefore=await page.evaluate(()=>{
+ const lib=JSON.parse(localStorage.getItem('kinesis-workshop-library'));
+ return {count:lib.docs.length,sourceId:window.__WS_GENERATOR__.activeId(),source:window.__WS_GENERATOR__.source()};
+});
+const [keptDownload]=await Promise.all([
+ page.waitForEvent('download'),page.locator('[data-testid="generator-keep-export"]').click(),
+]);
+const keptId=await page.evaluate(()=>window.__WS_GENERATOR__.activeId());
+assert.notEqual(keptId,keptIdBefore.sourceId,'Keep must create a distinct document id');
+assert.equal(keptDownload.suggestedFilename(),`${keptId}.workshop.json`,'candidate export did not use the existing Workshop JSON filename');
+const keptText=fs.readFileSync(await keptDownload.path(),'utf8'),keptExport=JSON.parse(keptText);
+assert.equal(keptExport.id,keptId,'downloaded doc id differs from the retained candidate');
+assert.equal(new Set(keptExport.keys.map(k=>k.id)).size,keptExport.keys.length,'retained candidate key ids are not unique');
+assert(keptExport.keys.every(k=>k.id.startsWith(`${keptId}-k`)),'retained keys were not assigned fresh ids');
+const keptState=await page.evaluate(()=>{
+ const lib=JSON.parse(localStorage.getItem('kinesis-workshop-library'));
+ return {lib,active:window.__WS_GENERATOR__.activeId(),preview:window.__WS_GENERATOR__.preview(),history:window.__WS_GENERATOR__.history()};
+});
+assert.equal(keptState.active,keptId,'retained candidate is not the active document');
+assert.equal(keptState.preview,null,'retained candidate kept a volatile preview override');
+assert.equal(keptState.lib.docs.length,keptIdBefore.count+1,'Keep did not add exactly one document');
+assert.deepEqual(keptState.lib.docs.find(d=>d.id===keptIdBefore.sourceId),keptIdBefore.source,'Keep modified the source document');
+assert(keptState.history.canUndo,'retained candidate did not seed its undo path');
+await page.getByRole('button',{name:'撤销',exact:true}).click();await page.waitForTimeout(160);
+assert.equal(await page.evaluate(()=>window.__WS_GENERATOR__.activeId()),keptIdBefore.sourceId,'undo after Keep did not return to the source');
+await page.getByRole('button',{name:'重做',exact:true}).click();await page.waitForTimeout(160);
+assert.equal(await page.evaluate(()=>window.__WS_GENERATOR__.activeId()),keptId,'redo after Keep did not return to the candidate');
+result.checks.workshopGenerationKeepExportUndo=true;
+
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 

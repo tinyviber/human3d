@@ -32,4 +32,5 @@ export * from './solver';
 export * from './foot';
 export * from './limits';
 export * from './quality-probe';
+export * from './generate';
 export * from './random-document';

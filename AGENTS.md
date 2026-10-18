@@ -35,6 +35,7 @@
 - `npm run dynamics:validate`、`npm run dynamics:test` — 动力学资产与物理记录校验，需要 Python 3.13 与 `scripts/requirements-dynamics.txt`（CI 门禁）
 - `npx tsx scripts/measure-motions.mts` — 测量内置动作的语义峰值，用于阈值校准（见 `docs/validation.md`）
 - `npx tsx scripts/measure-quality-probe.mts [fps=240] [motion|all]` — 高帧率质量探针 CLI；度量实现共享 `packages/motion-core/src/quality-probe.ts`（vitest 同源），基线在 `evidence/quality-probe-*.json`
+- `npx tsx scripts/generate-motion.mts [forehand|squat|forehand-detuned|squat-detuned|all]` — 确定性约束轨迹优化器 CLI（issue #10 PR-D）；实现在 `packages/motion-core/src/generate.ts`（度量与探针同源），输出 `evidence/generate-*.json`
 - `npm run bench`（`scripts/bench-workshop.mts`，`--quick` 冒烟 / `--compare` 对比）— 工作流管线性能基线 CLI；度量实现共享 `scripts/lib/bench.mts`，基线在 `evidence/bench-workshop.json`；仅同机可比，GC 趋势需 `NODE_OPTIONS=--expose-gc`
 - `node scripts/forehand-study/drive.mjs <ops.json> <out.doc.json>` — 工作台真实 UI 写路径回放器（需 dev server :5173，默认走系统 Chrome，`QA_BROWSER_CHANNEL` 可覆盖）；制作 `spec/examples/forehand-study.request.json` 的工具链与账本见 `spec/examples/forehand-study.md`
 

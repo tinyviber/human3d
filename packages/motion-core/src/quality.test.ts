@@ -1,6 +1,6 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import fs from 'node:fs';
-import {Quaternion} from 'three';
+import {Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
 import {attachRacket} from './racket';
@@ -8,7 +8,8 @@ import {motionFileById} from './motion-files';
 import {solveWorkshop} from './pose-package';
 import {WORKSHOP_REVISION,workshopMeta} from './protocol';
 import {defaultDocument,type WorkshopDoc} from './document';
-import {formatProbeReport,probeDocument,stepAngles,PROBE_POINTS,PROBE_QUAT_BONES,type ProbeReport} from './quality-probe';
+import {analyzeProbeFrames,formatProbeReport,probeDocument,stepAngles,PROBE_POINTS,PROBE_QUAT_BONES,
+ type ProbeFrame,type ProbeReport} from './quality-probe';
 
 /* Quality-probe smoke + structural tests (WP-C step 1: the probe graduates
  * from an ad-hoc script into src/workshop/quality-probe.ts). This commit
@@ -104,8 +105,24 @@ describe('quality probe',()=>{
   // The formatted report renders the same sections the calibration CLI prints.
   const text=formatProbeReport(r);
   expect(text).toContain(`${r.name} @ 240fps · 193 frames · 5 keys · 0.8s`);
-  for(const sec of ['[1] foot slip','[2] 骨角速度','[3] root','[5] IK','[6] 动力链','[7] wrist_R','[8] solver checks','严重度排序'])
+  for(const sec of ['[1] foot slip','[2] 骨角速度 / 角加速度','[3] root','[5] IK','[6] 动力链','[7] wrist_R','[8] solver checks','严重度排序'])
    expect(text).toContain(sec);
+ });
+ it('measures vector angular acceleration on the exact partial-tail timestamps',()=>{
+  const doc=defaultDocument(rig.rest);doc.duration=.83;doc.keys.at(-1)!.time=doc.duration;
+  const sampled=probeDocument(rig,doc,{fps:37,tip:racket});
+  const frames=JSON.parse(JSON.stringify(sampled.frames)) as ProbeFrame[];
+  const angularVelocity=.4,angularAcceleration=1.7;
+  for(const frame of frames){
+   const angle=angularVelocity*frame.t+.5*angularAcceleration*frame.t*frame.t;
+   const q=new Quaternion().setFromAxisAngle(new Vector3(0,1,0),angle);
+   frame.quat.root=[q.x,q.y,q.z,q.w];
+  }
+  const report=analyzeProbeFrames({doc,fps:37,frames,rest:rig.rest});
+  const root=report.bones.find(b=>b.bone==='root')!;
+  expect(frames.at(-1)!.t).toBe(doc.duration);
+  expect(root.peakAlpha).toBeCloseTo(angularAcceleration,6);
+  expect(root.alphaT).toBeGreaterThan(0);expect(root.alphaT).toBeLessThan(doc.duration);
  });
  it('produces a finite report on the bundled forehand envelope',()=>{
   const doc=motionFileById('forehand')!.document!;
