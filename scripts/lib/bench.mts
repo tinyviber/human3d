@@ -18,12 +18,12 @@
 //    the residual (solveWorkshop total minus the summed stage totals) is
 //    the events/assembly/serialization-adjacent remainder — reported under
 //    the honest name captureSerialize together with stringify, NEVER render.
-import type {Vector3} from 'three';
+import {MathUtils,Object3D,Vector3,type Quaternion} from 'three';
 import {analyzePose,analyzeProbeFrames,blankDocument,buildModel,compileMotion,constraintsAt,defaultDocument,
- frameAt,frameAtCompiled,frameFromModel,motionFileById,mulberry32,probeDocument,probeFrames,randomDoc,
- retimeKeys,samplePose,sampleTimes,serializeDoc,solveEffectiveFrame,solveWorkshop,sortedKeys,
- validateDocShape,
- type HumanRig,type ProbeTip,type WorkshopDoc,type WorkshopKey} from '@human3d/motion-core';
+ DORSI_LIMIT_DEG,footRotation,frameAt,frameAtCompiled,frameFromModel,HumanRig,motionFileById,mulberry32,
+ pelvisDorsiCorrection,probeDocument,probeFrames,randomDoc,retimeKeys,samplePose,sampleTimes,serializeDoc,
+ solveEffectiveFrame,solveWorkshop,sortedKeys,toV,validateDocShape,
+ type DorsiLeg,type ProbeTip,type WorkshopDoc,type WorkshopKey} from '@human3d/motion-core';
 export {sampleTimes};
 
 /** Upper-middle median (the repo convention, quality-probe's median). */
@@ -210,6 +210,333 @@ export function runWholeCalls(a:WholeCallArgs):WholeCallResult{
   }
  }
  return {totals,pkgBytes,memory:{churnMB,heapPostGcMB}};
+}
+
+/* ---- solve-internal profile (issue #10 PR-C) ------------------------------
+ * runSolveProfile instruments one solveEffectiveFrame per sampled instant
+ * (the same capture-grid+key-times instants runStageLoop visits) and counts
+ * the exact work items the batch-scoped world sync removes:
+ *   - Object3D.updateMatrixWorld: `topLevel` counts calls ENTERED on
+ *     rig.model (recursion-depth 0 — the forced full-tree flushes);
+ *     `nodeVisits` counts every call including the recursive descent (one
+ *     per node per flush — SkinnedMesh's override funnels through super,
+ *     so it still lands). Both are attributed to the innermost HumanRig
+ *     method on the stack (a plain var — every call here is synchronous);
+ *     flushes issued directly by solvePose land in '(solver-inline)'.
+ *   - Object3D.updateWorldMatrix + getWorldPosition / getWorldQuaternion /
+ *     localToWorld / worldToLocal: the scoped reads. Each self-updates its
+ *     ancestor chain with the SAME compose/multiply arithmetic the flush
+ *     runs — updateWorldMatrix ≈ Σ ancestor depth over the read calls.
+ *   - HumanRig.prototype methods: calls + EXCLUSIVE µs (nested rig-method
+ *     time subtracts into the caller's `inner`). Each wrap pays 2 now()
+ *     brackets ≈40–80ns/call — point()/bone() are hot, so instrumented
+ *     solveUs is inflated vs production; the CLI labels it 'instrumented'.
+ * Module-bound helpers (pelvisDorsiCorrection, blendGrip/applyGrip,
+ * solveTwoBone, footRotation, handFrame, toV…) cannot be prototype-patched:
+ * their share lands in residualUs = median(solveUs) − Σ method µs/solve,
+ * and pelvisDorsiCorrection is timed directly by the preamble replica.
+ * Patches install INSIDE the measured window and restore in finally — the
+ * rig and both prototypes leave exactly as they arrived. */
+export interface SolveProfileArgs{
+ rig:HumanRig;doc:WorkshopDoc;fps:number;now:()=>number;
+ /** Unpatched warm-up passes over the grid (JIT), default 1. */
+ warmup?:number;
+ /** Measured passes over the grid, default 3. */
+ reps?:number;
+ /** Optional heap probe (CLI injects process.memoryUsage().heapUsed):
+  * per-solve deltas, mean reported — noisy, ranking evidence only. */
+ heapUsed?:()=>number;
+}
+export interface SolveProfileResult{
+ /** Sampled instants per rep (capture grid + authored key times). */
+ samplesPerRep:number;
+ /** Measured solves = samplesPerRep × reps. */
+ solves:number;
+ /** Per-solve solveEffectiveFrame µs WITH instrumentation on. */
+ solveUs:number[];
+ /** heapUsed delta per solve (bytes; negative = GC inside the bracket). */
+ heapDeltaBytes:number[];
+ /** Forced flushes entered on rig.model, per solve. */
+ umwTopLevelPerSolve:number[];
+ /** updateMatrixWorld calls incl. recursive descent, per solve. */
+ umwNodeVisitsPerSolve:number[];
+ /** umw totals over the run, keyed by innermost rig method (or
+  * '(solver-inline)' for flushes issued by solvePose itself). */
+ umwByMethod:Record<string,{topLevel:number;nodeVisits:number}>;
+ /** Scoped-read call totals over the run. */
+ scopedReads:Record<'updateWorldMatrix'|'getWorldPosition'|'getWorldQuaternion'|'localToWorld'|'worldToLocal',number>;
+ /** Rig-method totals: calls and EXCLUSIVE µs over the run. */
+ rigMethods:Record<string,{calls:number;us:number}>;
+ /** Σ rigMethods.us / solves — the attributable share of a solve. */
+ attributedUsPerSolve:number;
+ /** median(solveUs) − attributedUsPerSolve: solver-inline + module-bound
+  * helpers + instrumentation residue. */
+ residualUs:number;
+ /** Preamble-replica timings: pelvisDorsiCorrection on real per-frame
+  * inputs, measured UNPATCHED after restore (µs). */
+ pelvisDorsiCorrectionUs:number[];
+}
+const RIG_PROFILED_METHODS=['reset','rotate','worldRotation','limb','limbToWorldTargets','hand','relaxHand','articulateHand','point','bone','batch','syncWorld','worldPointInto'] as const;
+export function runSolveProfile(a:SolveProfileArgs):SolveProfileResult{
+ const {rig,doc,fps,now}=a,warmup=a.warmup??1,reps=a.reps??3;
+ const origin=rig.rest.get('root')!;
+ const times=sampleTimes(doc.duration,fps).concat(sortedKeys(doc).map(k=>k.time)).sort((x,y)=>x-y);
+ const compiled=compileMotion(doc,origin);
+ const solves=times.length*reps;
+ const umw={topLevel:0,nodeVisits:0};
+ const umwByMethod:SolveProfileResult['umwByMethod']={};
+ const scopedReads:SolveProfileResult['scopedReads']={updateWorldMatrix:0,getWorldPosition:0,getWorldQuaternion:0,localToWorld:0,worldToLocal:0};
+ const rigMethods:SolveProfileResult['rigMethods']={};
+ /* Attribution + exclusive-time stack: each patched rig method pushes a
+  * frame; inner frames add their WHOLE bracket to the parent's `inner`,
+  * so each method's `us` is self-time only and Σ methods never
+  * double-counts. */
+ interface Frame{name:string;t0:number;inner:number}
+ const frames:Frame[]=[];
+ const attr=()=>frames.length?frames[frames.length-1].name:'(solver-inline)';
+ let umwDepth=0;
+ const O3=Object3D.prototype;
+ const origUmw=O3.updateMatrixWorld,origUwm=O3.updateWorldMatrix,
+  origGwp=O3.getWorldPosition,origGwq=O3.getWorldQuaternion,
+  origL2w=O3.localToWorld,origW2l=O3.worldToLocal;
+ const proto=HumanRig.prototype as unknown as Record<string,((this:HumanRig,...args:never[])=>unknown)|undefined>;
+ const origMethods:Record<string,NonNullable<(typeof proto)[string]>>={};
+ const patched:string[]=[];
+ const install=()=>{
+  O3.updateMatrixWorld=function(this:Object3D,force?:boolean){
+   const entry=umwDepth===0;umwDepth++;
+   try{
+    umw.nodeVisits++;
+    const m=umwByMethod[attr()]??(umwByMethod[attr()]={topLevel:0,nodeVisits:0});
+    m.nodeVisits++;
+    /* A rig.model entry counts as topLevel ONLY at depth 0: inside another
+     * flush's descent this===model would re-trigger on the way down. */
+    if(entry&&this===rig.model){umw.topLevel++;m.topLevel++;}
+    return origUmw.call(this,force);
+   }finally{umwDepth--;}
+  };
+  O3.updateWorldMatrix=function(this:Object3D,p:boolean,c:boolean){scopedReads.updateWorldMatrix++;return origUwm.call(this,p,c);};
+  O3.getWorldPosition=function(this:Object3D,t:Vector3){scopedReads.getWorldPosition++;return origGwp.call(this,t);};
+  O3.getWorldQuaternion=function(this:Object3D,t:Quaternion){scopedReads.getWorldQuaternion++;return origGwq.call(this,t);};
+  O3.localToWorld=function(this:Object3D,t:Vector3){scopedReads.localToWorld++;return origL2w.call(this,t);};
+  O3.worldToLocal=function(this:Object3D,t:Vector3){scopedReads.worldToLocal++;return origW2l.call(this,t);};
+  for(const name of RIG_PROFILED_METHODS){
+   const orig=proto[name];
+   if(typeof orig!=='function')continue; // method may not exist yet on older rigs
+   origMethods[name]=orig;patched.push(name);rigMethods[name]={calls:0,us:0};
+   proto[name]=function(this:HumanRig,...args:never[]){
+    const t0=now(),f:Frame={name,t0,inner:0};
+    frames.push(f);
+    try{return orig.apply(this,args);}
+    finally{
+     const dt=(now()-t0)*1000;frames.pop(); // µs — same unit as solveUs
+     rigMethods[name].calls++;rigMethods[name].us+=Math.max(0,dt-f.inner);
+     const parent=frames[frames.length-1];if(parent)parent.inner+=dt;
+    }
+   };
+  }
+ };
+ const restore=()=>{
+  O3.updateMatrixWorld=origUmw;O3.updateWorldMatrix=origUwm;
+  O3.getWorldPosition=origGwp;O3.getWorldQuaternion=origGwq;
+  O3.localToWorld=origL2w;O3.worldToLocal=origW2l;
+  for(const n of patched)proto[n]=origMethods[n];
+ };
+ const solveUs:number[]=[],heap:number[]=[],umwTop:number[]=[],umwVis:number[]=[];
+ const pass=(measure:boolean)=>{
+  for(const t of times){
+   const f=frameAtCompiled(compiled,t);
+   const h0=measure?a.heapUsed?.():undefined;
+   const bTop=umw.topLevel,bVis=umw.nodeVisits,t0=now();
+   solveEffectiveFrame(rig,f);
+   const t1=now(),h1=measure?a.heapUsed?.():undefined;
+   if(measure){
+    solveUs.push((t1-t0)*1000);
+    umwTop.push(umw.topLevel-bTop);umwVis.push(umw.nodeVisits-bVis);
+    if(h0!==undefined&&h1!==undefined)heap.push(h1-h0);
+   }
+  }
+ };
+ for(let i=0;i<warmup;i++)pass(false);
+ install();
+ try{for(let i=0;i<reps;i++)pass(true);}finally{restore();}
+ /* Preamble replica (UNPATCHED): pelvisDorsiCorrection is module-bound, so
+  * the profile can't attribute it — instead replay solvePose's pre-pelvis
+  * steps verbatim (solver.ts: reset → root offset/yaw → spine/neck/head
+  * rotates → legs → dorsiLegs) on the real frames and time the call.
+  * Keep the block in sync with solvePose when the preamble changes. */
+ const dorsiUs:number[]=[];
+ for(const t of times){
+  const f=frameAtCompiled(compiled,t),p=f.pose;
+  rig.reset();
+  const root=rig.bone('root');
+  root.position.copy(origin).add(new Vector3(
+   MathUtils.clamp(p.root.x,-.6,.6),MathUtils.clamp(p.root.y,-.55,.35),MathUtils.clamp(p.root.z,-.6,.6)));
+  rig.rotate('root',0,p.yaw,0);
+  for(const n of ['spine05','spine04','spine03','spine02','spine01'])rig.rotate(n,p.lean/5,p.chest/5,p.side/5);
+  rig.rotate('neck01',-p.lean*.22,-p.chest*.15,-p.side*.2);rig.rotate('neck02',-p.lean*.22,0,0);rig.rotate('head',-p.lean*.12,0,0);
+  const legs=(['L','R']as const).map(side=>{
+   const ft=side==='L'?p.footL:p.footR;
+   return {side,target:toV(ft.target),pole:toV(ft.pole),footQ:footRotation(ft.yaw,ft.pitch),
+    a:rig.rest.get(`upperleg01_${side}`)!.distanceTo(rig.rest.get(`lowerleg01_${side}`)!),
+    b:rig.rest.get(`lowerleg01_${side}`)!.distanceTo(rig.rest.get(`foot_${side}`)!)};
+  });
+  const dorsiLegs:DorsiLeg[]=legs.map(l=>({hip:rig.point(`upperleg01_${l.side}`),target:l.target,pole:l.pole,
+   upper:l.a,lower:l.b,footQ:l.footQ,weight:f.support[l.side]}));
+  const d0=now();pelvisDorsiCorrection(dorsiLegs,DORSI_LIMIT_DEG,.15);dorsiUs.push((now()-d0)*1000);
+ }
+ rig.reset();
+ const attributed=Object.values(rigMethods).reduce((s,m)=>s+m.us,0)/Math.max(1,solves);
+ return {samplesPerRep:times.length,solves,solveUs,heapDeltaBytes:heap,
+  umwTopLevelPerSolve:umwTop,umwNodeVisitsPerSolve:umwVis,umwByMethod,scopedReads,rigMethods,
+  attributedUsPerSolve:attributed,residualUs:medianOf(solveUs)-attributed,
+  pelvisDorsiCorrectionUs:dorsiUs};
+}
+
+/* ---- skip-flush experiment (issue #10 PR-C, eval §2) ---------------------
+ * Empirical proof that the forced updateMatrixWorld(true) flushes inside a
+ * solve are write-only: stub rig.model.updateMatrixWorld to a counting
+ * no-op, re-run the whole sampled sweep, and compare the state the flushes
+ * could have influenced. The compare set is DELIBERATELY local-quaternion
+ * (every bone) + root.position + rig.point() world snapshots — all local or
+ * self-updating reads; .matrixWorld is never touched because the final
+ * flush is stubbed too, so a stale matrixWorld cannot leak into the
+ * comparison. identical ⇒ no solve output depended on the flushes.
+ * EXPERIMENT-ONLY: proves observational equivalence; production keeps the
+ * batch-end flush as the matrixWorld postcondition for renderers/tests. */
+export interface SkipFlushResult{
+ solves:number;
+ /** Times the stubbed updateMatrixWorld was invoked over the whole run. */
+ stubCalls:number;
+ /** Scalar components in the compare set per solve. */
+ scalarsPerSolve:number;
+ /** Total scalars compared (solves × scalarsPerSolve). */
+ compared:number;
+ identical:boolean;firstMismatch?:string;
+}
+export function runSkipFlushExperiment(rig:HumanRig,doc:WorkshopDoc,fps:number):SkipFlushResult{
+ const origin=rig.rest.get('root')!;
+ const times=sampleTimes(doc.duration,fps).concat(sortedKeys(doc).map(k=>k.time)).sort((x,y)=>x-y);
+ const compiled=compileMotion(doc,origin);
+ const bones=[...rig.bones.keys()];
+ const scalarsPerSolve=bones.length*4+3+bones.length*3;
+ const snapshot=()=>{
+  const out:number[]=[];
+  for(const t of times){
+   solveEffectiveFrame(rig,frameAtCompiled(compiled,t));
+   for(const n of bones){const q=rig.bone(n).quaternion;out.push(q.x,q.y,q.z,q.w);}
+   const rp=rig.bone('root').position;out.push(rp.x,rp.y,rp.z);
+   for(const n of bones){const p=rig.point(n);out.push(p.x,p.y,p.z);}
+  }
+  return out;
+ };
+ const reference=snapshot();
+ rig.reset();
+ let stubCalls=0;
+ const model=rig.model as Object3D&{updateMatrixWorld?:(force?:boolean)=>void};
+ const hadOwn=Object.prototype.hasOwnProperty.call(model,'updateMatrixWorld');
+ const orig=model.updateMatrixWorld;
+ model.updateMatrixWorld=function(){stubCalls++;};
+ let test:number[];
+ try{test=snapshot();}
+ finally{if(hadOwn)model.updateMatrixWorld=orig;else delete (model as {updateMatrixWorld?:unknown}).updateMatrixWorld;}
+ rig.reset();
+ let firstMismatch:string|undefined;
+ for(let i=0;i<reference.length&&firstMismatch===undefined;i++){
+  if(!Object.is(reference[i],test[i])){
+   const s=Math.floor(i/scalarsPerSolve),j=i%scalarsPerSolve;
+   const kind=j<bones.length*4?`quat ${bones[Math.floor(j/4)]}[${j%4}]`
+    :j<bones.length*4+3?`root.position[${j-bones.length*4}]`
+    :`point ${bones[Math.floor((j-bones.length*4-3)/3)]}[${(j-bones.length*4-3)%3}]`;
+   firstMismatch=`solve#${s} t=${times[s]} ${kind}: ${reference[i]} vs ${test[i]}`;
+  }
+ }
+ return {solves:times.length,stubCalls,scalarsPerSolve,compared:reference.length,
+  identical:firstMismatch===undefined,firstMismatch};
+}
+
+/** Per-cell folded profile record (all µs, counters per solve). */
+export interface SolveProfileCell{
+ name:string;fps:number;
+ /** Sampled instants per rep and measured solves (samplesPerRep × reps). */
+ samplesPerRep:number;solves:number;
+ /** Instrumented solveEffectiveFrame — inflated by the method brackets
+  * (disclosed); the unpatched --compare numbers are the speedup evidence. */
+ solveUsInstrumented:TimedStat;
+ umw:{topLevelPerSolve:StageStat;nodeVisitsPerSolve:StageStat;
+  /** Run totals by innermost rig method ('(solver-inline)' = flushes issued
+   * by solvePose itself). */
+  byMethod:Record<string,{topLevel:number;nodeVisits:number}>};
+ scopedReadsPerSolve:Record<string,number>;
+ /** callsPerSolve and EXCLUSIVE µs/solve per rig method. */
+ rigMethodsPerSolve:Record<string,{callsPerSolve:number;usPerSolve:number}>;
+ attributedUsPerSolve:number;
+ /** median(solveUs) − attributedUsPerSolve: solver-inline + module-bound
+  * helpers (pelvisDorsiCorrection, blendGrip/applyGrip, solveTwoBone, toV…)
+  * + instrumentation residue. */
+ residualUs:number;
+ /** Preamble-replica timings of the module-bound pelvisDorsiCorrection. */
+ pelvisDorsiCorrectionUs:StageStat;
+ /** heapUsed delta per solve — noisy, ranking evidence only. */
+ heapDeltaBytesPerSolve:{mean:number;median:number};
+ /** Present only under --profile-skip-flush (experiment-only). */
+ skipFlush?:SkipFlushResult;
+}
+export interface SolveProfileFile{
+ bench:'solve-profile';version:1;
+ run:BaselineFile['run'];
+ disclosures:string[];
+ scenarios:SolveProfileCell[];
+}
+export const SOLVE_PROFILE_DISCLOSURES=[
+ 'solveUsInstrumented：计时含插桩开销——每个 rig 方法调用包 2×now() ≈40–80ns，point/bone 为高频热点，故绝对值高于未插桩的 --compare 数字；计数器不受计时噪声影响。',
+ 'residualUs = median(solveUs) − Σ方法独占µs/solve —— solver 内联代码 + 模块绑定不可插桩函数（pelvisDorsiCorrection 由前导复制品单独计时；blendGrip/applyGrip、solveTwoBone、footRotation、handFrame、toV 等）。',
+ 'umw.topLevel = 在 rig.model 上以递归深度 0 进入 updateMatrixWorld 的次数（强制全树 flush）；umw.nodeVisits = 含递归下降的总调用数（每节点每 flush 一次；SkinnedMesh 覆写经 super 计入）。',
+ 'scopedReads：updateWorldMatrix 计数含其祖先递归——≈各自更新读路径上的祖先深度总和；updateWorldMatrix 与 updateMatrixWorld 共用 compose/multiply 算术。',
+ 'heapDeltaBytesPerSolve = 单次 solveEffectiveFrame 的 heapUsed 差（可为负=GC）；仅排序参考。',
+ 'skipFlush（experiment-only）：桩死 rig.model.updateMatrixWorld 后整段重放，比对集 = 全部局部四元数 + root.position + rig.point() 世界快照（自更新/局部读，不读 .matrixWorld——末次 flush 同样被桩）；identical ⇒ 中途 flush 是只写状态。',
+];
+export function summarizeProfileCell(spec:BenchDocSpec,fps:number,pr:SolveProfileResult,exp?:SkipFlushResult):SolveProfileCell{
+ const solves=Math.max(1,pr.solves);
+ const rigMethodsPerSolve:SolveProfileCell['rigMethodsPerSolve']={};
+ for(const [n,m]of Object.entries(pr.rigMethods))rigMethodsPerSolve[n]={callsPerSolve:r4(m.calls/solves),usPerSolve:r4(m.us/solves)};
+ const scopedReadsPerSolve:Record<string,number>={};
+ for(const [n,c]of Object.entries(pr.scopedReads))scopedReadsPerSolve[n]=r4(c/solves);
+ const heap=pr.heapDeltaBytes;
+ return {name:spec.name,fps,samplesPerRep:pr.samplesPerRep,solves:pr.solves,
+  solveUsInstrumented:{...r4s(summarize(pr.solveUs)),per:'sample'},
+  umw:{topLevelPerSolve:r4s(summarize(pr.umwTopLevelPerSolve)),
+   nodeVisitsPerSolve:r4s(summarize(pr.umwNodeVisitsPerSolve)),byMethod:pr.umwByMethod},
+  scopedReadsPerSolve,rigMethodsPerSolve,
+  attributedUsPerSolve:r4(pr.attributedUsPerSolve),residualUs:r4(pr.residualUs),
+  pelvisDorsiCorrectionUs:r4s(summarize(pr.pelvisDorsiCorrectionUs)),
+  heapDeltaBytesPerSolve:{mean:r4(heap.length?heap.reduce((x,y)=>x+y,0)/heap.length:0),median:r4(medianOf(heap))},
+  skipFlush:exp};
+}
+
+/** Human-readable profile table (zh conventions like formatProbeReport). */
+export function formatProfileReport(p:SolveProfileFile):string{
+ const lines:string[]=[];
+ const e=p.run.env;
+ lines.push(`=== solve-profile 求解内部计数 · ${p.run.date} ===`);
+ lines.push(`env: node ${e.node} ${e.platform}-${e.arch} · ${e.cpu} ${e.cores}核 ${e.totalMemGB}GB · three ${e.three} · tsx ${e.tsx} · commit ${p.run.commit.slice(0,7)}`);
+ lines.push(`cmd: ${p.run.command}`);
+ for(const d of p.disclosures)lines.push(`注: ${d}`);
+ for(const s of p.scenarios){
+  lines.push(`\n=== ${s.name} @${s.fps}fps · ${s.samplesPerRep} samples × ${s.solves/s.samplesPerRep} reps = ${s.solves} solves ===`);
+  lines.push(`  solveEffectiveFrame (插桩)  med ${fmtUs(s.solveUsInstrumented.median)} p95 ${fmtUs(s.solveUsInstrumented.p95)}`);
+  lines.push(`  umw.topLevel/solve          med ${s.umw.topLevelPerSolve.median}  (rig.model 强制全树 flush 进入次数)`);
+  lines.push(`  umw.nodeVisits/solve        med ${s.umw.nodeVisitsPerSolve.median}  (递归节点访问)`);
+  const bm=Object.entries(s.umw.byMethod).filter(([,v])=>v.topLevel>0).sort((a,b)=>b[1].topLevel-a[1].topLevel);
+  if(bm.length)lines.push(`    flush 归属: ${bm.map(([n,v])=>`${n}×${v.topLevel}`).join(' · ')}`);
+  lines.push(`  scoped reads/solve          ${Object.entries(s.scopedReadsPerSolve).map(([n,v])=>`${n} ${v}`).join(' · ')}`);
+  const rm=Object.entries(s.rigMethodsPerSolve).filter(([,v])=>v.callsPerSolve>0).sort((a,b)=>b[1].usPerSolve-a[1].usPerSolve);
+  lines.push(`  rig methods /solve          ${rm.map(([n,v])=>`${n} ${v.callsPerSolve}×/${fmtUs(v.usPerSolve)}`).join(' · ')}`);
+  lines.push(`  attributed Σ ${fmtUs(s.attributedUsPerSolve)} · residual ${fmtUs(s.residualUs)} (内联+模块绑定; pelvisDorsiCorrection med ${fmtUs(s.pelvisDorsiCorrectionUs.median)} p95 ${fmtUs(s.pelvisDorsiCorrectionUs.p95)})`);
+  lines.push(`  heapΔ/solve                 mean ${(s.heapDeltaBytesPerSolve.mean/1024).toFixed(1)}KB med ${(s.heapDeltaBytesPerSolve.median/1024).toFixed(1)}KB (noisy)`);
+  if(s.skipFlush)lines.push(`  experiment skip-flush       ${s.skipFlush.stubCalls} 次桩调用 / ${s.skipFlush.solves} solves → ${s.skipFlush.identical?'输出 IDENTICAL ✓':'输出 MISMATCH ✗ — '+s.skipFlush.firstMismatch} (${s.skipFlush.compared} scalars, experiment-only)`);
+ }
+ return lines.join('\n');
 }
 
 /* ---- baseline assembly -------------------------------------------------- */

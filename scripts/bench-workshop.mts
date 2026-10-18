@@ -9,6 +9,11 @@
 //     [--warmup 2] [--reps 7] [--seed 1] [--out evidence/bench-workshop.json]
 //     [--report evidence/bench-workshop-report.md] [--compare <old.json>] [--quick]
 //   --quick = warmup 1, reps 2, fps 60, default-5k only (smoke).
+//   --profile = solver-internal counters instead of the baseline sweep:
+//   per-cell runSolveProfile (patch-instrumented flush/read/method counts)
+//   → evidence/bench-solve-profile.json + printed table.
+//   --profile-skip-flush = --profile plus the flush-stub equivalence
+//   experiment per cell (experiment-only label in the output).
 //   --compare must point at a DIFFERENT file than --out: comparing the output
 //   target against itself is vacuous and would clobber the old baseline, so
 //   the CLI refuses it.
@@ -21,8 +26,10 @@ import path from 'node:path';
 import {execSync} from 'node:child_process';
 import {createService} from '@human3d/server';
 import {attachRacket,workshopMeta,WORKSHOP_REVISION,type WorkshopDoc} from '@human3d/motion-core';
-import {diffBaselines,formatReport,hotspotRanking,resolveBenchDoc,runStageLoop,runWholeCalls,
- summarizeScenario,type BaselineFile,type BenchDocSpec} from './lib/bench.mts';
+import {diffBaselines,formatProfileReport,formatReport,hotspotRanking,resolveBenchDoc,
+ runSkipFlushExperiment,runSolveProfile,runStageLoop,runWholeCalls,SOLVE_PROFILE_DISCLOSURES,
+ summarizeProfileCell,summarizeScenario,
+ type BaselineFile,type BenchDocSpec,type SolveProfileFile} from './lib/bench.mts';
 
 const arg=(k:string)=>{const i=process.argv.indexOf(k);return i>=0?process.argv[i+1]:undefined;};
 const has=(k:string)=>process.argv.includes(k);
@@ -80,6 +87,47 @@ const meta=(doc:WorkshopDoc,fps:number)=>workshopMeta({motionId:`mot_bench`,mani
  fps,duration:doc.duration,keys:doc.keys.length,
  notes:['kinematic solve only — no dynamics validation']});
 
+/* Numbers bind to code state: HEAD alone says nothing about a dirty tree.
+ * 'unknown' porcelain means git could not certify clean — record dirty. */
+const run:BaselineFile['run']={command,commit:git('git rev-parse HEAD'),
+ dirty:porcelain==='unknown'?true:porcelain.length>0,
+ date:new Date().toISOString(),
+ env:{node:process.version,platform:os.platform(),arch:os.arch(),
+  cpu:os.cpus()[0]?.model??'?',cores:os.cpus().length,totalMemGB:+(os.totalmem()/2**30).toFixed(1),
+  three:pkgVersion('three'),tsx:pkgVersion('tsx')},
+ params:{seed,warmup,reps,gc:gcFn?'available':'unavailable'}};
+
+/* --profile / --profile-skip-flush: solver-internal counters instead of the
+ * baseline sweep — per-cell runSolveProfile (patch-instrumented flush/read/
+ * method counts on the real solveEffectiveFrame) + the optional flush-stub
+ * equivalence experiment → evidence/bench-solve-profile.json + table. */
+if(has('--profile')||has('--profile-skip-flush')){
+ const skipFlush=has('--profile-skip-flush');
+ const profileOut=arg('--out')??'evidence/bench-solve-profile.json';
+ const cells:SolveProfileFile['scenarios']=[];
+ for(const spec0 of specs){
+  const spec={...spec0,seed:spec0.builder==='bench'?spec0.seed??seed:undefined};
+  const doc=resolveBenchDoc(spec,ctx.rig.rest);
+  for(const fps of fpsList){
+   const pr=runSolveProfile({rig:ctx.rig,doc,fps,now,warmup,reps,heapUsed:()=>process.memoryUsage().heapUsed});
+   const exp=skipFlush?runSkipFlushExperiment(ctx.rig,doc,fps):undefined;
+   cells.push(summarizeProfileCell(spec,fps,pr,exp));
+   const c=cells[cells.length-1];
+   console.log(`${spec.name}@${fps}fps · ${c.solves} solves · umw.topLevel ${c.umw.topLevelPerSolve.median}/solve · nodeVisits ${c.umw.nodeVisitsPerSolve.median}/solve · solve med ${(c.solveUsInstrumented.median/1000).toFixed(3)}ms 插桩${exp?` · skip-flush ${exp.identical?'IDENTICAL':'MISMATCH'}(${exp.stubCalls}×)`:''}`);
+  }
+ }
+ const file:SolveProfileFile={bench:'solve-profile',version:1,run,disclosures:[...SOLVE_PROFILE_DISCLOSURES],scenarios:cells};
+ fs.mkdirSync(path.dirname(profileOut),{recursive:true});
+ fs.writeFileSync(profileOut,JSON.stringify(file,null,1)+'\n');
+ console.log('\n'+formatProfileReport(file));
+ console.log(`\nwrote ${profileOut}`);
+ if(cells.some(c=>c.skipFlush&&!c.skipFlush.identical)){
+  console.error('\nskip-flush experiment FAILED — outputs differ with flushes stubbed; the byte-identical claim does not hold');
+  process.exit(1);
+ }
+ process.exit(0);
+}
+
 const scenarios:BaselineFile['scenarios']=[];
 for(const spec0 of specs){
  const spec={...spec0,seed:spec0.builder==='bench'?spec0.seed??seed:undefined};
@@ -97,15 +145,7 @@ for(const spec0 of specs){
 
 const baseline:BaselineFile={
  bench:'workshop-pipeline',version:1,
- run:{command,commit:git('git rev-parse HEAD'),
-  /* Numbers bind to code state: HEAD alone says nothing about a dirty tree.
-   * 'unknown' porcelain means git could not certify clean — record dirty. */
-  dirty:porcelain==='unknown'?true:porcelain.length>0,
-  date:new Date().toISOString(),
-  env:{node:process.version,platform:os.platform(),arch:os.arch(),
-   cpu:os.cpus()[0]?.model??'?',cores:os.cpus().length,totalMemGB:+(os.totalmem()/2**30).toFixed(1),
-   three:pkgVersion('three'),tsx:pkgVersion('tsx')},
-  params:{seed,warmup,reps,gc:gcFn?'available':'unavailable'}},
+ run,
  scenarios,
  hotspots:hotspotRanking(scenarios),
 };

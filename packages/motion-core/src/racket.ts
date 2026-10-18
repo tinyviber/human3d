@@ -73,31 +73,46 @@ export function attachRacket(rig:HumanRig,side:'L'|'R'='R'){
  * palmar frame already carries the handedness (handFrame negates the left
  * normal), so every (x,y) coordinate on the left equals its right mirror
  * and the same tangent rule emits the mirrored wrap. */
+/* ---- scratch registers (issue #10 PR-C, eval MAJOR-2 audit) -------------
+ * Dedicated regs — never shared with any other function:
+ *  _gripWq      wrist world quat, read at fn entry, read again across every
+ *               worldRotation call (rig methods never touch these regs)
+ *  _gripPrev    previousDirection — persists across joint iterations BY DESIGN
+ *  _gripDes/_gripDes2  desired + limited desired
+ *  _gripTurn/_gripRest/_gripTarget  per-iteration temps
+ *  _gripPt      worldToLocal scratch (worldToLocal mutates+returns its arg)
+ *  _gripIdent   immutable identity quaternion — slerp arg only
+ * blendGrip's grip[] clones are STORED across relaxHand — they remain
+ * fresh clones and must NEVER come from scratch. */
+const _gripWq=new Quaternion(),_gripPrev=new Vector3(),_gripDes=new Vector3(),
+      _gripDes2=new Vector3(),_gripTurn=new Quaternion(),_gripRest=new Vector3(),
+      _gripTarget=new Quaternion(),_gripPt=new Vector3();
+const _gripIdent=new Quaternion();
 export function applyGrip(rig:HumanRig,side:'L'|'R'='R'){
   const {axis,normal,forward,center}=gripFrame(rig,side);
-  const wrist=rig.bone(`wrist_${side}`),wq=wrist.getWorldQuaternion(new Quaternion());
+  const wrist=rig.bone(`wrist_${side}`),wq=wrist.getWorldQuaternion(_gripWq);
   const contactRadius=.022;
   for(let finger=1;finger<=5;finger++){
     let previousDirection:Vector3|undefined;
     const winding=finger===1?-1:1;
     for(let joint=1;joint<=3;joint++){
       const name=`finger${finger}-${joint}_${side}`,bone=rig.bone(name);
-      const origin=wrist.worldToLocal(rig.point(name)).sub(center);
+      const origin=wrist.worldToLocal(rig.pointInto(name,_gripPt)).sub(center);
       const x=origin.dot(forward),y=origin.dot(normal),distance=Math.hypot(x,y);
       const theta=Math.atan2(y,x),alpha=Math.acos(Math.min(1,contactRadius/Math.max(contactRadius,distance)));
       const tangent=theta+winding*alpha;
       let dx=contactRadius*Math.cos(tangent)-x,dy=contactRadius*Math.sin(tangent)-y;
       if(Math.hypot(dx,dy)<1e-8){dx=-Math.sin(theta)*winding;dy=Math.cos(theta)*winding;}
-      let desired=forward.clone().multiplyScalar(dx).addScaledVector(normal,dy).normalize();
-      if(previousDirection){const limit=(joint===3?75:100)*Math.PI/180,angle=previousDirection.angleTo(desired);if(angle>limit){const turn=new Quaternion().setFromUnitVectors(previousDirection,desired);turn.slerp(new Quaternion(),1-limit/angle);desired=previousDirection.clone().applyQuaternion(turn);}}
-      previousDirection=desired.clone();
+      let desired=_gripDes.copy(forward).multiplyScalar(dx).addScaledVector(normal,dy).normalize();
+      if(previousDirection){const limit=(joint===3?75:100)*Math.PI/180,angle=previousDirection.angleTo(desired);if(angle>limit){_gripTurn.setFromUnitVectors(previousDirection,desired);_gripTurn.slerp(_gripIdent,1-limit/angle);desired=_gripDes2.copy(previousDirection).applyQuaternion(_gripTurn);}}
+      previousDirection=_gripPrev.copy(desired);
       const bi=rig.info.bones.find(b=>b.name===name)!;
-      const restDir=new Vector3().fromArray(bi.tail).sub(rig.rest.get(name)!);
-      const target=wq.clone().multiply(frameRotation(restDir,axis,desired,axis));
+      const restDir=_gripRest.fromArray(bi.tail).sub(rig.rest.get(name)!);
+      const target=_gripTarget.copy(wq).multiply(frameRotation(restDir,axis,desired,axis));
       rig.worldRotation(name,target);
     }
   }
-  rig.model.updateMatrixWorld(true);
+  rig.syncWorld();
 }
 
 /** Grip at `amount` in [0,1] on `side`'s hand: relaxed fingers at 0, full
@@ -117,5 +132,5 @@ export function blendGrip(rig:HumanRig,side:'L'|'R',amount:number){
   // the relaxed thumb is the rest pose, so amount 0 must reach identity too.
   for(let joint=1;joint<=3;joint++)rig.bone(`finger1-${joint}_${side}`).quaternion.identity();
   names.forEach((n,i)=>rig.bone(n).quaternion.slerp(grip[i],amount));
-  rig.model.updateMatrixWorld(true);
+  rig.syncWorld();
 }

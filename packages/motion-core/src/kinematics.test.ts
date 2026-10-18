@@ -258,3 +258,49 @@ describe('forearm twist and grip blend are continuous',()=>{
   expect(worst).toBeLessThan(.05);
  });
 });
+
+/* worldPointInto (issue #10 PR-C) — the flush-preconditioned world read:
+ * setFromMatrixPosition on the ALREADY-flushed tree, with no ancestor
+ * re-walk (point()/pointInto pay that walk per call). It lives in this file
+ * — the rig-semantics suite — because what is pinned is rig behaviour (the
+ * batch deferral window, the stale-read contract, the dev guard), not a
+ * solver output. The guard exists in the landed rig.ts, so the throw is
+ * asserted, not skipped. */
+describe('worldPointInto — post-flush world read (issue #10 PR-C)',()=>{
+ it('returns the caller-owned vector equal to point() after a solve',()=>{
+  const cleanup=setPose('idle',.5); // solveEffectiveFrame → batch-end flush
+  for(const n of ['head','root','wrist_R','foot_L','finger3-3_L']){
+   const out=new Vector3();
+   expect(rig.worldPointInto(n,out),`${n} returns out`).toBe(out); // out-param, not a fresh vector
+   expect(out.distanceTo(rig.point(n)),n).toBeLessThan(1e-12);     // same matrixWorld point() would recompute
+  }
+  cleanup();
+ });
+ it('reads the flushed matrixWorld — an unflushed write stays invisible until syncWorld',()=>{
+  rig.reset();
+  const before=rig.point('head');
+  rig.bone('head').position.x+=.05; // raw write below the rig API — no syncWorld, stale tree
+  const stale=rig.worldPointInto('head',new Vector3());
+  expect(stale.distanceTo(before)).toBeLessThan(1e-12);        // still the OLD matrixWorld
+  expect(stale.distanceTo(rig.point('head'))).toBeGreaterThan(.04); // point() self-updates → sees +.05
+  rig.syncWorld();
+  expect(rig.worldPointInto('head',new Vector3()).distanceTo(rig.point('head'))).toBeLessThan(1e-12);
+ });
+ it('sees batch-deferred writes after the outermost batch exits',()=>{
+  rig.reset();
+  expect(rig.batch(()=>42)).toBe(42); // generic passthrough
+  rig.batch(()=>{rig.batch(()=>{rig.bone('head').position.x+=.05;});}); // nested: only the outer exit flushes
+  const out=rig.worldPointInto('head',new Vector3());
+  // Rest pose has identity rotations, so the +.05 local x is a world +.05.
+  expect(out.x).toBeCloseTo(rig.rest.get('head')!.x+.05,10);
+  expect(out.distanceTo(rig.point('head'))).toBeLessThan(1e-12);
+ });
+ it('throws inside an open batch where matrixWorld is deliberately stale',()=>{
+  expect(()=>rig.batch(()=>rig.worldPointInto('head',new Vector3()))).toThrow(/batch/);
+  // Still open inside a NESTED batch — the inner exit only decrements.
+  expect(()=>rig.batch(()=>rig.batch(()=>rig.worldPointInto('head',new Vector3())))).toThrow(/batch/);
+  // The guard's batch depth unwound through the throws — outside a batch
+  // the read works again.
+  expect(()=>rig.worldPointInto('head',new Vector3())).not.toThrow();
+ });
+});

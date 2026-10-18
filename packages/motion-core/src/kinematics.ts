@@ -22,17 +22,25 @@ export function forearmTwist(roll:number){
 export function clampJoint(name: keyof typeof LIMITS, degrees: number) {
   return MathUtils.clamp(degrees, LIMITS[name][0], LIMITS[name][1]);
 }
+/* ---- scratch registers (issue #10 PR-C, eval MAJOR-2 rule) --------------
+ * Module-level temps for the hot pure-math paths. The invariant: a scratch
+ * reg is NEVER live across a call into a function that also uses scratch —
+ * each reg below is written and consumed inside a single expression/loop
+ * body, and no callee (three.js methods, MathUtils, refineMin/refineEdge)
+ * touches them. Returned values stay FRESH allocations: solveTwoBone's
+ * mid/end and frameRotation's quaternion are owned by callers. */
+const _tbDir=new Vector3(),_tbBend=new Vector3(),_tbPole=new Vector3();
 /** Constant-length two-bone geometry, with a pole vector and a flexion limit.
  * Same root / mid / tip / target / hint model as Unity Animation Rigging TwoBoneIK.
  * Engineering rig coordinates, not ISB clinical Euler angles. */
 export function solveTwoBone(root: Vector3, target: Vector3, pole: Vector3, a: number, b: number, maxFlex=145) {
-  const direction = target.clone().sub(root);
+  const direction = _tbDir.copy(target).sub(root);
   const minReach = Math.sqrt(a*a+b*b+2*a*b*Math.cos(maxFlex*DEG));
   const d = MathUtils.clamp(direction.length(), minReach, a+b-1e-6);
   if (direction.lengthSq()<1e-12) direction.set(0,-1,0);
   direction.normalize();
   const end = root.clone().addScaledVector(direction,d);
-  const bend = pole.clone().sub(root).addScaledVector(direction,-pole.clone().sub(root).dot(direction));
+  const bend = _tbBend.copy(pole).sub(root).addScaledVector(direction,-_tbPole.copy(pole).sub(root).dot(direction));
   if (bend.lengthSq()<1e-10) bend.set(0,0,1).addScaledVector(direction,-direction.z);
   if (bend.lengthSq()<1e-10) bend.set(1,0,0);
   bend.normalize();
@@ -70,10 +78,17 @@ export function angleAt(a:Vector3,b:Vector3,c:Vector3){return 180-a.clone().sub(
  * space, pole, segment lengths, the foot's world rotation, and the leg's
  * support weight (1 = planted, 0 = free swing, fractional during a transition). */
 export interface DorsiLeg{hip:Vector3;target:Vector3;pole:Vector3;upper:number;lower:number;footQ:Quaternion;weight:number}
+/** Search-path scratch: `_dh` replicates `l.hip.clone().add(new Vector3(0,0,-s))`
+ * — the literal `x+0`/`y+0` terms keep the exact float op sequence Vector3.add
+ * performed (a `-0` component would survive `copy` but not the original add).
+ * Written and consumed inside one expression per call; `legDorsiflexion`
+ * passes it as solveTwoBone's `root` — solveTwoBone only READS it and never
+ * touches this reg (MAJOR-2). */
+const _dh=new Vector3(),_shank=new Vector3(),_fq=new Quaternion();
 /** Ankle dorsiflexion (degrees) of a solved leg when the hip is shifted posteriorly by `bias` metres. */
 function legDorsiflexion(l:DorsiLeg,bias=0){
-  const s=solveTwoBone(l.hip.clone().add(new Vector3(0,0,-bias)),l.target,l.pole,l.upper,l.lower,135);
-  const shank=s.end.clone().sub(s.mid).applyQuaternion(l.footQ.clone().invert());
+  const s=solveTwoBone(_dh.set(l.hip.x+0,l.hip.y+0,l.hip.z-bias),l.target,l.pole,l.upper,l.lower,135);
+  const shank=_shank.copy(s.end).sub(s.mid).applyQuaternion(_fq.copy(l.footQ).invert());
   return Math.atan2(-shank.z,-shank.y)/DEG;
 }
 export interface PelvisCorrection{shift:number;saturated:boolean;worstDorsiflexion:number}
@@ -99,7 +114,7 @@ function refineEdge(ok:(s:number)=>boolean,lo:number,hi:number,iterations=10){
  * jumping to the cap: a jump there moved the pelvis 15 cm for a 3 mm excess. */
 function legShiftForReach(l:DorsiLeg,maxShift:number,step=.005){
   const reach=l.upper+l.lower-1e-4;
-  const dist=(s:number)=>l.hip.clone().add(new Vector3(0,0,-s)).distanceTo(l.target);
+  const dist=(s:number)=>_dh.set(l.hip.x+0,l.hip.y+0,l.hip.z-s).distanceTo(l.target);
   if(dist(0)<=reach)return 0;
   let best=0,bestDist=dist(0);
   for(let s=step;s<=maxShift+1e-9;s+=step){
@@ -116,7 +131,7 @@ function legShiftForReach(l:DorsiLeg,maxShift:number,step=.005){
  * reach at the chosen shift; the caller reports that as saturation. */
 function legShiftForLimit(l:DorsiLeg,limit:number,maxShift:number,step=.005){
   const reach=l.upper+l.lower-1e-4;
-  const reachOk=(s:number)=>l.hip.clone().add(new Vector3(0,0,-s)).distanceTo(l.target)<=reach;
+  const reachOk=(s:number)=>_dh.set(l.hip.x+0,l.hip.y+0,l.hip.z-s).distanceTo(l.target)<=reach;
   const dorsi=(s:number)=>legDorsiflexion(l,s);
   const compliant=(s:number)=>dorsi(s)<=limit;
   const start=legShiftForReach(l,maxShift,step);

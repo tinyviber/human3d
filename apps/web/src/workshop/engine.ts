@@ -401,9 +401,15 @@ export class WorkshopEngine{
       ball.visible=!this.capturing; // rebuilt markers default visible — keep them out of an in-flight capture
       this.contactMarkers.push(ball);this.scene.add(ball);
     }
-    this.solveFrame(save);this.latestFrame=save;
-    if(this.racket)this.racket.visible=save.gripAmount>0;
-    this.updateHandles(save);
+    /* INVARIANT (issue #10 PR-C): no reader or render can observe the rig
+     * between here and the solveCurrent() that ALWAYS follows rebuildAux in
+     * animate() — updateOnion is the only statement in between and it either
+     * early-returns without touching the rig or re-solves ghosts itself.
+     * solveCurrent re-solves this same playhead frame and re-sets
+     * racket.visible/handles, so the old solveFrame(save) restore was pure
+     * duplicate work. Keep latestFrame=save: nothing reads it mid-tick, but
+     * the field must describe the playhead frame, not the last aux sample. */
+    this.latestFrame=save;
     this.docDirty=false;
     // The document behind the ghost poses may have changed even when the
     // ghost instants did not — flag the next updateOnion to re-solve.
@@ -411,8 +417,9 @@ export class WorkshopEngine{
   }
   /** Re-solve ghost poses only when their instant signature changes, or when
    * rebuildAux flagged a document edit. Every ghost goes through the same
-   * frameAt+solveEffectiveFrame path as the trajectory sampler, records each
-   * bone's world position, then restores the playhead pose on the live rig. */
+   * frameAt+solveEffectiveFrame path as the trajectory sampler and records
+   * each bone's world position; the playhead pose is restored by the
+   * solveCurrent() that always follows this call in animate(). */
   private updateOnion(){
     // Captures pin ghosts hidden but keep the signature cache — the first
     // post-capture frame resumes without a needless re-solve.
@@ -429,7 +436,10 @@ export class WorkshopEngine{
       this.onionSegs.forEach((b,i)=>{const p=this.rig!.point(b.name),q=this.rig!.point(b.parent);a.setXYZ(i*2,p.x,p.y,p.z);a.setXYZ(i*2+1,q.x,q.y,q.z);});
       a.needsUpdate=true;line.visible=true;
     }
-    this.solveFrame(this.frameAtTime(doc,this.time));
+    /* INVARIANT (issue #10 PR-C): animate() calls solveCurrent() immediately
+     * after updateOnion with nothing in between — no render, handle, or
+     * analysis can observe the last ghost pose — so restoring the playhead
+     * solve here was duplicate work. (PR-C removed the final solveFrame.) */
     this.onionSig=sig;this.onionStale=false;
   }
   private updateBalance(a:Analysis){

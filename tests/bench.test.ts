@@ -1,9 +1,10 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import fs from 'node:fs';
+import {Object3D,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig,attachRacket,defaultDocument,sampleTimes,serializeDoc,solveWorkshop,
  validateDocShape,workshopMeta,WORKSHOP_REVISION,type WorkshopDoc} from '@human3d/motion-core';
-import {buildBenchDoc,medianOf,p95Of,runStageLoop,runWholeCalls,summarize} from '../scripts/lib/bench.mts';
+import {buildBenchDoc,medianOf,p95Of,runSkipFlushExperiment,runSolveProfile,runStageLoop,runWholeCalls,summarize} from '../scripts/lib/bench.mts';
 
 /* Contract tests for the workshop-pipeline bench library (issue #10 WP-A).
  * scripts/lib/bench.mts is the PURE measurement core behind the
@@ -257,5 +258,149 @@ describe('stage wiring cross-check',()=>{
   const whole=medianOf(ps.frameAt);
   expect(whole).toBeLessThanOrEqual(3*parts);
   expect(whole).toBeGreaterThanOrEqual(parts/3);
+ });
+});
+
+/* ---- solve-internal profile (issue #10 PR-C) ------------------------------
+ * runSolveProfile prototype-patches Object3D + HumanRig INSIDE the measured
+ * window and restores in finally — the assertions below are written against
+ * the landed impl's SolveProfileResult (bench.mts: samplesPerRep, solves,
+ * solveUs, umwTopLevelPerSolve, umwNodeVisitsPerSolve, umwByMethod,
+ * scopedReads, rigMethods, attributedUsPerSolve, residualUs,
+ * pelvisDorsiCorrectionUs, heapDeltaBytes).
+ *
+ * IMPORTANT — counts are pinned, not ranged like timings: the counters are
+ * deterministic (no clock noise), so an exact/tight pin is the honest bar and
+ * a drift means the batch contract moved, not a slow machine.
+ *
+ * Post-C1 numbers (evidence/bench-solve-profile.json, default-5k):
+ *  - the ~44 pre-C1 flush sites (reset 1 + rotate 9 + worldRotation 27 +
+ *    hand 2 + relaxHand 2 + grip/final ≈ 44 syncWorld CALLS per solve) all
+ *    survive as calls — solvePose wraps the whole solve in rig.batch(), so
+ *    the counters see exactly ONE forced model.updateMatrixWorld(true) per
+ *    solve: the batch-exit flush, attributed to 'batch' in umwByMethod.
+ *    (The task contract's umw.topLevel ∈ [40,50] described the PRE-C1 count;
+ *    the landed impl already batches, so the same ≈44 is pinned on
+ *    rigMethods.syncWorld.calls/solve and topLevel is pinned at 1.)
+ *  - umwNodeVisitsPerSolve ≈186 — every node visited once by that flush
+ *    (163 bones + racket subtree + scene nodes). */
+describe('solve profile (issue #10 PR-C)',()=>{
+ const fps=10,reps=2;
+ /* rig is assigned by the file-level beforeAll — describe bodies run at
+  * collection time, BEFORE hooks, so rig.rest is touched only inside the
+  * its via this helper (the file's lazy-rig convention: every sibling
+  * describe dereferences rig inside it() callbacks). */
+ const scenario=()=>{
+  const doc=defaultDocument(rig.rest);
+  return {doc,spr:sampleTimes(doc.duration,fps).length+doc.keys.length};
+ };
+ const profiled=['reset','rotate','worldRotation','limb','limbToWorldTargets','hand',
+  'relaxHand','articulateHand','point','bone','batch','syncWorld','worldPointInto']as const;
+ it('counts exactly one batch-exit full-tree flush per solve',()=>{
+  const {doc,spr}=scenario();
+  const pr=runSolveProfile({rig,doc,fps,now,warmup:0,reps});
+  expect(pr.samplesPerRep).toBe(spr);
+  expect(pr.solves).toBe(spr*reps);
+  expect(pr.umwTopLevelPerSolve.length).toBe(pr.solves);
+  expect(pr.umwNodeVisitsPerSolve.length).toBe(pr.solves);
+  for(let i=0;i<pr.solves;i++){
+   // Pre-C1 this counter read ~44 (one forced flush per syncWorld call
+   // site); C1 defers every one of them to the single flush at batch exit.
+   expect(pr.umwTopLevelPerSolve[i],`umwTopLevelPerSolve[${i}]`).toBe(1);
+   const v=pr.umwNodeVisitsPerSolve[i];
+   expect(Number.isInteger(v),`umwNodeVisitsPerSolve[${i}]`).toBe(true);
+   expect(v,`umwNodeVisitsPerSolve[${i}]`).toBeGreaterThan(pr.umwTopLevelPerSolve[i]*100); // ≈186 nodes/flush
+   expect(v,`umwNodeVisitsPerSolve[${i}]`).toBeLessThan(1000); // sanity cap ≈ tree size
+   expect(Number.isInteger(pr.umwTopLevelPerSolve[i]),`umwTopLevelPerSolve[${i}]`).toBe(true);
+  }
+  // Attribution is complete AND lands entirely on 'batch' — the only
+  // remaining flush site. A flush escaping attribution (or a second site)
+  // shifts these totals.
+  const agg=Object.values(pr.umwByMethod).reduce((s,m)=>({t:s.t+m.topLevel,v:s.v+m.nodeVisits}),{t:0,v:0});
+  expect(agg.t,'Σ umwByMethod.topLevel').toBe(pr.solves);
+  expect(agg.v,'Σ umwByMethod.nodeVisits').toBe(pr.umwNodeVisitsPerSolve.reduce((a,b)=>a+b,0));
+  expect(pr.umwByMethod.batch?.topLevel,'umwByMethod.batch.topLevel').toBe(pr.solves);
+ });
+ it('counts scoped reads and profiled rig methods as non-negative integers',()=>{
+  const {doc,spr}=scenario();
+  const pr=runSolveProfile({rig,doc,fps,now,warmup:0,reps});
+  for(const k of ['updateWorldMatrix','getWorldPosition','getWorldQuaternion','localToWorld','worldToLocal']as const){
+   const c=pr.scopedReads[k]; // required key — a rename must fail here, not fall through
+   expect(c,`scopedReads.${k}`).toBeDefined();
+   expect(Number.isInteger(c),`scopedReads.${k}`).toBe(true);
+   expect(c,`scopedReads.${k}`).toBeGreaterThanOrEqual(0);
+  }
+  // Inside the batch every world read self-updates its ancestor chain —
+  // updateWorldMatrix dominates (≈10³/solve on this rig).
+  expect(pr.scopedReads.updateWorldMatrix,'scopedReads.updateWorldMatrix').toBeGreaterThan(pr.solves*10);
+  for(const n of profiled){
+   const m=pr.rigMethods[n];
+   expect(m,`rigMethods.${n}`).toBeDefined();
+   expect(Number.isInteger(m!.calls),`rigMethods.${n}.calls`).toBe(true);
+   expect(m!.calls,`rigMethods.${n}.calls`).toBeGreaterThanOrEqual(0);
+   expect(Number.isFinite(m!.us),`rigMethods.${n}.us`).toBe(true);
+   expect(m!.us,`rigMethods.${n}.us`).toBeGreaterThanOrEqual(0);
+  }
+  // The batch contract in counts: ONE batch per solve; the ~44 pre-C1
+  // flush sites survive as deferred syncWorld calls.
+  expect(pr.rigMethods.batch!.calls,'rigMethods.batch.calls').toBe(pr.solves);
+  const swPerSolve=pr.rigMethods.syncWorld!.calls/pr.solves;
+  expect(swPerSolve,'syncWorld calls/solve ≈ pre-C1 flush sites').toBeGreaterThanOrEqual(40);
+  expect(swPerSolve,'syncWorld calls/solve ≈ pre-C1 flush sites').toBeLessThanOrEqual(50);
+  // Timing/aggregate fields: shape only — residualUs legitimately goes
+  // negative (instrumented brackets inflate solveUs; see impl disclosures).
+  expect(pr.solveUs.length).toBe(pr.solves);
+  expectAllSane(pr.solveUs,'solveUs');
+  expect(Number.isFinite(pr.attributedUsPerSolve)).toBe(true);
+  expect(pr.attributedUsPerSolve).toBeGreaterThanOrEqual(0);
+  expect(Number.isFinite(pr.residualUs)).toBe(true);
+  // The pelvisDorsiCorrection preamble replica runs once per instant
+  // (unpatched, after restore) — not per solve.
+  expect(pr.pelvisDorsiCorrectionUs.length).toBe(spr);
+  expectAllSane(pr.pelvisDorsiCorrectionUs,'pelvisDorsiCorrectionUs');
+  // No heapUsed injected → contractually no deltas.
+  expect(pr.heapDeltaBytes).toEqual([]);
+ });
+ it('restores every patched prototype — no leaked instrumentation',()=>{
+  const {doc}=scenario();
+  const O3=Object3D.prototype;
+  const o3Keys=['updateMatrixWorld','updateWorldMatrix','getWorldPosition','getWorldQuaternion','localToWorld','worldToLocal']as const;
+  const o3Before=o3Keys.map(k=>O3[k]),rigBefore=profiled.map(k=>HumanRig.prototype[k]);
+  runSolveProfile({rig,doc,fps,now,warmup:0,reps:1});
+  o3Keys.forEach((k,i)=>expect(O3[k],`Object3D.prototype.${k}`).toBe(o3Before[i]));
+  profiled.forEach((k,i)=>expect(HumanRig.prototype[k],`HumanRig.prototype.${k}`).toBe(rigBefore[i]));
+ });
+ it('restores prototypes even when the run throws inside the patched window',()=>{
+  const orig=Object3D.prototype.updateMatrixWorld;
+  let calls=0;
+  /* now() #1 is the pre-solve bracket of the first measured pass (warmup:0
+   * → already patched). Each profiled rig method brackets itself with 2
+   * now() calls, so #5 lands inside the batch body — the throw propagates
+   * through solvePose's rig.batch finally (depth unwind + exit flush) and
+   * through runSolveProfile's try/finally with patches live. */
+  const bomb=()=>{if(++calls===5)throw new Error('injected clock failure');return performance.now();};
+  expect(()=>runSolveProfile({rig,doc:scenario().doc,fps,now:bomb,warmup:0,reps:1})).toThrow('injected clock failure');
+  expect(Object3D.prototype.updateMatrixWorld).toBe(orig);
+  // The rig's batch depth unwound through the failure — worldPointInto's
+  // open-batch dev guard no longer fires.
+  expect(()=>rig.worldPointInto('head',new Vector3())).not.toThrow();
+ });
+ it('runSkipFlushExperiment proves the deferred flushes are write-only',()=>{
+  /* The experiment behind the batch change: stub model.updateMatrixWorld
+   * to a counting no-op, replay the sampled sweep, and compare the state
+   * the flushes could have influenced (every local quaternion +
+   * root.position + rig.point() world reads — all local or self-updating,
+   * .matrixWorld never read). Deterministic → pinned exactly. */
+  const {doc,spr}=scenario();
+  const r=runSkipFlushExperiment(rig,doc,fps);
+  expect(r.solves).toBe(spr);
+  expect(r.stubCalls).toBe(spr); // one stubbed batch-exit flush per solve
+  expect(r.scalarsPerSolve).toBe(rig.bones.size*7+3); // quat4 + point3 per bone + root.position
+  expect(r.compared).toBe(r.solves*r.scalarsPerSolve);
+  expect(r.firstMismatch).toBeUndefined();
+  expect(r.identical).toBe(true);
+  // The own-property stub is removed afterwards — model falls back to the
+  // (by then restored) prototype method.
+  expect(Object.prototype.hasOwnProperty.call(rig.model,'updateMatrixWorld')).toBe(false);
  });
 });
