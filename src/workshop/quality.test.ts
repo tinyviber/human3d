@@ -204,7 +204,7 @@ describe('forehand-study fixture — WP-C acceptance quality gates',()=>{
   expect(r.wristClamp.maxBend).toBeLessThan(55);
   // IK/ground exactness — all measured residuals are ~1e-16 (solver exact);
   // the 1 mm gate only absorbs float noise.
-  expect(r.ik.armResidualR.v).toBeLessThan(0.003);   // budget <3mm, measured 0
+  expect(r.ik.armResidual.v).toBeLessThan(0.003);   // budget <3mm, measured 0
   expect(r.ik.legResidual.v).toBeLessThan(0.003);    // measured 0
   expect(r.ik.reachMax.r).toBeLessThan(1);           // measured 94.3% — never saturated
   for(const s of r.footSlip)expect(s.maxResidual).toBeLessThan(1e-3); // measured ~4e-16
@@ -249,7 +249,7 @@ describe('forehand-study fixture — WP-C acceptance quality gates',()=>{
   expect(r.frameCount).toBe(121); // 2 s × 60 + 1
   expect(r.wristClamp.clampedFrames).toBe(0);
   expect(r.wristClamp.maxBend).toBeLessThan(55);
-  expect(r.ik.armResidualR.v).toBeLessThan(0.003);
+  expect(r.ik.armResidual.v).toBeLessThan(0.003);
   for(const s of r.footSlip)expect(s.maxResidual).toBeLessThan(1e-3);
   expect(r.contact.tipSpeed!).toBeGreaterThan(3.0); // measured 4.04 @60fps
   expect(r.tip!.vmax).toBeGreaterThan(7.0);         // measured 8.91 @60fps

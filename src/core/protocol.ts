@@ -38,7 +38,12 @@ export const canonical=(v:unknown):string=>JSON.stringify(v,(_k,val)=>
 /** The request as the service understands it: defaults filled, the document
  * normalized (schemaVersion 2), and preconditions dropped because they do not
  * change the output. Two requests that mean the same motion share this form,
- * so their fingerprints and artifact ids agree. */
+ * so their fingerprints and artifact ids agree. The document embeds whole —
+ * including `gripSide`: it selects which wrist/fingers the grip stage solves
+ * and which wrist carries the racket, i.e. it changes the solved trajectory,
+ * so two documents differing only in grip side must never share a fingerprint
+ * or artifact id. (An explicit 'R' normalizes to the absent default first, so
+ * spellings that mean the same solve still collide as intended.) */
 export function normalizedRequest(actionId:string,doc:WorkshopDoc|undefined,fps:number){
  return {action:{id:actionId,parameters:doc?{document:doc}:{}},rig:RIG_ID,outputs:[{kind:'motion',format:'pose-json'}],sample:{fps}};
 }
@@ -100,15 +105,18 @@ export interface WorkshopMetaArgs{
   * descriptors leave it undefined and ship `parameters: {}`. */
  documentName?:string;
  /** Ad-hoc presentation hints: prop flags the racket (any key carries a grip
-  * constraint), loop mirrors doc.loop. `parameters` is an open object in the
-  * schema and never enters the artifact hash. */
- prop?:boolean;loop?:boolean;
+  * constraint), loop mirrors doc.loop, gripSide mirrors doc.gripSide ('L'
+  * only — 'R' is the absent default). `parameters` is an open object in the
+  * schema and never enters the artifact hash — the solve-affecting copy of
+  * the side already lives inside parameters.document for the fingerprint. */
+ prop?:boolean;loop?:boolean;gripSide?:'L'|'R';
  source:string;license:string;requestFingerprint:string;
  fps:number;duration:number;keys:number;notes?:string[];
 }
 export function workshopMeta(a:WorkshopMetaArgs){
  const parameters=a.documentName===undefined?{}:
-  {documentName:a.documentName,presentation:{...(a.prop?{prop:'racket' as const}:{}),loop:a.loop===true}};
+  {documentName:a.documentName,presentation:{...(a.prop?{prop:'racket' as const}:{}),
+   ...(a.prop&&a.gripSide==='L'?{gripSide:'L' as const}:{}),loop:a.loop===true}};
  return {motionId:a.motionId,manifestSHA256:a.manifestSHA256,bones:a.bones,
   action:{id:a.actionId,revision:a.revision,parameters,definitionSHA256:a.definitionSHA256},
   provenance:{solver:SOLVER_NAME,solverRevision:SERVICE_VERSION,source:a.source,requestFingerprint:a.requestFingerprint,

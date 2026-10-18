@@ -10,7 +10,9 @@ import type {DynamicsRecords,MuscleActionFile} from './muscle-action';
  * from `dynamics.action` by normalizeMotionFile, not authored on disk. */
 export type MotionFileKind='workshop-motion'|'clip-motion'|'dynamics-motion';
 export interface MotionCapabilities{
-  prop?:{kind:'racket';trail:boolean;handView:boolean};
+  /** The prop's `side` is the wrist it mounts on; absent means 'R' — the
+   * pre-WP-D default every existing envelope relied on. */
+  prop?:{kind:'racket';trail:boolean;handView:boolean;side?:'L'|'R'};
   camera?:{targetHeight:number;distance:number};
   locomotion?:'in-place'|'follow';
 }
@@ -63,7 +65,7 @@ export function validateMotionFileShape(raw:unknown):string[]{
    const c=f.capabilities;
    if(!isObj(c))e.push('capabilities 必须是对象');
    else{
-    if(c.prop!==undefined&&(!isObj(c.prop)||c.prop.kind!=='racket'||typeof c.prop.trail!=='boolean'||typeof c.prop.handView!=='boolean'))e.push('capabilities.prop 必须是 {kind:\'racket\',trail,handView}');
+    if(c.prop!==undefined&&(!isObj(c.prop)||c.prop.kind!=='racket'||typeof c.prop.trail!=='boolean'||typeof c.prop.handView!=='boolean'||(c.prop.side!==undefined&&c.prop.side!=='L'&&c.prop.side!=='R')))e.push('capabilities.prop 必须是 {kind:\'racket\',trail,handView,side?}');
     if(c.camera!==undefined&&(!isObj(c.camera)||!isNum(c.camera.targetHeight)||!isNum(c.camera.distance)))e.push('capabilities.camera 必须是 {targetHeight,distance}');
     if(c.locomotion!==undefined&&c.locomotion!=='in-place'&&c.locomotion!=='follow')e.push('capabilities.locomotion 必须是 in-place 或 follow');
    }

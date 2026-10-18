@@ -32,6 +32,9 @@ export interface MotionSource{
   point(name:string):Vector3|undefined;
   /** Whether the prop is on screen this frame — the document grip ramp counts. */
   wantsProp():boolean;
+  /** Wrist the prop mounts on ('R' when absent) — constant per source, so the
+   * engine can remount the racket once per source instead of per frame. */
+  readonly propSide?:'L'|'R';
   /** Whole-model visual offset (walk accumulates one stride per loop wrap). */
   readonly modelOffset?:Vector3;
   /** Extra scene object managed by the source (dynamics replay root). */
@@ -47,13 +50,14 @@ export interface MotionSource{
 
 /** Shared skeleton measurement (the old engine.diagnostics() shape). The
  * racket grip error is only meaningful while the prop is wanted — callers pass
- * the racket in then, otherwise gripError is 0. */
-function rigReadout(rig:HumanRig,racket?:{getWorldPosition(v:Vector3):Vector3}):FrameReadout{
+ * the racket in then, otherwise gripError is 0. `side` selects the gripping
+ * wrist the error and `hand` anchor read (right remains the default). */
+function rigReadout(rig:HumanRig,racket?:{getWorldPosition(v:Vector3):Vector3},side:'L'|'R'='R'):FrameReadout{
   rig.model.updateMatrixWorld(true);
   const p=(n:string)=>rig.point(n);
   let gripError=0;
-  if(racket)gripError=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone()).distanceTo(racket.getWorldPosition(new Vector3()));
-  return {knee:angleAt(p('upperleg01_R'),p('lowerleg01_R'),p('foot_R')),elbow:angleAt(p('upperarm01_R'),p('lowerarm01_R'),p('wrist_R')),gripError,footL:p('foot_L').toArray(),footR:p('foot_R').toArray(),root:p('root').toArray(),vertices:rig.info.vertices,bones:rig.bones.size,hand:p('wrist_R').toArray()};
+  if(racket)gripError=rig.bone(`wrist_${side}`).localToWorld(gripFrame(rig,side).center.clone()).distanceTo(racket.getWorldPosition(new Vector3()));
+  return {knee:angleAt(p('upperleg01_R'),p('lowerleg01_R'),p('foot_R')),elbow:angleAt(p('upperarm01_R'),p('lowerarm01_R'),p('wrist_R')),gripError,footL:p('foot_L').toArray(),footR:p('foot_R').toArray(),root:p('root').toArray(),vertices:rig.info.vertices,bones:rig.bones.size,hand:p(`wrist_${side}`).toArray()};
 }
 
 /** A baked AnimationClip driven through the shared mixer. The engine owns the
@@ -95,9 +99,11 @@ export class DocumentSource implements MotionSource{
     solveEffectiveFrame(this.rig,f);this.grip=f.gripAmount;
   }
   wantsProp(){return this.grip>0;}
+  /** The document's authored grip side — the racket mount and readout follow it. */
+  get propSide(){return this.doc.gripSide==='L'?'L':'R';}
   rootPoint(){return this.rig.point('root');}
   point(name:string){return this.rig.bones.has(name)?this.rig.point(name):undefined;}
-  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined);}
+  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined,this.propSide);}
 }
 
 const isObj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
@@ -175,9 +181,11 @@ export class PosePackageSource implements MotionSource{
     this.rig.model.updateMatrixWorld(true);
   }
   wantsProp(){return this.status==='ready'&&!!this.prop;}
+  /** The prop capability's declared mount side ('R' when undeclared). */
+  get propSide(){return this.prop?.side==='L'?'L':'R';}
   rootPoint(){return this.rig.point('root');}
   point(name:string){return this.rig.bones.has(name)?this.rig.point(name):undefined;}
-  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined);}
+  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined,this.propSide);}
 }
 
 /** Derive the lab's MotionSpec for a delivered pose package — the inverse of
@@ -201,7 +209,10 @@ export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
  // envelope exists it is authoritative: its absence of a prop is also truth,
  // so a forged presentation channel cannot add a prop to a bundled id.
  const prop=envelope?envelope.capabilities?.prop
-  :(pres.prop==='racket'?{kind:'racket' as const,trail:true,handView:true}:undefined);
+  :(pres.prop==='racket'?{kind:'racket' as const,trail:true,handView:true,
+    // Ad-hoc packages carry the document's grip side as a package-level
+    // constant (v2 has no per-frame grip channel); absent means 'R'.
+    ...(pres.gripSide==='L'?{side:'L' as const}:{})}:undefined);
  const capabilities:MotionCapabilities|undefined=envelope?envelope.capabilities:(prop?{prop}:undefined);
  // Loop semantics are authored in the document, not the package: bundled
  // envelopes carry the document, ad-hoc packages carry presentation.loop.
@@ -218,7 +229,7 @@ export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
   solver?`求解器 ${solver}${solverRev}`:'',
   source,
   warnings.length?`质量警告 ${warnings.length} 条：${warnings.slice(0,3).join('；')}${warnings.length>3?' …':''}`:'质量警告 0 条',
-  prop?'v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示':'',
+  prop?`v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示${prop.side==='L'?'（左手持拍）':''}`:'',
  ].filter(Boolean).join(' · ');
  const documentName=typeof params.documentName==='string'&&params.documentName?params.documentName:undefined;
  return {id,name:envelope?.name||documentName||actionId,

@@ -3,7 +3,7 @@ import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig,skeletonSegments} from './rig';
 import {MOTIONS,motionById,muscleActionById} from './motions';
-import {attachRacket} from './racket';
+import {attachRacket,mountRacket} from './racket';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,type DynamicsSession,type MotionSource} from './motion-source';
 import type {PosePackage} from './pose-package';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
@@ -20,7 +20,8 @@ export class HumanEngine{
  private pkgSeq=0;
  private _source?:MotionSource;private fade=new PoseFade();private dynSession?:DynamicsSession;
  debug:DebugOptions={surface:true,skeleton:false,axes:false,targets:false,trail:false,muscles:false};
- racket?:Group;skeletonLines?:LineSegments;jointGroup=new Group();axesGroup=new Group();targetGroup=new Group();
+ racket?:Group;private racketSide:'L'|'R'='R';
+ skeletonLines?:LineSegments;jointGroup=new Group();axesGroup=new Group();targetGroup=new Group();
  targetMarkers=new Map<string,Mesh>();trail?:Line;trailPoints:Vector3[]=[];
  previousPosition=new Vector3();view:ViewId='front';
  private floor?:Mesh;private grid?:GridHelper;private keyLight?:DirectionalLight;private clock=new Clock();private lastNotify=0;private resizeObserver:ResizeObserver;private raf=0;
@@ -80,6 +81,13 @@ export class HumanEngine{
   }catch(err){this.onError?.(err instanceof Error?err:new Error(String(err)));}
  }
  private specOf(id:MotionId){return this.specs.get(id)??motionById(id);}
+ /** Mount the shared racket on the wrist the source's prop declares. The side
+  * is constant per source, so this fires at most once per source switch;
+  * prop-less sources report 'R' and restore the canonical mount. */
+ private syncRacketSide(src:MotionSource){
+  const side=src.propSide??'R';
+  if(this.racket&&this.rig&&side!==this.racketSide){mountRacket(this.rig,this.racket,side);this.racketSide=side;}
+ }
  /** Register an externally delivered pose package as a temporary motion.
   * The package is shape-checked against the local rig; a malformed package is
   * refused loudly through onError, never decoded silently. */
@@ -138,7 +146,7 @@ export class HumanEngine{
   if(fade&&previous&&previous!==source&&skinned(previous))this.fade.start(this.rig!);else this.fade.clear();
   source.activate?.();source.seek(this.time);
   this.model!.position.copy(source.modelOffset??ZERO);
-  if(this.racket)this.racket.visible=!!spec.capabilities?.prop&&source.wantsProp();
+  if(this.racket){this.syncRacketSide(source);this.racket.visible=!!spec.capabilities?.prop&&source.wantsProp();}
   this.trailPoints=[];this.previousPosition.set(0,0,0);this.playing=true;
   this.controls.target.set(0,.88,0);this.setView(this.view==='hand'?'threeQuarter':this.view);
   this.setDebug(this.debug);this.notify();
@@ -176,7 +184,9 @@ export class HumanEngine{
   target.y=spec.capabilities?.camera?.targetHeight??.87;
   if(view==='free'){const shift=target.clone().sub(this.controls.target);this.camera.position.add(shift);this.controls.target.copy(target);this.previousPosition.copy(root);this.controls.update();this.render();return;}
   if(view==='hand'&&this.rig){
-   const wrist=(this.isPhysics&&this.physics?.ready?this._source?.point('lunate_r'):this.rig.point('wrist_R'))??this.rig.point('wrist_R');
+   // The hand view anchors to the wrist the prop is mounted on — physics keeps
+   // the lunate anchor; prop-less sources read the default right wrist.
+   const wrist=(this.isPhysics&&this.physics?.ready?this._source?.point('lunate_r'):this.rig.point(`wrist_${this._source?.propSide??'R'}`))??this.rig.point('wrist_R');
    target.copy(wrist).add(new Vector3(0,.01,.03));this.camera.position.copy(target).add(new Vector3(-.34,.18,.42));
   }else{
    const distance=Math.max(this.isPhysics?4.15:spec.capabilities?.camera?.distance??3.65,2.0/Math.max(.4,this.camera.aspect));
@@ -220,12 +230,12 @@ export class HumanEngine{
   this.model.position.copy(src.modelOffset??ZERO);
   // The prop appears/disappears with the grip amount — during the grip ramp it
   // fades in/out rather than snapping, an acceptable semantics for the ramp.
-  if(this.racket)this.racket.visible=!!spec.capabilities?.prop&&src.wantsProp();
+  if(this.racket){this.syncRacketSide(src);this.racket.visible=!!spec.capabilities?.prop&&src.wantsProp();}
   this.model.updateMatrixWorld(true);
   const current=src.rootPoint(),delta=current.clone().sub(this.previousPosition);
   // Camera translation follows locomotion only; Orbit orientation / zoom remain independent.
   if(spec.capabilities?.locomotion==='follow'||this.fade.active){delta.y=0;this.controls.target.add(delta);this.camera.position.add(delta);}
-  if(this.view==='hand'){const target=(src.point('wrist_R')??this.rig.point('wrist_R')).add(new Vector3(0,.01,.03)),d=target.clone().sub(this.controls.target);this.controls.target.add(d);this.camera.position.add(d);}
+  if(this.view==='hand'){const target=(src.point(`wrist_${src.propSide??'R'}`)??this.rig.point('wrist_R')).add(new Vector3(0,.01,.03)),d=target.clone().sub(this.controls.target);this.controls.target.add(d);this.camera.position.add(d);}
   this.previousPosition.copy(current);if(this.floor){this.floor.position.x=current.x;this.floor.position.z=current.z;}if(this.grid){this.grid.position.x=Math.round(current.x/.25)*.25;this.grid.position.z=Math.round(current.z/.25)*.25;}if(this.keyLight){this.keyLight.position.set(current.x-3,5,current.z+4);this.keyLight.target.position.set(current.x,0,current.z);this.keyLight.target.updateMatrixWorld();}this.updateDebug();
   this.lastNotify+=dt;if(this.lastNotify>.07){this.lastNotify=0;this.notify();}
  }

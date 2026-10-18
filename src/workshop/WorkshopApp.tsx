@@ -287,6 +287,10 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <Row label="循环播放" detail={loopBlockers(d).join('；')||'首帧位于 0 s，末帧早于时长'} checked={d.loop} disabled={!d.loop&&loopBlockers(d).length>0} onChange={v=>edit(dd=>{if(v&&loopBlockers(dd).length)return;dd.loop=v;})}/>
      <label className="ws-field"><span>左手坐标系</span><select value={d.handFrames.L} onChange={e=>edit(dd=>{dd.handFrames.L=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
      <label className="ws-field"><span>右手坐标系</span><select value={d.handFrames.R} onChange={e=>edit(dd=>{dd.handFrames.R=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
+     {/* The whole grip stage — finger wrap, wrist cone, clavicle assist and
+         the racket mount — mirrors onto the selected side; 'R' stores the
+         canonical absent value so serialized docs keep their legacy bytes. */}
+     <label className="ws-field"><span>握拍侧</span><select value={d.gripSide??'R'} onChange={e=>edit(dd=>{dd.gripSide=e.target.value==='L'?'L':undefined;})}><option value="R">右手（默认）</option><option value="L">左手</option></select></label>
      <Row label="抬肩辅助" detail="手高于胸口时锁骨与肩部随动上抬" checked={d.clavicleLift===true} onChange={v=>edit(dd=>{dd.clavicleLift=v||undefined;})}/>
      <div className="ws-row">
       <button onClick={exportDoc}><Download size={13}/>导出 JSON</button>
@@ -356,7 +360,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        {(()=>{const ks=sortedKeys(d),si=ks.findIndex(k=>k.id===sel.id);
         return si===ks.length-1&&si>0&&((ks[si-1].constraints.plantL&&!sel.constraints.plantL)||(ks[si-1].constraints.plantR&&!sel.constraints.plantR))
           ?<p className="ws-note" style={{color:'#c0392b'}}>此离地帧位于动作末尾：没有后续区间，脚始终停在接触点 —— 请在其后添加关键帧，抬升高度才会形成摆动轨迹。</p>:null;})()}
-       <Row label="右手握拍" checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>
+       <Row label={d.gripSide==='L'?'左手握拍':'右手握拍'} checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>
        <Row label="触球 / 接触事件" detail="记录拍头位置为接触点" checked={sel.constraints.contact} onChange={v=>editSelected(k=>{k.constraints.contact=v;})}/>
       </div>
       <div className="ws-sub"><h3>躯干与骨盆</h3>

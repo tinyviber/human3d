@@ -50,7 +50,7 @@ interface ActionDescriptor{
 const BUNDLED_PARAMS={type:'object',additionalProperties:false,properties:{}};
 const WORKSHOP_DOC_PARAMS={
  type:'object',additionalProperties:false,required:['document'],
- properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); optional document flags such as clavicleLift. Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. Documents with schemaVersion 1 are upgraded on input.`}},
+ properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); optional document flags such as clavicleLift and gripSide ('R'|'L', default 'R' — which hand holds the racket and gets the grip solve). Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. Documents with schemaVersion 1 are upgraded on input.`}},
 };
 const IDEMPOTENCY_KEY=new RegExp(`^[!-~]{1,${LIMITS_SVC.idempotencyKeyMaxLength}}$`);
 
@@ -193,7 +193,7 @@ function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,strin
  const motionId=artifactId(fp,definitionSHA256,ctx,SOLVER_NAME);
  const meta=(id:string)=>workshopMeta({motionId:id,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,
   actionId,revision,definitionSHA256,documentName:requestDoc?.name,
-  prop:doc.keys.some(k=>k.constraints?.grip),loop:doc.loop,
+  prop:doc.keys.some(k=>k.constraints?.grip),loop:doc.loop,gripSide:doc.gripSide,
   source:descriptor.provenance.source,license:descriptor.provenance.license,requestFingerprint:fp,
   fps,duration:doc.duration,keys:doc.keys.length,notes:descriptor.notes});
  const pkg=solveWorkshop(ctx.rig,doc,fps,meta(motionId),descriptor.phases);

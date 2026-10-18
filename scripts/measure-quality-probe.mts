@@ -46,7 +46,7 @@ for(const id of ids){
   deficitFrames:r.wristClamp.deficitFrames,deficitMed:r.wristClamp.deficitMedian,
   tipSpeedAtContact:r.contact.tipSpeed,contactT:r.contact.time??-1,
   tipAccelTop:r.tip?.accelTop??[],wristAccelTop:r.wrist.accelTop,
-  armReachResidual:r.ik.armResidualR,reachMax:r.ik.reachMax,
+  armReachResidual:r.ik.armResidual,reachMax:r.ik.reachMax,
   rootMaxStep:r.root.maxStep,rootMaxV:r.root.maxV,rootMaxA:r.root.maxA,
   pelvisShiftRange:[r.pelvis.shiftMin,r.pelvis.shiftMax],pelvisShiftJump:[r.pelvis.maxJump,r.pelvis.jumpT],
   soleMinY:r.sole.minY};

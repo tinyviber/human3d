@@ -250,7 +250,7 @@ describe('forearm twist and grip blend are continuous',()=>{
   for(let a=0;a<=1+1e-9;a+=.01){
    // The solver resets the rig before every frame's blend; mirror that here so the
    // wrap is solved from the rest finger pose at each amount.
-   rig.reset();blendGrip(rig,a);
+   rig.reset();blendGrip(rig,'R',a);
    const now=names.map(n=>rig.bone(n).quaternion.clone());
    if(prev)now.forEach((q,i)=>{worst=Math.max(worst,q.angleTo(prev![i]));});
    prev=now;

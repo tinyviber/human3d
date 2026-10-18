@@ -336,21 +336,75 @@ assert(stillBuf.length>5000,`still suspiciously small for a rendered pose: ${sti
 const stillState=await page.evaluate(()=>({time:window.__WS__.time,playing:window.__WS__.playing}));
 assert.deepEqual(stillState,{time:.5,playing:false},'still export did not restore the transport state');
 // Sheet while playing: the QA doc has 3 keys → a 3×1 grid of fixed tiles plus
-// the caption band; restore must resume playback, not leave it paused.
-await page.evaluate(()=>window.__WS__.setPlaying(true));
+// the caption band; restore must resume playback, not leave it paused. A
+// plain post-download `playing` read is racy here — each tile's endCapture
+// legitimately RESUMES playback, the animate loop then keeps the clock
+// running through the remaining tiles' gaps and the sheet toBlob, and the
+// 1 s QA doc can simply play out before the download resolves (observed on
+// software-GL Chromium: false-vs-true flakes). endCapture is tapped instead,
+// so the assertion measures the restore instant itself, on the real path.
+await page.evaluate(()=>{
+ const e=window.__WS__;e.seek(0);e.setPlaying(true);
+ const orig=e.endCapture.bind(e);
+ window.__sheetRestores=[];
+ e.endCapture=s=>{orig(s);window.__sheetRestores.push({t:e.time,p:e.playing});};
+});
 const [sheetDl]=await Promise.all([
  page.waitForEvent('download'),
  page.getByRole('button',{name:'关键帧拼图',exact:true}).click(),
 ]);
+const sheetRestores=await page.evaluate(()=>window.__sheetRestores);
 assert.equal(sheetDl.suggestedFilename(),`${wsDoc.id}.sheet.png`,'sheet filename is not <docId>.sheet.png');
 const sheetBuf=fs.readFileSync(await sheetDl.path());
 assert.equal(sheetBuf.readUInt32BE(0),0x89504E47,'sheet export is not a PNG');
 assert.equal(sheetBuf.readUInt32BE(16),640*3,'3-key sheet should be three 640 px tiles wide');
 assert.equal(sheetBuf.readUInt32BE(20),720+28,'3-key sheet should be one tile row plus the caption band');
 assert(sheetBuf.length>stillBuf.length,'3-tile sheet should outweigh the single still');
-assert.equal(await page.evaluate(()=>window.__WS__.playing),true,'sheet export left the engine paused');
+assert.equal(sheetRestores.length,3,'sheet should restore the transport once per tile');
+assert(sheetRestores.every(r=>r.p===true),'sheet export restored a PAUSED transport instead of the running one');
+await page.evaluate(()=>{delete window.__WS__.endCapture;});
 await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);});
 result.checks.workshopStillExport=true;
+// --- WP-D workshopGripSide: switch the QA doc to left-hand grip through the
+// real 握拍侧 select, confirm the racket remounts onto wrist_L, then drag the
+// tip handle with a real pointer and require the edit to land on the LEFT
+// hand target while handR stays untouched — the same pointerdown/move/up
+// pipeline every other handle check uses, never a direct doc mutation.
+await page.locator('.ws-key').nth(0).click();
+await page.locator('.ws-field').filter({hasText:'握拍侧'}).locator('select').selectOption('L');
+assert.equal(await page.evaluate(()=>window.__WS__.getDoc().gripSide),'L','UI 握拍侧 select did not write gripSide L');
+await page.waitForTimeout(150); // let React flush the relabelled constraint row
+const gripRow=page.locator('.ws-check').filter({hasText:'手握拍'});
+assert.match(await gripRow.textContent(),/左手握拍/,'constraint row did not relabel to 左手握拍');
+await gripRow.locator('input').check();          // key 0 grips
+await page.locator('.ws-key').nth(1).click();
+await gripRow.locator('input').check();          // mid key (.5 s) grips
+await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.seek(.5);e.solveCurrent();});
+const mount=await page.evaluate(()=>{
+ const e=window.__WS__,probe=e.handles.find(h=>h.kind==='tip').mesh.position.clone().set(0,0,0);
+ return {parent:e.racket.parent?.name,visible:e.racket.visible,
+  dL:e.racket.getWorldPosition(probe).distanceTo(e.rig.point('wrist_L')),
+  dR:probe.distanceTo(e.rig.point('wrist_R'))};
+});
+assert.equal(mount.parent,'wrist_L','racket did not remount onto the left wrist');
+assert.equal(mount.visible,true,'racket should be visible at full left-grip amount');
+assert(mount.dL<.15,`racket origin sits ${mount.dL}m from wrist_L — not a left grip mount`);
+assert(mount.dL<mount.dR,'racket origin is closer to the right wrist than the left');
+// Tip-drag under left grip edits the LEFT hand target only.
+const handBefore=await page.evaluate(()=>{const ks=[...window.__WS__.getDoc().keys].sort((a,b)=>a.time-b.time);return {l:{...ks[1].pose.handL.target},r:{...ks[1].pose.handR.target}};});
+const tipScreen=await page.evaluate(()=>{
+ const e=window.__WS__,h=e.handles.find(h=>h.kind==='tip');
+ const p=h.mesh.position.clone().project(e.camera),r=e.renderer.domElement.getBoundingClientRect();
+ return {x:r.left+(p.x+1)/2*r.width,y:r.top+(1-p.y)/2*r.height,visible:h.mesh.visible};
+});
+assert(tipScreen.visible,'tip handle must be visible under a left grip');
+await page.mouse.move(tipScreen.x,tipScreen.y);await page.mouse.down();
+await page.mouse.move(tipScreen.x+45,tipScreen.y-35,{steps:8});
+await page.mouse.up();await page.waitForTimeout(150);
+const handAfter=await page.evaluate(()=>{const ks=[...window.__WS__.getDoc().keys].sort((a,b)=>a.time-b.time);return {l:{...ks[1].pose.handL.target},r:{...ks[1].pose.handR.target}};});
+assert(Math.hypot(handAfter.l.x-handBefore.l.x,handAfter.l.y-handBefore.l.y,handAfter.l.z-handBefore.l.z)>.005,'tip drag did not edit the left hand target');
+assert.deepEqual(handAfter.r,handBefore.r,'left-grip tip drag must not touch handR.target');
+result.checks.workshopGripSide=true;
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
 fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 

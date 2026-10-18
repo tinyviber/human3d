@@ -102,6 +102,11 @@
             },
             "handView": {
               "type": "boolean"
+            },
+            "side": {
+              "type": "string",
+              "enum": ["R", "L"],
+              "description": "Wrist the prop mounts on; absent means 'R'."
             }
           }
         },

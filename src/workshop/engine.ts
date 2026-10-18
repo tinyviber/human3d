@@ -2,7 +2,7 @@ import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Float32Buf
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig,skeletonSegments} from '../core/rig';
-import {attachRacket} from '../core/racket';
+import {attachRacket,mountRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
 import type {EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from './document';
 import {contactStartKey,frameAt,isReleaseKey,sortedKeys,toV} from './document';
@@ -92,6 +92,9 @@ export class WorkshopEngine{
   private capturing=false;
   private latestFrame?:EffectiveFrame;
   private footGeo?:Record<Side,FootGeometry>;
+  /** The wrist the racket is currently mounted on — remounted when a solve
+   * carries a different gripSide than the last mount (doc edits, doc switch). */
+  private racketSide:'L'|'R'='R';
   onFrame?:(f:WorkshopFrame)=>void;onReady?:(info:RigInfo)=>void;onError?:(e:Error)=>void;
   /** App hooks: begin edit = pick or auto-insert the key being dragged. */
   onBeginEdit?:(time:number,prefer?:string)=>WorkshopKey|null;
@@ -123,7 +126,7 @@ export class WorkshopEngine{
       if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
       this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
-      this.racket=attachRacket(this.rig);this.racket.visible=false;
+      this.racket=attachRacket(this.rig,this.getDoc().gripSide==='L'?'L':'R');this.racketSide=this.getDoc().gripSide==='L'?'L':'R';this.racket.visible=false;
       this.footGeo={L:footGeometry(this.rig.rest,'L'),R:footGeometry(this.rig.rest,'R')};
       this.makeHandles();this.makeMarkers();this.makeOnion();
       this.ready=true;this.solveCurrent();this.setView('threeQuarter');this.onReady?.(info);
@@ -224,7 +227,8 @@ export class WorkshopEngine{
       case 'tip':case 'contact':{
         if(!this.racket)break;this.solveCurrent();
         const tip=this.racket.localToWorld(new Vector3(0,.61,0));
-        const d=pos.clone().sub(tip);const t=k.handR.target;k.handR.target={x:t.x+d.x,y:t.y+d.y,z:t.z+d.z};break;}
+        const d=pos.clone().sub(tip),h=this.getDoc().gripSide==='L'?k.handL:k.handR;
+        const t=h.target;h.target={x:t.x+d.x,y:t.y+d.y,z:t.z+d.z};break;}
     }
     this.solveCurrent();this.docDirty=true;this.onDocChanged?.();
   };
@@ -245,6 +249,12 @@ export class WorkshopEngine{
   private solveFrame(f:EffectiveFrame){
     if(!this.rig)return;
     solveEffectiveFrame(this.rig,f);
+    /* Remount on side change — the frame carries the doc's gripSide, and the
+     * mount is a constant per document, so this fires at most once per edit
+     * (here, the one place every solve path funnels through, trajectory and
+     * ghost sampling included). */
+    const side=f.gripSide==='L'?'L':'R';
+    if(this.racket&&side!==this.racketSide){mountRacket(this.rig,this.racket,side);this.racketSide=side;}
   }
   /** Lowest ankle height keeping the sole on or above the rest sole plane. */
   private minAnkleY(side:Side,f:{yaw:number;pitch:number},y:number){

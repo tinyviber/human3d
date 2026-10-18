@@ -19,7 +19,7 @@ import type {HumanRig} from '../core/rig';
 import {DEG,WRIST_BEND_LIMIT_DEG,solveTwoBone} from '../core/kinematics';
 import {DORSI_LIMIT_DEG,analyzePose,solveEffectiveFrame} from './solver';
 import {frameAt,sortedKeys,toV,type WorkshopDoc} from './document';
-import {footGeometry} from './foot';
+import {footGeometry,type Side} from './foot';
 
 export type Vec3=[number,number,number];
 export type Quat=[number,number,number,number];
@@ -38,10 +38,16 @@ export const PROBE_POINTS=[
  'root','spine01','neck01','head','wrist_L','wrist_R','lowerarm01_R','lowerarm01_L','upperarm01_R',
  'foot_L','foot_R','lowerleg01_L','lowerleg01_R','upperleg01_L','upperleg01_R',
 ] as const;
-/** Right-arm kinetic chain for the sequencing table (pelvis→hand). */
-const CHAIN=['root','spine01','clavicle_R','upperarm01_R','lowerarm01_R','wrist_R'] as const;
-const CHAIN_LABEL:Record<string,string>={root:'pelvis',spine01:'trunk',clavicle_R:'shoulderGirdle',upperarm01_R:'upperArm',lowerarm01_R:'forearm',wrist_R:'hand'};
-const CHAIN_PARENT:Record<string,string|undefined>={root:undefined,spine01:'root',clavicle_R:'spine01',upperarm01_R:'clavicle_R',lowerarm01_R:'upperarm01_R',wrist_R:'lowerarm01_R'};
+/** Kinetic chain for the sequencing table (pelvis→hand): follows the
+ * document's gripSide — the gripping arm is the one whose solve quality the
+ * table diagnoses. Labels/parents are keyed by bone name for both sides. */
+const chainBones=(side:'L'|'R')=>['root','spine01',`clavicle_${side}`,`upperarm01_${side}`,`lowerarm01_${side}`,`wrist_${side}`] as const;
+const CHAIN_LABEL:Record<string,string>={root:'pelvis',spine01:'trunk',
+ clavicle_R:'shoulderGirdle',upperarm01_R:'upperArm',lowerarm01_R:'forearm',wrist_R:'hand',
+ clavicle_L:'shoulderGirdle',upperarm01_L:'upperArm',lowerarm01_L:'forearm',wrist_L:'hand'};
+const CHAIN_PARENT:Record<string,string|undefined>={root:undefined,spine01:'root',
+ clavicle_R:'spine01',upperarm01_R:'clavicle_R',lowerarm01_R:'upperarm01_R',wrist_R:'lowerarm01_R',
+ clavicle_L:'spine01',upperarm01_L:'clavicle_L',lowerarm01_L:'upperarm01_L',wrist_L:'lowerarm01_L'};
 
 /** Anything that carries a tip point in its local frame — the racket from
  * attachRacket. Tip metrics are skipped when absent (never silently mapped
@@ -66,10 +72,10 @@ export interface ProbeFrame{
  /** Posterior pelvis correction applied this frame (m) and whether the
   * 15 cm cap was hit — the recorded signal for pelvis-fold diagnostics. */
  pelvisShift:number;saturated:boolean;
- /** arm_R two-bone internals re-derived from the solved shoulder root (same
-  * math rig.limb ran, kept for clamp/saturation diagnostics): target distance
-  * d vs max reach, solved flexion, pole-bend direction, wrist bend angle
-  * before the WRIST_BEND_LIMIT_DEG clamp. */
+ /** Gripping-arm (doc.gripSide) two-bone internals re-derived from the solved
+  * shoulder root (same math rig.limb ran, kept for clamp/saturation
+  * diagnostics): target distance d vs max reach, solved flexion, pole-bend
+  * direction, wrist bend angle before the WRIST_BEND_LIMIT_DEG clamp. */
  arm:{d:number;reach:number;flexion:number;bendDir:Vec3;wristBend:number};
  /** Leg hip→foot-target distances per side. */
  legD:{L:number;R:number};
@@ -123,8 +129,11 @@ export interface ProbeReport{
  pelvis:{shiftMin:number;shiftMax:number;maxJump:number;jumpT:number;saturatedFrames:number};
  /** Lowest solved foot point vs the rest sole plane (m). */
  sole:{minY:{L:number;R:number};minYT:{L:number;R:number};penetration:{L:number;R:number}};
+ /** Gripping side the arm/chain/wrist metrics instrument (doc.gripSide, 'R'
+  * default) — every per-side report label derives from it. */
+ gripSide:'L'|'R';
  /** IK residuals and saturation internals (m / deg / ratio). */
- ik:{armResidualR:{v:number;t:number};legResidual:{v:number;t:number;side:string};reachMax:{r:number;t:number};poleBendFlip:{v:number;t:number}};
+ ik:{armResidual:{v:number;t:number;side:string};legResidual:{v:number;t:number;side:string};reachMax:{r:number;t:number};poleBendFlip:{v:number;t:number}};
  /** Wrist bend demand vs the solver's WRIST_BEND_LIMIT_DEG clamp. */
  wristClamp:{limitDeg:number;maxBend:number;maxBendT:number;clampedFrames:number;transitions:number[];deficitMax:number;deficitFrames:number;deficitMedian:number};
  /** The window the chain's active/relative peaks were taken over. */
@@ -133,11 +142,11 @@ export interface ProbeReport{
  wrist:ProbeSmooth;
  /** null when the probe ran without a tip object. */
  tip:ProbeSmooth|null;
- /** Max per-frame acceleration of the authored handR target — separates
-  * document/interpolation jumps from solver jumps at the wrist. */
+ /** Max per-frame acceleration of the authored gripping-hand target —
+  * separates document/interpolation jumps from solver jumps at the wrist. */
  handTargetAccel:{a:number;t:number};
- /** wrist_R per-step angle (rad) split by proximity to a key instant — the
-  * slerp C0 signature: equal medians mean keys don't kink the trajectory. */
+ /** Gripping-wrist per-step angle (rad) split by proximity to a key instant —
+  * the slerp C0 signature: equal medians mean keys don't kink the trajectory. */
  wristStep:{atKeyMedian:number;atKeyCount:number;interiorMedian:number;interiorCount:number};
  /** Last contact-flagged key and the tip speed measured at it. */
  contact:{time:number|null;tipSpeed:number|null};
@@ -208,16 +217,18 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
   for(const p of PROBE_POINTS)pos[p]=v3a(rig.point(p));
   const check:Record<string,number|null>={};
   for(const it of a.items)check[it.code]=it.value;
-  /* arm_R two-bone internals from the solved shoulder root — same math
-   * rig.limb ran, kept for clamp/saturation diagnostics. */
-  const r0=rig.rest.get('upperarm01_R')!,r1=rig.rest.get('lowerarm01_R')!,r2=rig.rest.get('wrist_R')!;
+  /* Gripping-arm (doc.gripSide) two-bone internals from the solved shoulder
+   * root — same math rig.limb ran, kept for clamp/saturation diagnostics. */
+  const gs:Side=doc.gripSide==='L'?'L':'R';
+  const r0=rig.rest.get(`upperarm01_${gs}`)!,r1=rig.rest.get(`lowerarm01_${gs}`)!,r2=rig.rest.get(`wrist_${gs}`)!;
   const al=r1.clone().sub(r0).length(),bl=r2.clone().sub(r1).length();
-  const root=rig.point('upperarm01_R'),target=toV(f.pose.handR.target),pole=toV(f.pose.handR.pole);
+  const root=rig.point(`upperarm01_${gs}`),gp=gs==='L'?f.pose.handL:f.pose.handR;
+  const target=toV(gp.target),pole=toV(gp.pole);
   const sv=solveTwoBone(root,target,pole,al,bl,145);
   const dir=target.clone().sub(root).normalize();
   const bend=pole.clone().sub(root).addScaledVector(dir,-pole.clone().sub(root).dot(dir)).normalize();
-  const forearm=rig.point('wrist_R').sub(rig.point('lowerarm01_R')).normalize();
-  const wristBend=forearm.angleTo(toV(f.pose.handR.forward).normalize())/DEG;
+  const forearm=rig.point(`wrist_${gs}`).sub(rig.point(`lowerarm01_${gs}`)).normalize();
+  const wristBend=forearm.angleTo(toV(gp.forward).normalize())/DEG;
   frames.push({
    t,key:f.keyIndex,
    root:v3a(rig.point('root')),quat,pos,
@@ -334,9 +345,10 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
  let armRes={v:0,t:0},legRes={v:0,t:0,side:''};
  let reachMax={r:0,t:0},wristClampFrames=0,wristBendMax={v:0,t:0};
  let bendFlip={v:0,t:0};
+ const gs:Side=doc.gripSide==='L'?'L':'R';
  for(let i=0;i<frames.length;i++){
   const f=frames[i];
-  const r=dist(f.pos['wrist_R'],f.handTarget.R);if(r>armRes.v)armRes={v:r,t:f.t};
+  const r=dist(f.pos[`wrist_${gs}`],f.handTarget[gs]);if(r>armRes.v)armRes={v:r,t:f.t};
   for(const s of ['L','R']as const){const rr=dist(f.pos[`foot_${s}`],f.footTarget[s]);if(rr>legRes.v)legRes={v:rr,t:f.t,side:s};}
   const rr=f.arm.d/f.arm.reach;if(rr>reachMax.r)reachMax={r:rr,t:f.t};
   /* Two counters on purpose, different deadbands: `clampedFrames` counts
@@ -355,13 +367,13 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
    if(ang>bendFlip.v)bendFlip={v:ang,t:f.t};
   }
  }
- if(armRes.v>0.003)push({what:'arm-reach-residual-R',t:armRes.t,value:armRes.v*100,unit:'cm'});
+ if(armRes.v>0.003)push({what:`arm-reach-residual-${gs}`,t:armRes.t,value:armRes.v*100,unit:'cm'});
  if(bendFlip.v>30)push({what:'arm-pole-bend-flip',t:bendFlip.t,value:bendFlip.v,unit:'deg',extra:'elbow hinge dir change per frame'});
 
  /* [6] kinetic chain sequencing — world-frame segment speeds AND
   * relative-to-parent joint speeds inside the active window. */
  const active=activeWindow??[0,doc.duration];
- const chain:ProbeChainStat[]=CHAIN.map(b=>{
+ const chain:ProbeChainStat[]=chainBones(gs).map(b=>{
   const steps=stepAngles(frames.map(f=>f.quat[b]));
   /* relative series: q_rel = q_parent⁻¹ · q_bone per frame, then step angles */
   const p=CHAIN_PARENT[b];
@@ -417,7 +429,7 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
   return {vmax,threshold:thresh,turns:turns.sort((a,b)=>b.deg-a.deg),accelTop:accs.slice(0,6),kicks,
    vpeakT:frames[vs.findIndex(v=>v.length()===vmax)+1]?.t??0};
  };
- const wriS=smooth(vel(f=>f.pos['wrist_R']));
+ const wriS=smooth(vel(f=>f.pos[`wrist_${gs}`]));
  const hasTip=frames.length>0&&frames.every(f=>f.tip!==null);
  const tipS=hasTip?smooth(vel(f=>f.tip as Vec3)):null;
  const tipSpeedAt=(t:number)=>{
@@ -426,7 +438,7 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
  };
  const contactT=keyTimes.reduce((b,k)=>doc.keys.find(x=>x.time===k&&x.constraints.contact)?k:b,-1);
  // target-space vs solved-space: is the hand *target* smooth where wrist isn't?
- const tgtV=vel(f=>f.handTarget.R);
+ const tgtV=vel(f=>f.handTarget[gs]);
  const tgtAcc={t:0,a:0};
  for(let i=1;i<tgtV.length;i++){const a=tgtV[i].clone().sub(tgtV[i-1]).length()/dt;if(a>tgtAcc.a)tgtAcc.a=a,tgtAcc.t=frames[i].t;}
 
@@ -446,8 +458,8 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
  if(fdR.v>0.001)push({what:'foot-depth-R',t:fdR.t,value:fdR.v*100,unit:'cm'});
  if(com.v>0.02)push({what:'com-outside-support',t:com.t,value:com.v*100,unit:'cm'});
 
- /* slerp C0 signature: wrist step at key instants vs interior */
- const wSteps=stepAngles(frames.map(f=>f.quat['wrist_R']));
+ /* slerp C0 signature: gripping-wrist step at key instants vs interior */
+ const wSteps=stepAngles(frames.map(f=>f.quat[`wrist_${gs}`]));
  const atKey:number[]=[],interior:number[]=[];
  for(let i=1;i<frames.length;i++){(nearKey(frames[i].t)<dt*0.6?atKey:interior).push(wSteps[i]);}
 
@@ -459,7 +471,8 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
   root:{maxStep:rootMaxStep,stepT:rootStepT,maxV:rootMaxV,maxA:rootMaxA,accelT:rootAT},
   pelvis:{shiftMin,shiftMax,maxJump:shiftJump,jumpT:shiftJumpT,saturatedFrames:sat.length},
   sole:{minY:{L:minYL,R:minYR},minYT:{L:penLt,R:penRt},penetration:{L:penL,R:penR}},
-  ik:{armResidualR:armRes,legResidual:legRes,reachMax,poleBendFlip:bendFlip},
+  gripSide:gs,
+  ik:{armResidual:{...armRes,side:gs},legResidual:legRes,reachMax,poleBendFlip:bendFlip},
   wristClamp:{limitDeg:WRIST_BEND_LIMIT_DEG,maxBend:wristBendMax.v,maxBendT:wristBendMax.t,
    clampedFrames:wristClampFrames,transitions:clampTransitions,
    deficitMax,deficitFrames,deficitMedian:deficitMed},
@@ -479,7 +492,8 @@ export function formatProbeReport(r:ProbeReport):string{
  const wc=(code:string)=>r.solverChecks[code]??{v:-Infinity,t:0};
  const dorsiL=wc('ankle-dorsiflexion-L'),dorsiR=wc('ankle-dorsiflexion-R');
  const fdL=wc('foot-depth-L'),fdR=wc('foot-depth-R'),com=wc('com-support');
- const kneeL=wc('knee-flexion-L'),kneeR=wc('knee-flexion-R'),elbR=wc('elbow-flexion-R');
+ const gs=r.gripSide;
+ const kneeL=wc('knee-flexion-L'),kneeR=wc('knee-flexion-R'),elbG=wc(`elbow-flexion-${gs}`);
  const ctxAt=(t:number)=>{
   const f=frames.reduce((b,x)=>Math.abs(x.t-t)<Math.abs(b.t-t)?x:b);
   return `keyΔ${(nearKey(t)*1000).toFixed(0)}ms bend ${f.arm.wristBend.toFixed(0)}° reach ${(f.arm.d/f.arm.reach*100).toFixed(0)}%`;
@@ -496,16 +510,16 @@ export function formatProbeReport(r:ProbeReport):string{
  lines.push(`    pelvisShift ${(r.pelvis.shiftMin*100).toFixed(1)}–${(r.pelvis.shiftMax*100).toFixed(1)}cm  maxJump ${(r.pelvis.maxJump*1000).toFixed(2)}mm @${r.pelvis.jumpT.toFixed(3)}s  saturated ${r.pelvis.saturatedFrames}f`);
  lines.push(`[4] sole min y: L ${(r.sole.minY.L*1000).toFixed(1)}mm @${r.sole.minYT.L.toFixed(3)}s (below rest plane ${(r.sole.penetration.L*1000).toFixed(1)}mm)  R ${(r.sole.minY.R*1000).toFixed(1)}mm @${r.sole.minYT.R.toFixed(3)}s (${(r.sole.penetration.R*1000).toFixed(1)}mm)`);
  lines.push(`    foot-depth worst L ${(fdL.v*100).toFixed(2)}cm@${fdL.t.toFixed(3)}s R ${(fdR.v*100).toFixed(2)}cm@${fdR.t.toFixed(3)}s`);
- lines.push(`[5] IK: arm_R |wrist−target| ${(r.ik.armResidualR.v*100).toFixed(2)}cm @${r.ik.armResidualR.t.toFixed(3)}s  reachMax ${(r.ik.reachMax.r*100).toFixed(1)}% @${r.ik.reachMax.t.toFixed(3)}s  flexion max? (见[8]肘)  pole-bend flip ${r.ik.poleBendFlip.v.toFixed(1)}°/f @${r.ik.poleBendFlip.t.toFixed(3)}s`);
+ lines.push(`[5] IK: arm_${gs} |wrist−target| ${(r.ik.armResidual.v*100).toFixed(2)}cm @${r.ik.armResidual.t.toFixed(3)}s  reachMax ${(r.ik.reachMax.r*100).toFixed(1)}% @${r.ik.reachMax.t.toFixed(3)}s  flexion max? (见[8]肘)  pole-bend flip ${r.ik.poleBendFlip.v.toFixed(1)}°/f @${r.ik.poleBendFlip.t.toFixed(3)}s`);
  const wc2=r.wristClamp;
  lines.push(`    腕弯曲 clamp: bend max ${wc2.maxBend.toFixed(1)}° @${wc2.maxBendT.toFixed(3)}s  clamped ${wc2.clampedFrames}/${r.frameCount}f (${(100*wc2.clampedFrames/r.frameCount).toFixed(0)}%)  朝向误差 max ~${wc2.deficitMax.toFixed(0)}°  clamp 切换 ${wc2.transitions.length} 次: ${wc2.transitions.slice(0,14).map(t=>t.toFixed(3)).join(',')}${wc2.transitions.length>14?' …':''}`);
  lines.push(`    leg |foot−target| max ${(r.ik.legResidual.v*100).toFixed(2)}cm (${r.ik.legResidual.side}) @${r.ik.legResidual.t.toFixed(3)}s`);
  lines.push(`[6] 动力链峰值时序 (世界系全局 | 活动窗 ${r.activeWindow[0]}–${r.activeWindow[1]}s | 相对父级@活动窗):`);
  for(const c of r.chain)lines.push(`    ${c.seg.padEnd(14)} ${c.peak.toFixed(1).padStart(6)} rad/s @${c.t.toFixed(3)}s  |  ${c.activePeak.toFixed(1).padStart(6)} @${c.activeT.toFixed(3)}s  |  ${c.relPeak.toFixed(1).padStart(6)} @${c.relT.toFixed(3)}s`);
- lines.push(`[7] wrist_R: vmax ${wriS.vmax.toFixed(2)}m/s @${wriS.vpeakT.toFixed(3)}s  折返>25°×${wriS.turns.length}${wriS.turns.length?' worst '+wriS.turns.slice(0,3).map(x=>`${x.deg.toFixed(0)}°@${x.t.toFixed(3)}s`).join(' '):''}`);
+ lines.push(`[7] wrist_${gs}: vmax ${wriS.vmax.toFixed(2)}m/s @${wriS.vpeakT.toFixed(3)}s  折返>25°×${wriS.turns.length}${wriS.turns.length?' worst '+wriS.turns.slice(0,3).map(x=>`${x.deg.toFixed(0)}°@${x.t.toFixed(3)}s`).join(' '):''}`);
  lines.push(`    wrist accel top: ${wriS.accelTop.map(a=>`${a.a.toFixed(0)}@${a.t.toFixed(3)}`).join('  ')} m/s²`);
- lines.push(`    handR target accel max ${r.handTargetAccel.a.toFixed(0)}m/s² @${r.handTargetAccel.t.toFixed(3)}s   (target 自身跳→文档/插值;target 平滑+wrist 跳→求解器)`);
- lines.push(`    wrist_R step: @key median ${(r.wristStep.atKeyMedian/DEG).toFixed(2)}° (n=${r.wristStep.atKeyCount})  interior median ${(r.wristStep.interiorMedian/DEG).toFixed(2)}° (n=${r.wristStep.interiorCount})`);
+ lines.push(`    hand${gs} target accel max ${r.handTargetAccel.a.toFixed(0)}m/s² @${r.handTargetAccel.t.toFixed(3)}s   (target 自身跳→文档/插值;target 平滑+wrist 跳→求解器)`);
+ lines.push(`    wrist_${gs} step: @key median ${(r.wristStep.atKeyMedian/DEG).toFixed(2)}° (n=${r.wristStep.atKeyCount})  interior median ${(r.wristStep.interiorMedian/DEG).toFixed(2)}° (n=${r.wristStep.interiorCount})`);
  if(tipS){
   lines.push(`    tip: vmax ${tipS.vmax.toFixed(2)}m/s @${tipS.vpeakT.toFixed(3)}s  折返>25°×${tipS.turns.length}${tipS.turns.length?' worst '+tipS.turns.slice(0,3).map(x=>`${x.deg.toFixed(0)}°@${x.t.toFixed(3)}s`).join(' '):''}`);
   lines.push(`    tip accel top (m/s² | Δv m/s 每帧): ${tipS.accelTop.map(a=>`${a.a.toFixed(0)}|${a.dv.toFixed(2)} @${a.t.toFixed(3)}[${ctxAt(a.t)}]`).join('  ')}`);
@@ -516,7 +530,7 @@ export function formatProbeReport(r:ProbeReport):string{
  }
  if(r.contact.time!==null)lines.push(`    contact key @${r.contact.time}s: tip speed ${r.contact.tipSpeed!.toFixed(2)}m/s`);
  lines.push(`    朝向误差(clamp deficit)分布: clamped帧中位 ~${wc2.deficitMedian.toFixed(0)}°`);
- lines.push(`[8] solver checks: dorsi L ${dorsiL.v.toFixed(1)}°@${dorsiL.t.toFixed(2)}s R ${dorsiR.v.toFixed(1)}°@${dorsiR.t.toFixed(2)}s · com ${(com.v*100).toFixed(1)}cm@${com.t.toFixed(2)}s · knee L ${kneeL.v.toFixed(0)}° R ${kneeR.v.toFixed(0)}° · elbowR ${elbR.v.toFixed(0)}°@${elbR.t.toFixed(2)}s`);
+ lines.push(`[8] solver checks: dorsi L ${dorsiL.v.toFixed(1)}°@${dorsiL.t.toFixed(2)}s R ${dorsiR.v.toFixed(1)}°@${dorsiR.t.toFixed(2)}s · com ${(com.v*100).toFixed(1)}cm@${com.t.toFixed(2)}s · knee L ${kneeL.v.toFixed(0)}° R ${kneeR.v.toFixed(0)}° · elbow${gs} ${elbG.v.toFixed(0)}°@${elbG.t.toFixed(2)}s`);
  lines.push(`\n严重度排序:`);
  for(const s of r.spikes.slice(0,12))lines.push(`  ${s.value.toFixed(2).padStart(8)} ${s.unit.padEnd(5)} ${s.what.padEnd(26)} @${s.t.toFixed(3)}s${s.extra?`  ${s.extra}`:''}`);
  return lines.join('\n');

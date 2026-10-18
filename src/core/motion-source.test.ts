@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {AnimationClip,AnimationMixer,Quaternion,Vector3,type Group} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
-import {attachRacket} from './racket';
+import {attachRacket,mountRacket} from './racket';
 import {checkPosePackageShape,ClipSource,DocumentSource,PosePackageSource,posePackageSpec} from './motion-source';
 import {normalizeMotionFile} from './motion-file';
 import {motionFileById} from './motion-files';
@@ -211,6 +211,24 @@ describe('posePackageSpec — ad-hoc presentation channel',()=>{
   expect(spec.phases.length).toBe(doc.keys.length);
   expect(spec.description).toContain('常量显示');
  });
+ it('carries gripSide into the prop side hint and the mount readout',async()=>{
+  const doc=blankDocument(rig.rest,'左持拍','left-grip');
+  doc.gripSide='L';doc.keys.forEach(k=>{k.constraints.grip=true;});
+  const pkg=await local(doc);
+  expect(pkg.action.parameters).toEqual({documentName:'左持拍',presentation:{prop:'racket',gripSide:'L',loop:false}});
+  const spec=posePackageSpec(pkg,'pkg:test');
+  expect(spec.capabilities?.prop).toEqual({kind:'racket',trail:true,handView:true,side:'L'});
+  expect(spec.description).toContain('左手持拍');
+  // The real mount path on the shared racket: remount left, measure the grip
+  // error against the LEFT wrist, then restore the canonical right mount.
+  mountRacket(rig,racket,'L');
+  const src=new PosePackageSource(rig,pkg,spec.capabilities?.prop,racket);
+  expect(src.propSide).toBe('L');
+  src.seek(.5);
+  expect(src.wantsProp()).toBe(true);
+  expect(src.diagnostics()!.gripError).toBeLessThan(1e-6);
+  mountRacket(rig,racket,'R');
+ });
  it('presentation.loop:true yields a loopable spec; no grip leaves the prop absent',async()=>{
   const doc=blankDocument(rig.rest,'循环','loop-doc');
   doc.loop=true;doc.duration=1.2;
@@ -245,6 +263,17 @@ describe('DocumentSource smoke',()=>{
   src.seek(1);
   expect(src.wantsProp()).toBe(false);
   expect(src.diagnostics()).not.toBeNull();
+ });
+ it('exposes the authored grip side for mount steering',()=>{
+  const doc=blankDocument(rig.rest,'左持拍','left-grip');
+  doc.gripSide='L';doc.keys.forEach(k=>{k.constraints.grip=true;});
+  const src=new DocumentSource(rig,doc,racket);
+  expect(src.propSide).toBe('L');
+  mountRacket(rig,racket,'L');
+  src.seek(.5);
+  expect(src.wantsProp()).toBe(true);
+  expect(src.diagnostics()!.gripError).toBeLessThan(1e-6);
+  mountRacket(rig,racket,'R');
  });
 });
 

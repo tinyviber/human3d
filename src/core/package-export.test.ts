@@ -79,6 +79,13 @@ describe('peer parity — document shapes',()=>{
  it('unicode document name',()=>{
   return parity(wire(blankDocument(rig.rest,'正手·挥拍🎾','uni-doc')));
  });
+ it('left-grip document carries the side end to end',async()=>{
+  const d=blankDocument(rig.rest,'左持拍','left-grip');
+  d.gripSide='L';d.keys.forEach(k=>{k.constraints.grip=true;});
+  const {built}=await parity(wire(d));
+  expect((built.body as PosePackage).action.parameters)
+   .toEqual({documentName:'左持拍',presentation:{prop:'racket',gripSide:'L',loop:false}});
+ });
  it('fps 1 and fps 7 (non-integer duration×fps grids)',async()=>{
   await parity(wire(defaultDocument(rig.rest)),1);
   await parity(wire(blankDocument(rig.rest,'短','short')),7);

@@ -27,7 +27,7 @@ export interface PoseParams{
 export interface KeyConstraints{
   /** A planted foot's contact (target, yaw, pitch) is held across the interval that starts at this key. */
   plantL:boolean;plantR:boolean;
-  /** Right hand keeps the grip-wrap fingers and shows the racket. */
+  /** The gripping hand (WorkshopDoc.gripSide) keeps the wrap fingers and shows the racket. */
   grip:boolean;
   /** Contact event: the racket head position at this key is a target point. */
   contact:boolean;
@@ -43,15 +43,27 @@ export interface WorkshopDoc{
   /** Periodic motion: the key chain wraps so velocity, contacts and grip are continuous across the seam. */
   loop:boolean;
   handFrames:Record<Side,HandFrame>;
-  /** Clavicle assist: the right shoulder girdle rides up with a high hand target
-   * (the authored reach behaviour — the solver derives the amount per frame). */
+  /** Clavicle assist: the gripping shoulder girdle (gripSide) rides up with a
+   * high hand target (the authored reach behaviour — the solver derives the
+   * amount per frame). */
   clavicleLift?:boolean;
+  /** Which hand grips the racket: 'L' mirrors the whole grip stage — wrap
+   * fingers, wrist cone, clavicle assist and racket mount — onto the left
+   * wrist. Absent means 'R' (canonical form; normalizeDoc folds an explicit
+   * 'R' back to absent so equivalent documents share fingerprints). The
+   * side changes the solved trajectory, so it lives on the document, not
+   * on presentation metadata. */
+  gripSide?:Side;
   keys:WorkshopKey[];
 }
 export type DocLike=Pick<WorkshopDoc,'keys'|'duration'|'loop'|'handFrames'>;
 /** Support weight of each foot in [0,1]: 1 = fully planted, 0 = free swing. */
 export interface SupportWeights{L:number;R:number}
-export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number;clavicleLift?:boolean}
+export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number;clavicleLift?:boolean;
+ /** The document-level grip side flattened onto the frame — same delivery
+  * pattern as clavicleLift, so solveEffectiveFrame sees it with no caller
+  * contract change. Absent on hand-built frames means 'R'. */
+ gripSide?:Side}
 
 /** Grip closes and opens over this window after the key that toggles it. */
 export const GRIP_TRANSITION_S=.25;
@@ -431,14 +443,14 @@ export function constraintsAt(keys:WorkshopKey[],time:number):{constraints:KeyCo
  * after the contact rewrite (the same numbers the Hermite path reaches at key
  * instants), with no support fades and no grip ramp. */
 export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):EffectiveFrame{
-  const m=buildModel(doc,origin),t=Math.max(0,Math.min(doc.duration,time));
+  const m=buildModel(doc,origin),t=Math.max(0,Math.min(doc.duration,time)),side:Side=doc.gripSide==='L'?'L':'R';
   if(!doc.inbetweens){
     const {keyIndex,constraints}=constraintsAt(m.keys,t),e=m.entries[keyIndex];
     return {pose:unflattenPose(e.flat.slice()),constraints:{...constraints},keyIndex,
-      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0,clavicleLift:doc.clavicleLift};
+      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0,clavicleLift:doc.clavicleLift,gripSide:side};
   }
   const r=interpolate(m,t),k=m.chain[r.i].real;
-  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift};
+  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift,gripSide:side};
 }
 export const sortedKeys=(doc:{keys:WorkshopKey[]})=>[...doc.keys].sort((a,b)=>a.time-b.time);
 
@@ -520,6 +532,7 @@ export function validateDocShape(d:unknown):string[]{
  if(typeof doc.inbetweens!=='boolean')e.push('inbetweens 必须是布尔值');
  if(typeof doc.loop!=='boolean')e.push('loop 必须是布尔值');
  if(doc.clavicleLift!==undefined&&typeof doc.clavicleLift!=='boolean')e.push('clavicleLift 必须是布尔值');
+ if(doc.gripSide!==undefined&&doc.gripSide!=='R'&&doc.gripSide!=='L')e.push('gripSide 必须是 R 或 L');
  for(const s of ['L','R']as const){
   const v=(doc.handFrames as Record<string,unknown>|undefined)?.[s];
   if(v!=='world'&&v!=='pelvis')e.push(`handFrames.${s} 必须是 world 或 pelvis`);
@@ -587,6 +600,10 @@ export function normalizeDoc(raw:unknown):WorkshopDoc{
   const errs=validateDocShape(up);
   if(errs.length)throw new Error(`${errs[0]}${errs.length>1?`（共 ${errs.length} 处问题）`:''}`);
   const d=up as WorkshopDoc;
+  /* Canonical form: 'R' is the implicit default, so an explicit 'R' is folded
+   * back to absent — documents that mean the same solve must serialize and
+   * fingerprint identically (normalizedRequest embeds the parsed doc). */
+  if(d.gripSide==='R')delete d.gripSide;
   for(const k of d.keys)canonicalizeHands(k.pose);
   return d;
 }
