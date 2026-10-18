@@ -62,15 +62,19 @@ apps/server @human3d/server ─┘
 
 ## 自动化边界检查
 
-`tests/architecture.test.ts` 把上表的边界变成可执行断言，随 `npm test`（与 CI）运行——文档与一次性扫描守不住多 Agent 并行编辑：
+`tests/architecture.test.ts` + `tests/architecture-boundaries.ts` 把上表的边界变成可执行断言，随 `npm test`（与 CI）运行——文档与一次性扫描守不住多 Agent 并行编辑：
 
-1. `packages/motion-core` 生产代码不得 import `node:`、不得使用 DOM 全局（`window`/`document`/`localStorage`/`navigator`/`createImageBitmap` 等）、不得 import 两个 app；包外相对路径仅允许 `assets/motions/*.json`；
+1. `packages/motion-core` 生产代码不得 import `node:`、不得使用 DOM 全局、不得 import 两个 app；包外相对路径仅允许 `assets/motions/*.json`；
 2. `apps/web` 生产代码不得 import `@human3d/server`（测试可用，其 devDependency 已声明）；
 3. `apps/server` 不得 import `@human3d/web`；
 4. 任何文件不得使用 `@human3d/<pkg>/src/...` 深路径导入；
 5. 每个 `@human3d/*` 导入都必须在导入方 `package.json` 的 dependencies/devDependencies 里声明。
 
-检查器按注释/字符串剥离后再扫描 DOM 全局（避免注释里的 "window." 误报），并跳过对象/类型键位置（`{document: WorkshopDoc}` 是数据不是 DOM）。**负向对照已实测**：向 core 注入 `node:fs` 与 `window`、向 web 注入 `@human3d/server` 与深路径导入，四类违规全部被报出且带文件与说明；撤销后恢复全绿。
+**检查器用 TypeScript Compiler API 解析 AST**，不靠文本正则——因此没有导入写法可以绕过：单/双引号静态导入、无绑定的副作用导入（`import 'node:fs'`）、`export … from`、字面量动态导入（`import('…')`）与 `import('…').T` 类型节点都从语法树读取；DOM 全局按「表达式位置的标识符」判定（含 `globalThis.window` / `globalThis['document']`），属性名与类型键（`{document: WorkshopDoc}`、`doc.document`）是数据不是 DOM。对 DOM 名采取保守策略：即使局部绑定同名标识符也会被报出——在 motion-core 里遮蔽 `window`/`document` 本身就值得失败。
+
+检查器自带正反单元测试（28 项）：16 个"必须报出"用例覆盖上述各种语法形式与违规类别，8 个"必须放行"用例覆盖键位/属性访问/注释与字符串里的路径/仓库根信封注册表/three/测试文件用 server，另加提取器单测与真实仓库扫描。**端到端负向对照已实测**：向 core 注入副作用 `import 'node:fs'` 与 `globalThis.window`、向 web 注入双引号 `@human3d/server`、向 server 注入动态 `import('@human3d/web')`，四类全部报出并带 `文件:行号`；撤销后恢复全绿。
+
+已知边界（有意为之，替代方案是编译器插件）：变量拼出的动态导入（`import(name)`）与经别名的访问（`const g = globalThis; g.window`）不覆盖。
 
 ## 已知泄漏与后续阶段
 
