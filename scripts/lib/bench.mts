@@ -4,10 +4,13 @@
 // importable from tests. All reported timings are MICROSECONDS (µs).
 //
 // What is measured:
-//  - runStageLoop: the per-sample stages of solveWorkshop's sampler, split as
-//    buildModel → frameFromModel → solveEffectiveFrame → analyzePose, on the
-//    EXACT instants the sampler visits (capture grid + authored key times),
-//    plus frameAt and samplePose as subset cross-checks.
+//  - runStageLoop: the per-sample stages of solveWorkshop's sampler on the
+//    PR-B compiled pipeline — compileMotion once per rep, then
+//    frameAtCompiled → solveEffectiveFrame → analyzePose per sample — on the
+//    EXACT instants the sampler visits (capture grid + authored key times).
+//    The compat path (buildModel/frameFromModel/frameAt/samplePose) stays
+//    measured as stride-subset cross-checks — the PR-B vs PR-A delta is the
+//    evidence, so the old cost is never dropped from the record.
 //  - runWholeCalls: rep-level totals for the whole calls — solveWorkshop,
 //    JSON.stringify(pkg), probeFrames, analyzeProbeFrames and the one-shot
 //    probeDocument — with heap churn when the caller injects memory probes.
@@ -16,8 +19,8 @@
 //    the events/assembly/serialization-adjacent remainder — reported under
 //    the honest name captureSerialize together with stringify, NEVER render.
 import type {Vector3} from 'three';
-import {analyzePose,analyzeProbeFrames,blankDocument,buildModel,constraintsAt,defaultDocument,
- frameAt,frameFromModel,motionFileById,mulberry32,probeDocument,probeFrames,randomDoc,
+import {analyzePose,analyzeProbeFrames,blankDocument,buildModel,compileMotion,constraintsAt,defaultDocument,
+ frameAt,frameAtCompiled,frameFromModel,motionFileById,mulberry32,probeDocument,probeFrames,randomDoc,
  retimeKeys,samplePose,sampleTimes,serializeDoc,solveEffectiveFrame,solveWorkshop,sortedKeys,
  validateDocShape,
  type HumanRig,type ProbeTip,type WorkshopDoc,type WorkshopKey} from '@human3d/motion-core';
@@ -99,13 +102,17 @@ export interface StageLoopArgs{
 export interface StageLoopResult{
  /** Instants sampled per rep: capture grid PLUS authored key times. */
  samplesPerRep:number;
- /** Per-sample stage timings pooled over measured reps (µs). frameAt and
-  * samplePose are stride-subset cross-checks against the split stages. */
- perSample:{buildModel:number[];frameFromModel:number[];solveEffectiveFrame:number[];analyzePose:number[];frameAt:number[];samplePose:number[]};
+ /** Per-sample stage timings pooled over measured reps (µs). frameAtCompiled,
+  * solveEffectiveFrame and analyzePose pool every measured sample (the PR-B
+  * pipeline); buildModel/frameFromModel/frameAt/samplePose are stride-subset
+  * cross-checks of the compat path — its cost stays measured so the PR-B vs
+  * PR-A delta is honest. */
+ perSample:{frameAtCompiled:number[];solveEffectiveFrame:number[];analyzePose:number[];buildModel:number[];frameFromModel:number[];frameAt:number[];samplePose:number[]};
  /** Per-rep stage totals (µs) — the residual subtracts their medians from
   * solveWorkshop's rep-total median, so per-rep granularity is required
-  * (Σ per-sample medians × n would mix quantiles). */
- repTotals:{buildModel:number[];frameFromModel:number[];solveEffectiveFrame:number[];analyzePose:number[]};
+  * (Σ per-sample medians × n would mix quantiles). compileMotion is timed
+  * once per rep — the hoist IS the PR-B change. */
+ repTotals:{compileMotion:number[];frameAtCompiled:number[];solveEffectiveFrame:number[];analyzePose:number[]};
 }
 export function runStageLoop(a:StageLoopArgs):StageLoopResult{
  const {rig,doc,fps,warmup,reps,now}=a;
@@ -115,36 +122,44 @@ export function runStageLoop(a:StageLoopArgs):StageLoopResult{
   * grid point is sampled twice, matching the real call. */
  const times=sampleTimes(doc.duration,fps).concat(sortedKeys(doc).map(k=>k.time)).sort((x,y)=>x-y);
  const stride=Math.max(1,a.crossStride??Math.floor(times.length/64));
- const perSample:StageLoopResult['perSample']={buildModel:[],frameFromModel:[],solveEffectiveFrame:[],analyzePose:[],frameAt:[],samplePose:[]};
- const repTotals:StageLoopResult['repTotals']={buildModel:[],frameFromModel:[],solveEffectiveFrame:[],analyzePose:[]};
+ const perSample:StageLoopResult['perSample']={frameAtCompiled:[],solveEffectiveFrame:[],analyzePose:[],buildModel:[],frameFromModel:[],frameAt:[],samplePose:[]};
+ const repTotals:StageLoopResult['repTotals']={compileMotion:[],frameAtCompiled:[],solveEffectiveFrame:[],analyzePose:[]};
  for(let pass=0;pass<warmup+reps;pass++){
-  const measured=pass>=warmup,sum={buildModel:0,frameFromModel:0,solveEffectiveFrame:0,analyzePose:0};
+  const measured=pass>=warmup,sum={frameAtCompiled:0,solveEffectiveFrame:0,analyzePose:0};
+  /* One compile per rep — the exact hoist solveWorkshop/probeFrames now do.
+   * Timed even on warmup passes so the compiled snapshot exists either way. */
+  const c0=now(),compiled=compileMotion(doc,origin),c1=now();
   for(let i=0;i<times.length;i++){
    const t=times[i];
-   /* ~5 now() calls per sample ≈ 0.1–0.3µs of bracketing overhead — inside
+   /* ~4 now() calls per sample ≈ 0.1–0.3µs of bracketing overhead — inside
     * the noise floor for stages that cost ≥10µs. */
-   const p0=now(),m=buildModel(doc,origin);
-   const p1=now(),f=frameFromModel(m,doc,t);
-   const p2=now();solveEffectiveFrame(rig,f);
-   const p3=now();analyzePose(rig,f.pose,f.constraints);
-   const p4=now();
+   const p0=now(),f=frameAtCompiled(compiled,t);
+   const p1=now();solveEffectiveFrame(rig,f);
+   const p2=now();analyzePose(rig,f.pose,f.constraints);
+   const p3=now();
    if(measured){
-    perSample.buildModel.push((p1-p0)*1000);perSample.frameFromModel.push((p2-p1)*1000);
-    perSample.solveEffectiveFrame.push((p3-p2)*1000);perSample.analyzePose.push((p4-p3)*1000);
-    sum.buildModel+=(p1-p0)*1000;sum.frameFromModel+=(p2-p1)*1000;sum.solveEffectiveFrame+=(p3-p2)*1000;sum.analyzePose+=(p4-p3)*1000;
+    perSample.frameAtCompiled.push((p1-p0)*1000);
+    perSample.solveEffectiveFrame.push((p2-p1)*1000);perSample.analyzePose.push((p3-p2)*1000);
+    sum.frameAtCompiled+=(p1-p0)*1000;sum.solveEffectiveFrame+=(p2-p1)*1000;sum.analyzePose+=(p3-p2)*1000;
    }
-   /* Cross-checks on a stride subset: frameAt must cost ≈ buildModel+
-    * frameFromModel; samplePose is the always-Hermite entry point. */
+   /* Compat-path cross-checks on a stride subset: the PR-A pipeline's cost
+    * (buildModel split from frameFromModel, fused frameAt, always-Hermite
+    * samplePose) — frameAt ≈ buildModel + frameFromModel still holds as the
+    * wiring sanity check. */
    if(measured&&i%stride===0){
-    const q0=now();frameAt(doc,t,origin);
-    const q1=now();samplePose(doc,t,origin);
-    const q2=now();
-    perSample.frameAt.push((q1-q0)*1000);perSample.samplePose.push((q2-q1)*1000);
+    const q0=now(),m=buildModel(doc,origin);
+    const q1=now();frameFromModel(m,doc,t);
+    const q2=now();frameAt(doc,t,origin);
+    const q3=now();samplePose(doc,t,origin);
+    const q4=now();
+    perSample.buildModel.push((q1-q0)*1000);perSample.frameFromModel.push((q2-q1)*1000);
+    perSample.frameAt.push((q3-q2)*1000);perSample.samplePose.push((q4-q3)*1000);
    }
   }
   rig.reset();
   if(measured){
-   repTotals.buildModel.push(sum.buildModel);repTotals.frameFromModel.push(sum.frameFromModel);
+   repTotals.compileMotion.push((c1-c0)*1000);
+   repTotals.frameAtCompiled.push(sum.frameAtCompiled);
    repTotals.solveEffectiveFrame.push(sum.solveEffectiveFrame);repTotals.analyzePose.push(sum.analyzePose);
   }
  }
@@ -210,16 +225,18 @@ export interface ScenarioResult{
  /** Sampled instants per rep (capture grid + authored key times). */
  samples:number;
  doc:{builder:string;sourceSeed:number|null;keys:number;duration:number;inbetweens:boolean;loop:boolean;gripSide:string};
- /** buildModel/frameFromModel/solveEffectiveFrame/analyzePose are per-sample;
-  * frameAt/samplePose are subset cross-checks; the rest are rep totals. */
+ /** frameAtCompiled/solveEffectiveFrame/analyzePose are per-sample (full
+  * pool); buildModel/frameFromModel/frameAt/samplePose are stride-subset
+  * compat-path cross-checks; compileMotion and the rest are rep totals. */
  stages:Record<string,TimedStat>;
- /** Issue categories: compile = buildModel, sample = frameFromModel,
-  * solve = solveEffectiveFrame+analyzePose, captureSerialize = residual +
-  * stringify. residualUs = median(solveWorkshop) − Σ median(per-rep stage
-  * totals) — events/assembly/tail work, never labeled render. */
+ /** Issue categories: compile = compileMotion（每rep一次）, sample =
+  * frameAtCompiled, solve = solveEffectiveFrame+analyzePose,
+  * captureSerialize = residual + stringify. residualUs =
+  * median(solveWorkshop) − Σ median(per-rep stage totals) —
+  * events/assembly/tail work, never labeled render. */
  rollup:{compile:TimedStat;sample:TimedStat;solve:TimedStat;captureSerialize:TimedStat;residualUs:number};
  /** Workshop live-edit estimate derived from measured numbers — NOT a
-  * browser measurement: (frameAt+solveEffectiveFrame) per frame ×
+  * browser measurement: (frameAtCompiled+solveEffectiveFrame) per frame ×
   * (1 playhead + 61 trajectory + onion solves per rebuild pass). */
  derived:{workshop:{frameAtSolveUs:number;estimateUs:number;factors:{playhead:number;trajectory:number;onion:number};note:string}};
  throughput:{samplesPerSec:number};
@@ -241,11 +258,12 @@ export interface BaselineFile{
  * baseline record (µs throughout, rounded to 4 significant figures). */
 export function summarizeScenario(spec:BenchDocSpec,doc:WorkshopDoc,fps:number,sl:StageLoopResult,wc:WholeCallResult):ScenarioResult{
  const stages:Record<string,TimedStat>={};
- for(const k of ['buildModel','frameFromModel','solveEffectiveFrame','analyzePose','frameAt','samplePose'] as const)
+ for(const k of ['frameAtCompiled','solveEffectiveFrame','analyzePose','buildModel','frameFromModel','frameAt','samplePose'] as const)
   stages[k]={...r4s(summarize(sl.perSample[k])),per:'sample'};
+ stages.compileMotion={...r4s(summarize(sl.repTotals.compileMotion)),per:'rep'};
  for(const k of ['solveWorkshop','stringify','probeFrames','analyzeProbeFrames','probeDocument'] as const)
   stages[k]={...r4s(summarize(wc.totals[k])),per:'rep'};
- const compile=r4s(summarize(sl.repTotals.buildModel)),sample=r4s(summarize(sl.repTotals.frameFromModel));
+ const compile=r4s(summarize(sl.repTotals.compileMotion)),sample=r4s(summarize(sl.repTotals.frameAtCompiled));
  const solve=r4s(summarize(sl.repTotals.solveEffectiveFrame.map((v,i)=>v+sl.repTotals.analyzePose[i])));
  const stringify=summarize(wc.totals.stringify),total=summarize(wc.totals.solveWorkshop);
  const residual=total.median-(compile.median+sample.median+solve.median);
@@ -257,7 +275,7 @@ export function summarizeScenario(spec:BenchDocSpec,doc:WorkshopDoc,fps:number,s
   solve:{...solve,per:'rep',sharePct:share(solve)},
   captureSerialize:{...r4s(captureSerialize),per:'rep',sharePct:share(captureSerialize)},
   residualUs:r4(residual)};
- const frameAtSolveUs=r4(medianOf(sl.perSample.frameAt)+medianOf(sl.perSample.solveEffectiveFrame));
+ const frameAtSolveUs=r4(medianOf(sl.perSample.frameAtCompiled)+medianOf(sl.perSample.solveEffectiveFrame));
  const factors={playhead:1,trajectory:61,onion:4};
  return {
   name:spec.name,fps,samples:sl.samplesPerRep,
@@ -265,7 +283,7 @@ export function summarizeScenario(spec:BenchDocSpec,doc:WorkshopDoc,fps:number,s
    inbetweens:doc.inbetweens,loop:doc.loop,gripSide:doc.gripSide??'R'},
   stages,rollup,
   derived:{workshop:{frameAtSolveUs,estimateUs:r4(frameAtSolveUs*(factors.playhead+factors.trajectory+factors.onion)),factors,
-   note:'估算：引擎 rebuildAux/onion 每次刷新约为 1 播放头 + 61 轨迹采样 + N 洋葱皮帧的 frameAt+solve；非浏览器实测'}},
+   note:'估算：引擎 rebuildAux/onion 每次刷新约为 1 播放头 + 61 轨迹采样 + N 洋葱皮帧的 frameAtCompiled+solve；非浏览器实测'}},
   throughput:{samplesPerSec:r4(total.median>0?sl.samplesPerRep/(total.median/1e6):0)},
   memory:{churnMB:r4s(summarize(wc.memory.churnMB)),heapPostGcMB:wc.memory.heapPostGcMB.map(r4),pkgKB:r4(wc.pkgBytes/1024)},
  };
@@ -295,29 +313,29 @@ export function formatReport(b:BaselineFile):string{
  lines.push(`env: node ${e.node} ${e.platform}-${e.arch} · ${e.cpu} ${e.cores}核 ${e.totalMemGB}GB · three ${e.three} · tsx ${e.tsx} · commit ${b.run.commit.slice(0,7)}`);
  lines.push(`cmd: ${b.run.command}`);
  lines.push(`params: seed ${b.run.params.seed} warmup ${b.run.params.warmup} reps ${b.run.params.reps} gc ${b.run.params.gc}`);
- lines.push(`口径: 全部为 µs · 阶段帧级分摊=compile(buildModel)/sample(frameFromModel)/solve(solveEffectiveFrame+analyzePose)/render(未测量) · captureSerialize=残差+stringify`);
+ lines.push(`口径: 全部为 µs · 阶段帧级分摊=compile(compileMotion·每rep一次)/sample(frameAtCompiled)/solve(solveEffectiveFrame+analyzePose)/render(未测量) · captureSerialize=残差+stringify`);
  lines.push(`    残差可为负（两段测量回路的中位噪声）；captureSerialize 含 stringify，四桶份额不必合计 100%`);
  for(const s of b.scenarios){
   lines.push(`\n=== ${s.name} @${s.fps}fps · ${s.samples} samples · ${s.doc.keys} keys · ${s.doc.duration}s · ${s.doc.builder}${s.doc.sourceSeed!==null?` seed${s.doc.sourceSeed}`:''}${s.doc.inbetweens?'':' · 无补间'} ===`);
   const st=s.stages;
-  lines.push(`  每样本 (n=${st.buildModel.n}):`);
-  for(const k of ['buildModel','frameFromModel','solveEffectiveFrame','analyzePose'] as const)
+  lines.push(`  每样本 (n=${st.frameAtCompiled.n}):`);
+  for(const k of ['frameAtCompiled','solveEffectiveFrame','analyzePose'] as const)
    lines.push(`    ${k.padEnd(20)} ${cell(st[k])}`);
-  for(const k of ['frameAt','samplePose'] as const)
-   lines.push(`    ${k.padEnd(20)} ${cell(st[k])}  (交叉校验 n=${st[k].n})`);
+  for(const k of ['buildModel','frameFromModel','frameAt','samplePose'] as const)
+   lines.push(`    ${k.padEnd(20)} ${cell(st[k])}  (compat 交叉校验 n=${st[k].n})`);
   lines.push(`  每rep (n=${st.solveWorkshop.n}):`);
-  for(const k of ['solveWorkshop','stringify','probeFrames','analyzeProbeFrames','probeDocument'] as const)
+  for(const k of ['compileMotion','solveWorkshop','stringify','probeFrames','analyzeProbeFrames','probeDocument'] as const)
    lines.push(`    ${k.padEnd(20)} ${cell(st[k])}`);
   const r=s.rollup;
   lines.push(`  roll-up (占 solveWorkshop median ${fmtUs(st.solveWorkshop.median)} 的份额):`);
-  lines.push(`    compile          = buildModel                     ${cell(r.compile)}  ${r.compile.sharePct}%`);
-  lines.push(`    sample           = frameFromModel                 ${cell(r.sample)}  ${r.sample.sharePct}%`);
+  lines.push(`    compile          = compileMotion（每rep一次）     ${cell(r.compile)}  ${r.compile.sharePct}%`);
+  lines.push(`    sample           = frameAtCompiled                ${cell(r.sample)}  ${r.sample.sharePct}%`);
   lines.push(`    solve            = solveEffectiveFrame+analyzePose ${cell(r.solve)}  ${r.solve.sharePct}%`);
   lines.push(`    captureSerialize = 残差+stringify                 ${cell(r.captureSerialize)}  ${r.captureSerialize.sharePct}%  (残差 ${fmtUs(r.residualUs)})`);
   lines.push(`    render           = 未测量（浏览器侧另计；captureSerialize 残差见上）`);
   lines.push(`  吞吐: ${s.throughput.samplesPerSec} samples/s · 包体 ${s.memory.pkgKB}KB`);
   const d=s.derived.workshop;
-  lines.push(`  derived.workshop 拖拽/洋葱皮估算: frameAt+solve ${fmtUs(d.frameAtSolveUs)}/帧 × (${d.factors.playhead} 播放头 + ${d.factors.trajectory} 轨迹 + ${d.factors.onion} 洋葱皮) ≈ ${fmtUs(d.estimateUs)}/刷新 — 估算非实测`);
+  lines.push(`  derived.workshop 拖拽/洋葱皮估算: frameAtCompiled+solve ${fmtUs(d.frameAtSolveUs)}/帧 × (${d.factors.playhead} 播放头 + ${d.factors.trajectory} 轨迹 + ${d.factors.onion} 洋葱皮) ≈ ${fmtUs(d.estimateUs)}/刷新 — 估算非实测`);
   const m=s.memory;
   lines.push(`  内存: churn med ${fmtMB(m.churnMB.median)} p95 ${fmtMB(m.churnMB.p95)} /rep${m.heapPostGcMB.length?` · post-gc heap ${m.heapPostGcMB.map(v=>v.toFixed(0)).join('→')}MB`:' · post-gc 不可用'}`);
  }
@@ -353,7 +371,7 @@ export function diffBaselines(oldB:BaselineFile,newB:BaselineFile):string{
   const o=prev.get(key(s));
   if(!o){lines.push(`  [${key(s)}] (旧基线无此场景)`);continue;}
   lines.push(`  [${key(s)}]`);
-  for(const k of ['buildModel','frameFromModel','solveEffectiveFrame','analyzePose','solveWorkshop','stringify','probeFrames','analyzeProbeFrames','probeDocument'] as const)
+  for(const k of ['compileMotion','frameAtCompiled','buildModel','frameFromModel','solveEffectiveFrame','analyzePose','solveWorkshop','stringify','probeFrames','analyzeProbeFrames','probeDocument'] as const)
    row(k,o.stages[k],s.stages[k]);
   const total=Math.abs(o.stages.solveWorkshop.median);
   for(const k of ['compile','sample','solve','captureSerialize'] as const)

@@ -4,8 +4,8 @@ import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig,skeletonSegments} from '@human3d/motion-core';
 import {attachRacket,mountRacket} from '@human3d/motion-core';
 import type {RigInfo,ViewId} from '@human3d/motion-core';
-import type {EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
-import {contactStartKey,frameAt,isReleaseKey,parseDoc,serializeDoc,sortedKeys,toV} from '@human3d/motion-core';
+import type {CompiledMotion,EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
+import {compileMotion,contactStartKey,frameAtCompiled,isReleaseKey,parseDoc,serializeDoc,sortedKeys,toV} from '@human3d/motion-core';
 import {analyzePose,solveEffectiveFrame,type Analysis} from '@human3d/motion-core';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from '@human3d/motion-core';
 
@@ -116,6 +116,25 @@ export class WorkshopEngine{
   private onionSig='';private onionStale=true;
   private raycaster=new Raycaster();private pointer=new Vector2();
   private drag?:{h:Handle;plane:Plane;offset:Vector3;key:WorkshopKey};private docDirty=true;
+  /* Compiled-snapshot cache (issue #10 PR-B): one slot, keyed by document
+   * identity + content version + compile origin — all three must match.
+   * `docVer` is a SEPARATE counter from docDirty: docDirty flags aux-overlay
+   * rebuilds, docVer invalidates the frozen sampling snapshot. Contract:
+   * every doc-content mutation must reach markDirty() (which bumps docVer)
+   * or an explicit bump site — a missed signal was already a latent
+   * stale-trajectory bug, but the snapshot widens the blast radius to the
+   * live pose itself, so the two pointer handlers below bump where doc.keys
+   * changes bypass markDirty. Doc-object swaps (undo write-back, the
+   * captureSheet frozen provider, selectDoc) need no bump — identity catches
+   * them; a mid-sheet real-doc edit can cost ≤SHEET_MAX_TILES extra compiles
+   * of the frozen doc, correctness intact. */
+  private compiled?:{doc:WorkshopDoc;ver:number;c:CompiledMotion};
+  private docVer=0;
+  private compiledFor(doc:WorkshopDoc){
+   const e=this.compiled;
+   if(e&&e.doc===doc&&e.ver===this.docVer&&e.c.origin.equals(this.restRoot()))return e.c;
+   const c=compileMotion(doc,this.restRoot());this.compiled={doc,ver:this.docVer,c};return c;
+  }
   /** Read as "a still/sheet capture is in flight". The animate loop consults
    * it wherever it re-derives overlay visibility (rebuildAux, updateOnion,
    * updateBalance), so overlays hidden for the shot can't be resurrected
@@ -232,6 +251,11 @@ export class WorkshopEngine{
       prefer=contactStartKey(doc,h.side,this.time)?.id??prefer;
     }
     const key=this.onBeginEdit?.(time,prefer);if(!key)return;
+    /* onBeginEdit → ensureKey can insert a key into doc.keys in place — a
+     * doc-content mutation the markDirty signal never sees (the app callback
+     * saves but does not mark). Bump so the snapshot recompiles before the
+     * solve below samples the new key chain. */
+    this.docVer++;
     if(h.keyId){this.time=key.time;this.onSeek?.(key.time);this.onSelectKey?.(key.id);}else this.onSelectKey?.(key.id);
     this.solveCurrent();
     const origin=h.mesh.getWorldPosition(new Vector3());
@@ -270,6 +294,13 @@ export class WorkshopEngine{
         const d=pos.clone().sub(tip),h=this.getDoc().gripSide==='L'?k.handL:k.handR;
         const t=h.target;h.target={x:t.x+d.x,y:t.y+d.y,z:t.z+d.z};break;}
     }
+    /* Every mutating switch branch above wrote the drag key's pose in place.
+     * The bump lands AFTER the tip/contact branch's own solveCurrent (which
+     * must still see the pre-move snapshot to place the racket tip) and
+     * BEFORE this final one; unconditional is simpler than enumerating the
+     * branches and safe on a no-op move — the snapshot recompiles lazily on
+     * the next frameAtTime, not here. */
+    this.docVer++;
     this.solveCurrent();this.docDirty=true;this.onDocChanged?.();
   };
   private onPointerUp=(ev:PointerEvent)=>{
@@ -279,7 +310,7 @@ export class WorkshopEngine{
   /** Pelvis hand-frame origin: the rest root, the same origin the solver uses.
    * Public so callers sampling poses (e.g. auto-key) use the identical frame. */
   restRoot(){return this.rig?.rest.get('root')??new Vector3();}
-  private frameAtTime(doc:WorkshopDoc,t:number){return frameAt(doc,t,this.restRoot());}
+  private frameAtTime(doc:WorkshopDoc,t:number){return frameAtCompiled(this.compiledFor(doc),t);}
   private currentFrame(){
     const doc=this.getDoc();
     return this.frameAtTime(doc,Math.max(0,Math.min(doc.duration,this.time)));
@@ -415,8 +446,14 @@ export class WorkshopEngine{
   seek(t:number){const d=this.getDoc().duration;this.time=Math.max(0,Math.min(d,t));this.solveCurrent();this.notify(true);}
   setPlaying(v:boolean){this.playing=v;this.notify(true);}
   setSpeed(v:number){this.speed=v;}
+  /* Display flags only — NOT doc content, so deliberately no docVer bump:
+   * the compiled snapshot stays valid (aux overlays rebuild on docDirty). */
   setOptions(patch:Partial<WorkshopOptions>){Object.assign(this.options,patch);this.docDirty=true;}
-  markDirty(){this.docDirty=true;}
+  /** The single funnel every doc-mutating app path already calls
+   * (edit/applyDoc/selectDoc/createDoc/removeDoc/mirror/importDoc/
+   * undo-redo/onRetime/stampVideo/addKey) — docDirty for the aux rebuild,
+   * docVer for the compiled snapshot. */
+  markDirty(){this.docDirty=true;this.docVer++;}
   setView(view:ViewId){
     this.view=view;const root=this.rig?.point('root')??new Vector3(0,.94,0),target=root.clone();target.y*=.92;
     if(view==='free'){const shift=target.clone().sub(this.controls.target);this.camera.position.add(shift);this.controls.target.copy(target);this.controls.update();return;}

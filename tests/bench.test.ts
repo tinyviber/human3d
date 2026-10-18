@@ -24,9 +24,15 @@ import {buildBenchDoc,medianOf,p95Of,runStageLoop,runWholeCalls,summarize} from 
  *    values, not NaN/throw) — asserted as non-throw + finite, so the
  *    sentinel choice stays free.
  *  - runStageLoop pools per-sample timings under `perSample` (the ticket
- *    contract said `samples`) — both names are accepted. repTotals splits
- *    the four real stages; frameAt/samplePose are stride-subset
- *    cross-checks, so their arrays are asserted non-empty/≤, not exact.
+ *    contract said `samples`) — both names are accepted. PR-B shape
+ *    (assumed against the ticket; matches the parallel impl's bench.mts):
+ *    repTotals splits the compiled stages {compileMotion,frameAtCompiled,
+ *    solveEffectiveFrame,analyzePose} — compileMotion timed once per rep,
+ *    the hoist IS the PR-B change; perSample's full-pool keys are
+ *    {frameAtCompiled,solveEffectiveFrame,analyzePose} (len = reps×spr);
+ *    the compat-path cross-checks {buildModel,frameFromModel,frameAt,
+ *    samplePose} are stride-subset, so their arrays are asserted
+ *    non-empty/≤, not exact.
  *  - samplesPerRep = sampleTimes(duration,fps).length + doc.keys.length —
  *    the capture grid PLUS authored key instants (capture() re-samples keys
  *    even when they coincide with a grid point).
@@ -176,23 +182,23 @@ describe('bench smoke — real solve path on the default document @10fps',()=>{
   expect(spr).toBe(grid);
   const ps=perSampleOf(sl);
   expect(Object.keys(ps).length,'a per-sample pool must exist').toBeGreaterThan(0);
-  // The four split stages pool every measured sample: reps×samplesPerRep.
-  for(const k of ['buildModel','frameFromModel','solveEffectiveFrame','analyzePose']){
+  // The PR-B compiled pipeline pools every measured sample: reps×samplesPerRep.
+  for(const k of ['frameAtCompiled','solveEffectiveFrame','analyzePose']){
    expect(ps[k],`perSample.${k}`).toBeInstanceOf(Array);
    expect(ps[k].length,`perSample.${k}.length`).toBe(reps*spr);
    expectAllSane(ps[k],`perSample.${k}`);
   }
-  // frameAt/samplePose are stride-subset cross-checks — present, sane,
-  // never longer than the pooled stages.
-  for(const k of ['frameAt','samplePose']){
+  // Compat-path cross-checks are stride-subset — present, sane, never
+  // longer than the pooled stages.
+  for(const k of ['buildModel','frameFromModel','frameAt','samplePose']){
    expect(ps[k],`perSample.${k}`).toBeInstanceOf(Array);
    expect(ps[k].length,`perSample.${k}.length`).toBeGreaterThan(0);
    expect(ps[k].length,`perSample.${k}.length`).toBeLessThanOrEqual(reps*spr);
    expectAllSane(ps[k],`perSample.${k}`);
   }
-  // Rep totals exist for the split stages; each sums real work → positive.
+  // Rep totals exist for the compiled stages; each sums real work → positive.
   const rt=(sl as {repTotals?:Record<string,number[]>}).repTotals??{};
-  for(const k of ['buildModel','frameFromModel','solveEffectiveFrame','analyzePose']){
+  for(const k of ['compileMotion','frameAtCompiled','solveEffectiveFrame','analyzePose']){
    expect(rt[k],`repTotals.${k}`).toBeInstanceOf(Array);
    expect(rt[k].length,`repTotals.${k}.length`).toBe(reps);
    for(const v of rt[k]){

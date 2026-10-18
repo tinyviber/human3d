@@ -1,6 +1,6 @@
 import {Quaternion} from 'three';
 import {HumanRig} from './rig';
-import {frameAt,sortedKeys,type WorkshopDoc} from './document';
+import {compileMotion,frameAtCompiled,sortedKeys,type WorkshopDoc} from './document';
 import {analyzePose,solveEffectiveFrame,type CheckItem} from './solver';
 import {RIG_ID} from './protocol';
 import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
@@ -124,8 +124,12 @@ export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,
  for(const p of phases)events.push({time:p.time,label:p.label,type:'phase'});
  events.sort((a,b)=>a.time-b.time);
  const origin=rig.rest.get('root')!;
+ /* One compiled snapshot for the whole capture: the document is frozen
+  * input here, so the per-sample buildModel frameAt would rerun is hoisted
+  * into compileMotion — same EffectiveFrame per instant, byte-identical. */
+ const compiled=compileMotion(doc,origin);
  const sample:Sampler=t=>{
-  const f=frameAt(doc,t,origin);
+  const f=frameAtCompiled(compiled,t);
   solveEffectiveFrame(rig,f);
   return analyzePose(rig,f.pose,f.constraints).items;
  };

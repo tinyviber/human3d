@@ -1,6 +1,6 @@
 import {LoopOnce,LoopRepeat,Quaternion,Vector3,type AnimationAction,type AnimationMixer,type Bone,type Object3D} from 'three';
-import {angleAt,checkPosePackageShape,frameAt,gripFrame,solveEffectiveFrame,HumanRig} from '@human3d/motion-core';
-import type {DebugOptions,DynamicsRecords,MuscleActionFile,MotionCapabilities,PosePackage,WorkshopDoc} from '@human3d/motion-core';
+import {angleAt,checkPosePackageShape,compileMotion,frameAtCompiled,gripFrame,solveEffectiveFrame,HumanRig} from '@human3d/motion-core';
+import type {CompiledMotion,DebugOptions,DynamicsRecords,MuscleActionFile,MotionCapabilities,PosePackage,WorkshopDoc} from '@human3d/motion-core';
 import type {DynamicsCase,DynamicsReplay} from '../lab/dynamics';
 
 /** Per-frame measurements for the inspector/QA: joint angles from FK points,
@@ -71,23 +71,27 @@ export class ClipSource implements MotionSource{
   diagnostics(){return rigReadout(this.rig,this.racket);}
 }
 
-/** A WorkshopDoc solved live: frameAt → solveEffectiveFrame, the same path the
- * service's package builder samples. `origin` must be the rest root — the same
- * pelvis-frame origin the workshop and service use, else pelvis-frame hands shift. */
+/** A WorkshopDoc solved live: frameAtCompiled → solveEffectiveFrame, the same
+ * path the service's package builder samples. `origin` must be the rest root —
+ * the same pelvis-frame origin the workshop and service use, else pelvis-frame
+ * hands shift. `doc` is constructor-fixed by contract (playback never edits
+ * it), so one compiled snapshot serves the source's whole lifetime — duration
+ * and propSide read through the snapshot too, staying correct even if a
+ * mutable document were ever handed in. */
 export class DocumentSource implements MotionSource{
   readonly kind='document' as const;status:SourceStatus='ready';
-  private readonly origin:Vector3;private grip=0;
+  private readonly compiled:CompiledMotion;private grip=0;
   constructor(private rig:HumanRig,private doc:WorkshopDoc,private racket?:{getWorldPosition(v:Vector3):Vector3}){
-    this.origin=rig.rest.get('root')!.clone();
+    this.compiled=compileMotion(doc,rig.rest.get('root')!);
   }
-  get duration(){return this.doc.duration;}
+  get duration(){return this.compiled.duration;}
   seek(t:number){
-    const f=frameAt(this.doc,Math.max(0,Math.min(this.doc.duration,t)),this.origin);
+    const f=frameAtCompiled(this.compiled,Math.max(0,Math.min(this.compiled.duration,t)));
     solveEffectiveFrame(this.rig,f);this.grip=f.gripAmount;
   }
   wantsProp(){return this.grip>0;}
   /** The document's authored grip side — the racket mount and readout follow it. */
-  get propSide(){return this.doc.gripSide==='L'?'L':'R';}
+  get propSide(){return this.compiled.gripSide==='L'?'L':'R';}
   rootPoint(){return this.rig.point('root');}
   point(name:string){return this.rig.bones.has(name)?this.rig.point(name):undefined;}
   diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined,this.propSide);}

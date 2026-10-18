@@ -18,7 +18,7 @@ import {Quaternion,Vector3} from 'three';
 import type {HumanRig} from './rig';
 import {DEG,WRIST_BEND_LIMIT_DEG,solveTwoBone} from './kinematics';
 import {DORSI_LIMIT_DEG,analyzePose,solveEffectiveFrame} from './solver';
-import {frameAt,sortedKeys,toV,type WorkshopDoc} from './document';
+import {compileMotion,frameAtCompiled,sortedKeys,toV,type WorkshopDoc} from './document';
 import {sampleTimes} from './pose-package';
 import {footGeometry,type Side} from './foot';
 
@@ -201,10 +201,17 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
  // Same sampling origin solveWorkshop and the workshop engine pass
  // (learning[16]): pelvis-frame hands resolve through the rest root.
  const origin=rig.rest.get('root')!;
+ /* The document is stable for the whole sweep — one compiled snapshot
+  * instead of a buildModel per frame (same frames the compat path yields). */
+ const compiled=compileMotion(doc,origin);
+ /* Gripping side read once: compiled.gripSide is the compile-time copy of
+  * doc.gripSide — identical while the doc is fixed, and the value every
+  * sampled frame itself reports. */
+ const gs:Side=compiled.gripSide==='L'?'L':'R';
  const times=sampleTimes(doc.duration,fps);
  const frames:ProbeFrame[]=[];
  for(const t of times){
-  const f=frameAt(doc,t,origin);
+  const f=frameAtCompiled(compiled,t);
   const rep=solveEffectiveFrame(rig,f);
   // Deliberately the same analyzePose call solveWorkshop's sampler makes —
   // check items are identical with or without a tip object; the tip is
@@ -215,9 +222,9 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
   for(const p of PROBE_POINTS)pos[p]=v3a(rig.point(p));
   const check:Record<string,number|null>={};
   for(const it of a.items)check[it.code]=it.value;
-  /* Gripping-arm (doc.gripSide) two-bone internals from the solved shoulder
-   * root — same math rig.limb ran, kept for clamp/saturation diagnostics. */
-  const gs:Side=doc.gripSide==='L'?'L':'R';
+  /* Gripping-arm (doc.gripSide — the hoisted `gs` above) two-bone internals
+   * from the solved shoulder root — same math rig.limb ran, kept for
+   * clamp/saturation diagnostics. */
   const r0=rig.rest.get(`upperarm01_${gs}`)!,r1=rig.rest.get(`lowerarm01_${gs}`)!,r2=rig.rest.get(`wrist_${gs}`)!;
   const al=r1.clone().sub(r0).length(),bl=r2.clone().sub(r1).length();
   const root=rig.point(`upperarm01_${gs}`),gp=gs==='L'?f.pose.handL:f.pose.handR;

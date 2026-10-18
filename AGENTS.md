@@ -19,7 +19,7 @@
 | `apps/server`（`@human3d/server`） | `serve.ts` 传输、`service.ts` 编排、`contract.ts` Ajv 契约、`rig-manifest.ts`（node:crypto） | 可以 import motion-core；不得 import web |
 
 - 路径不变的部分：`assets/motions/*.json` 仍是工具链与文档使用的注册表路径（motion-core 以相对路径静态导入）；`spec/` 由 `apps/server/src/contract.ts` 以 `import.meta.url` 相对定位；`public/` 与 `dist/` 仍在仓库根（Vite `publicDir`/`outDir` 指过去）。
-- 命令入口不变：`npm run dev|build|preview|test|spec:check|service|qa` 都在仓库根执行；`npm run dev` 委派给 `@human3d/web`，测试按包分布（core 6 / server 6 / web 3 个测试文件），定向跑用 `npm test -- <path>`。
+- 命令入口不变：`npm run dev|build|preview|test|spec:check|service|qa` 都在仓库根执行；`npm run dev` 委派给 `@human3d/web`，测试按包分布（core 7 / server 6 / web 3 个测试文件），定向跑用 `npm test -- <path>`。
 - 结构性迁移期间的行为契约：浏览器与服务端姿态包逐字节一致、`SERVICE_VERSION` 与 artifact id 不变、两个入口页可用、上述 `npm run` 命令可用。
 
 ## 项目验证命令

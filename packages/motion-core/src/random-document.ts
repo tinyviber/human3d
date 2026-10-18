@@ -1,6 +1,6 @@
 import {Quaternion,Vector3} from 'three';
 import {DEG} from './kinematics';
-import {blankDocument,canonicalizeHands,contactStartKey,frameAt,toV,validateDocShape,type FootTarget,type HandTarget,type PoseParams,type V3,type WorkshopDoc,type WorkshopKey} from './document';
+import {blankDocument,canonicalizeHands,compileMotion,contactStartKey,frameAt,frameAtCompiled,toV,validateDocShape,type FootTarget,type HandTarget,type PoseParams,type V3,type WorkshopDoc,type WorkshopKey} from './document';
 import {ankleYForLift,footGeometry,soleOffset,type Side} from './foot';
 import {WORKSHOP_LIMITS} from './limits';
 
@@ -162,11 +162,15 @@ export function randomDoc(rng:()=>number,rest:ReadonlyMap<string,Vector3>):Works
   * the last pose. */
  const hipTrajectory=(doc:WorkshopDoc,s:Side,t0:number,t1:number)=>{
   const hips:Vector3[]=[],D=doc.duration,span=Math.max(0,t1-t0);
+  /* The document is stable for the duration of this sweep (callers only
+   * mutate keys between calls), so ≤600 samples share one compiled
+   * snapshot instead of paying a buildModel per frameAt. */
+  const c=compileMotion(doc,restRoot);
   const steps=Math.max(2,Math.min(600,Math.ceil(span/TRAJECTORY_DT)+1));
   for(let k=0;k<=steps;k++){
    let t=t0+span*k/steps;
    t=doc.loop?((t%D)+D)%D:Math.min(t,D);
-   const p=frameAt(doc,t,restRoot).pose;
+   const p=frameAtCompiled(c,t).pose;
    const hip=hipAt(s,p.root,p.yaw);
    hips.push(hip,hip.clone().add(new Vector3(0,0,-PELVIS_SHIFT_M)));
   }
