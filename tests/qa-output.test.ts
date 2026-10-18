@@ -2,6 +2,7 @@ import {afterEach,describe,it,expect} from 'vitest';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {assertTrackedWriteAllowed,resolveOutputDir} from '../scripts/lib/qa-output.mjs';
 import {resolveBuildOutDir} from '../apps/web/vite.config';
@@ -113,5 +114,24 @@ describe('tracked evidence write protection',()=>{
 
  it('allows a tracked write with explicit evidence update opt-in',()=>{
   expect(()=>assertTrackedWriteAllowed(trackedTarget,{root:ROOT,updateEvidence:true})).not.toThrow();
+ });
+
+ it('rejects a dangling symlink to an indexed file missing from the worktree',()=>{
+  const root=tempDir();
+  const trackedPath=path.join(root,'evidence','missing.json');
+  const outputPath=path.join(root,'scratch','redirected.json');
+  fs.mkdirSync(path.dirname(trackedPath),{recursive:true});
+  fs.mkdirSync(path.dirname(outputPath),{recursive:true});
+  fs.writeFileSync(trackedPath,'{}');
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
+  execFileSync('git',['add','--','evidence/missing.json'],{cwd:root,stdio:'ignore'});
+  fs.unlinkSync(trackedPath);
+  fs.symlinkSync(trackedPath,outputPath);
+
+  expect(()=>{
+   const allowedTarget=assertTrackedWriteAllowed(outputPath,{root,updateEvidence:false});
+   fs.writeFileSync(allowedTarget,'replacement');
+  }).toThrow();
+  expect(fs.existsSync(trackedPath)).toBe(false);
  });
 });

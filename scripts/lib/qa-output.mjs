@@ -5,15 +5,17 @@ import {randomUUID} from 'node:crypto';
 
 const safeSegment=value=>String(value).replace(/[^A-Za-z0-9._-]+/g,'-').replace(/^[-.]+|[-.]+$/g,'')||'unknown';
 const realPathForTarget=target=>{
- const missing=[];
- let cursor=target;
- while(!fs.existsSync(cursor)){
-  const parent=path.dirname(cursor);
-  if(parent===cursor)return target;
-  missing.unshift(path.basename(cursor));
-  cursor=parent;
+ const absolute=path.resolve(target);
+ try{
+  fs.lstatSync(absolute);
+ }catch(error){
+  const code=error&&typeof error==='object'&&'code'in error?error.code:undefined;
+  if(code!=='ENOENT')throw error;
+  const parent=path.dirname(absolute);
+  if(parent===absolute)throw error;
+  return path.join(realPathForTarget(parent),path.basename(absolute));
  }
- return path.resolve(fs.realpathSync(cursor),...missing);
+ return fs.realpathSync(absolute);
 };
 
 export function resolveOutputDir(scriptKey,args,root,env=process.env){
