@@ -42,15 +42,22 @@ function fold(acc:Map<string,QualityCheck>,it:CheckItem,t:number){
  }else acc.set(it.code,{...prev,ok});
 }
 
-function capture(rig:HumanRig,duration:number,fps:number,sample:Sampler,meta:CaptureMeta,extraTimes:number[]=[]):PosePackage{
- // Sample grid: uniform 1/fps steps PLUS the exact action end — when
- // duration×fps is non-integer the last interval is partial, but the final
- // timestamp is always exactly `duration` so the package reproduces the
- // terminal pose.
+/** The capture sample grid: uniform 1/fps steps PLUS the exact action end —
+ * when duration×fps is non-integer the last interval is partial, but the
+ * final timestamp is always exactly `duration` so the package reproduces the
+ * terminal pose. probeFrames() samples the identical grid, so probe frames
+ * land on pose-package timestamps whenever the fps match; the bench stage
+ * loop reuses it too. */
+export function sampleTimes(duration:number,fps:number):number[]{
  const timestamps:number[]=[0];
  while(timestamps[timestamps.length-1]<duration-1e-9)timestamps.push(Math.min(duration,timestamps.length/fps));
  if(timestamps.length<2)timestamps.push(duration);
  timestamps[timestamps.length-1]=duration;
+ return timestamps;
+}
+
+function capture(rig:HumanRig,duration:number,fps:number,sample:Sampler,meta:CaptureMeta,extraTimes:number[]=[]):PosePackage{
+ const timestamps=sampleTimes(duration,fps);
  const count=timestamps.length;
  const rootPos:number[]=[];const rot=new Map([...rig.bones.keys()].map(n=>[n,new Float64Array(count*4)]));
  const checkAcc=new Map<string,QualityCheck>();

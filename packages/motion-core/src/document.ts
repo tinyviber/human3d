@@ -200,8 +200,11 @@ interface Model{keys:WorkshopKey[];entries:Entry[];chain:Entry[];duration:number
  squad:Record<Side,SquadKey[]>}
 
 /** Build the sampling model once per evaluation. For loops the chain is
- * [last−D, …keys…, first+D] so the seam uses real neighbours on both sides. */
-function buildModel(doc:DocLike,origin:V3|Vector3):Model{
+ * [last−D, …keys…, first+D] so the seam uses real neighbours on both sides.
+ * Exported so batch consumers can hoist the per-call preprocessing out of a
+ * sampling loop (frameFromModel); the Model type itself stays private —
+ * callers hold it as ReturnType<typeof buildModel>. */
+export function buildModel(doc:DocLike,origin:V3|Vector3):Model{
   const keys=sortedKeys(doc),n=keys.length,o=new Vector3(origin.x,origin.y,origin.z);
   const raw=keys.map(k=>flattenPose(k.pose));
   const plans={L:contactPlan(keys,'L',doc.loop,raw),R:contactPlan(keys,'R',doc.loop,raw)};
@@ -441,7 +444,13 @@ export function constraintsAt(keys:WorkshopKey[],time:number):{constraints:KeyCo
  * after the contact rewrite (the same numbers the Hermite path reaches at key
  * instants), with no support fades and no grip ramp. */
 export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):EffectiveFrame{
-  const m=buildModel(doc,origin),t=Math.max(0,Math.min(doc.duration,time)),side:Side=doc.gripSide==='L'?'L':'R';
+  return frameFromModel(buildModel(doc,origin),doc,time);
+}
+/** frameAt over an already-built model — the body of frameAt minus the
+ * per-call buildModel, for batch consumers that hoist the preprocessing.
+ * `m` must come from buildModel(doc, …) on THIS document. */
+export function frameFromModel(m:Model,doc:WorkshopDoc,time:number):EffectiveFrame{
+  const t=Math.max(0,Math.min(doc.duration,time)),side:Side=doc.gripSide==='L'?'L':'R';
   if(!doc.inbetweens){
     const {keyIndex,constraints}=constraintsAt(m.keys,t),e=m.entries[keyIndex];
     return {pose:unflattenPose(e.flat.slice()),constraints:{...constraints},keyIndex,

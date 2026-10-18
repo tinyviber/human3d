@@ -19,6 +19,7 @@ import type {HumanRig} from './rig';
 import {DEG,WRIST_BEND_LIMIT_DEG,solveTwoBone} from './kinematics';
 import {DORSI_LIMIT_DEG,analyzePose,solveEffectiveFrame} from './solver';
 import {frameAt,sortedKeys,toV,type WorkshopDoc} from './document';
+import {sampleTimes} from './pose-package';
 import {footGeometry,type Side} from './foot';
 
 export type Vec3=[number,number,number];
@@ -200,10 +201,7 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
  // Same sampling origin solveWorkshop and the workshop engine pass
  // (learning[16]): pelvis-frame hands resolve through the rest root.
  const origin=rig.rest.get('root')!;
- const times:number[]=[0];
- while(times[times.length-1]<doc.duration-1e-9)times.push(Math.min(doc.duration,times.length/fps));
- if(times.length<2)times.push(doc.duration);
- times[times.length-1]=doc.duration;
+ const times=sampleTimes(doc.duration,fps);
  const frames:ProbeFrame[]=[];
  for(const t of times){
   const f=frameAt(doc,t,origin);
