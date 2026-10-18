@@ -472,7 +472,7 @@ describe('motion library',()=>{
  it('quarantines deeply-invalid stored docs with a reason instead of dropping them',()=>{
   const store=memStorage(),doc=JSON.parse(serializeDoc(defaultDocument(rig.rest)));
   doc.keys[1].time=doc.keys[0].time; // duplicate times now fail validation
-  store.map.set(LIBRARY_KEY,JSON.stringify({schemaVersion:1,activeId:doc.id,docs:[doc,defaultDocument(rig.rest)]}));
+  store.map.set(LIBRARY_KEY,JSON.stringify({schemaVersion:2,activeId:doc.id,docs:[doc,defaultDocument(rig.rest)]}));
   const l=new MotionLibrary(rig.rest,store).load();
   expect(l.docs.length).toBe(1);expect(l.docs[0].id).toBe('forehand-workshop');
   expect(l.quarantine.length).toBe(1);expect(l.quarantine[0].id).toBe(doc.id);
@@ -484,13 +484,26 @@ describe('motion library',()=>{
   expect(JSON.parse(store.map.get(LIBRARY_KEY)!).schemaVersion).toBe(2);
   back.discardQuarantine(0);expect(back.quarantine.length).toBe(0);
  });
- it('migrates v1 documents to v2 with the behaviour they had',()=>{
+ it('refuses v1 documents with a readable reason instead of migrating them',()=>{
   const store=memStorage(),doc=JSON.parse(serializeDoc(defaultDocument(rig.rest)));
   delete doc.loop;delete doc.handFrames;doc.schemaVersion=1;
-  store.map.set(LIBRARY_KEY,JSON.stringify({schemaVersion:1,activeId:doc.id,docs:[doc]}));
+  store.map.set(LIBRARY_KEY,JSON.stringify({schemaVersion:2,activeId:doc.id,docs:[doc]}));
   const l=new MotionLibrary(rig.rest,store).load();
-  expect(l.docs[0].schemaVersion).toBe(2);expect(l.docs[0].loop).toBe(false);
-  expect(l.docs[0].handFrames).toEqual({L:'world',R:'world'});expect(l.quarantine.length).toBe(0);
+  // The v1 doc cannot enter the library: it lands in quarantine carrying the
+  // validator's own message, and the empty library re-seeds from the example.
+  expect(l.quarantine.length).toBe(1);
+  expect(l.quarantine[0].reason).toContain('schemaVersion 必须为 2');
+  expect(l.docs.length).toBe(1);expect(l.docs[0].schemaVersion).toBe(2);
+ });
+ it('keeps an unreadable library container (v1 or corrupt) quarantined without overwriting it',()=>{
+  const store=memStorage(),doc=JSON.parse(serializeDoc(defaultDocument(rig.rest)));
+  const raw=JSON.stringify({schemaVersion:1,activeId:doc.id,docs:[doc]});
+  store.map.set(LIBRARY_KEY,raw);
+  const l=new MotionLibrary(rig.rest,store).load();
+  expect(l.quarantine.length).toBe(1);expect(l.quarantine[0].id).toBe('library-file');
+  // The original bytes survive verbatim and are NOT auto-rewritten.
+  expect(l.quarantineText(0)).toBe(raw);
+  expect(store.map.get(LIBRARY_KEY)).toBe(raw);
  });
 });
 

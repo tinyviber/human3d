@@ -502,17 +502,6 @@ export function ensureKey(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3)
 export function serializeDoc(doc:WorkshopDoc){return JSON.stringify(doc,null,2);}
 const isV3=(v:unknown):v is V3=>!!v&&typeof v==='object'&&['x','y','z'].every(k=>Number.isFinite((v as Record<string,number>)[k]));
 
-/** Migration entry point. v1 documents become v2 with the behaviour they had:
- * no loop, world-space hands. Unknown versions are returned unchanged so the
- * validator reports them instead of guessing. */
-export function upgradeDoc(raw:unknown):unknown{
-  if(!raw||typeof raw!=='object')return raw;
-  const d=raw as Record<string,unknown>;
-  if(d.schemaVersion!==1)return raw;
-  const keys=Array.isArray(d.keys)?d.keys.map(k=>k&&typeof k==='object'?{...(k as object),label:(k as {label?:unknown}).label??''}:k):d.keys;
-  return {...d,schemaVersion:2,english:typeof d.english==='string'?d.english:'',loop:false,handFrames:{L:'world',R:'world'},keys};
-}
-
 /** Structural validator shared by import, library rehydrate and the service:
  * every numeric field must be finite, times strictly increasing and inside the
  * shared duration limits, constraint fields boolean, direction frames
@@ -522,7 +511,7 @@ export function validateDocShape(d:unknown):string[]{
  const e:string[]=[];
  if(!d||typeof d!=='object')return ['文档不是对象'];
  const doc=d as WorkshopDoc;
- if(doc.schemaVersion!==2)e.push('schemaVersion 必须为 2（v1 文档请先经 upgradeDoc 迁移）');
+ if(doc.schemaVersion!==2)e.push('schemaVersion 必须为 2');
  if(typeof doc.id!=='string'||!doc.id)e.push('缺少 id');
  if(typeof doc.name!=='string')e.push('缺少 name');
  if(typeof doc.english!=='string')e.push('english 必须是字符串');
@@ -593,12 +582,11 @@ export function loopBlockers(doc:Pick<WorkshopDoc,'keys'|'duration'>):string[]{
   if(Math.max(...times)>doc.duration-WORKSHOP_LIMITS.loopGap+1e-9)out.push(`循环需要末关键帧早于 ${(doc.duration-WORKSHOP_LIMITS.loopGap).toFixed(2)} s`);
   return out;
 }
-/** Upgrade, validate and normalise an already-parsed document. Throws on the first problem. */
+/** Validate and normalise an already-parsed document. Throws on the first problem. */
 export function normalizeDoc(raw:unknown):WorkshopDoc{
-  const up=upgradeDoc(raw);
-  const errs=validateDocShape(up);
+  const errs=validateDocShape(raw);
   if(errs.length)throw new Error(`${errs[0]}${errs.length>1?`（共 ${errs.length} 处问题）`:''}`);
-  const d=up as WorkshopDoc;
+  const d=raw as WorkshopDoc;
   /* Canonical form: 'R' is the implicit default, so an explicit 'R' is folded
    * back to absent — documents that mean the same solve must serialize and
    * fingerprint identically (normalizedRequest embeds the parsed doc). */

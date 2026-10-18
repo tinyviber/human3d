@@ -299,8 +299,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   }catch(err){setHint(err instanceof Error?err.message:String(err));}
   finally{setExporting(false);}
  };
- // Motion-file envelopes unwrap to their embedded WorkshopDoc first —
- // a bare envelope's schemaVersion:1 would otherwise be misread as a v1 doc;
+ // Motion-file envelopes unwrap to their embedded WorkshopDoc first — a bare
+ // envelope's schemaVersion:1 is the ENVELOPE revision, not a document one;
  // clip-motion envelopes carry no document and unwrap throws a readable error.
  const importDoc=async(f:File)=>{try{const next=normalizeDoc(unwrapMotionFile(JSON.parse(await f.text())));const added=L.add(next);selectDoc(added.id);}catch(e){setError(e instanceof Error?e.message:String(e));}};
  const loadVideo=(f:File)=>{if(videoUrl)URL.revokeObjectURL(videoUrl);setVideoUrl(URL.createObjectURL(f));};
