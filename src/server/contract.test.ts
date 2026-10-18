@@ -36,6 +36,28 @@ describe('executable contract',()=>{
  it('accepts the published request example',()=>{
   expect(contract.request(read('examples/rejected-pelvis-fold.request.json'))).toBe(true);
  });
+ it('refuses schemaVersion 1 documents instead of upgrading them',()=>{
+  // The advertised contract says v2 only. The runtime must agree: an old
+  // document is a validation failure, never a silent migration.
+  const v1=JSON.parse(JSON.stringify(read('examples/rejected-pelvis-fold.request.json'))) as {
+   action:{parameters:{document:Record<string,unknown>}}};
+  const doc=v1.action.parameters.document;
+  delete doc.loop;delete doc.handFrames;doc.schemaVersion=1;
+  expect(contract.request(v1)).toBe(true); // envelope is valid — the document is not
+  const r=handleRequest(ctx,'POST','/v1/motions',v1,{});
+  expect(r.status).toBe(400);
+  const body=r.body as {error:{code:string;message:string}};
+  expect(body.error.code).toBe('validation_failed');
+  expect(body.error.message).toContain('schemaVersion');
+ });
+ it('advertises v2-only documents, never an upgrade path',()=>{
+  const a=handleRequest(ctx,'GET','/v1/actions/workshop-doc').body as {
+   parameters:{properties:{document:{description:string}}}};
+  const desc=a.parameters.properties.document.description;
+  expect(desc).not.toMatch(/are upgraded on input/i);
+  expect(desc).toMatch(/schemaVersion must be 2/);
+  expect(desc).toMatch(/refused|never silently upgraded/);
+ });
  it('rejects foreign package versions and malformed quality codes',()=>{
   const pkg=read('examples/idle.pose.json');
   expect(contract.posePackage(pkg)).toBe(true);
@@ -229,5 +251,14 @@ describe('OpenAPI description matches the executable contract',()=>{
   const served=(handleRequest(ctx,'GET','/v1/capabilities').body as {endpoints:string[]}).endpoints;
   const documented=Object.entries(doc.paths).flatMap(([p,ops])=>Object.keys(ops as object).map(m=>`${m.toUpperCase()} ${p}`));
   expect([...documented].sort()).toEqual([...served].sort());
+ });
+ it('documents v2-only documents, matching the served descriptor',()=>{
+  const desc=doc.components.schemas.MotionRequest.properties.action.properties.parameters.description as string;
+  expect(desc).not.toMatch(/are upgraded on input/i);
+  expect(desc).toMatch(/`schemaVersion` must be 2/);
+  expect(desc).toMatch(/refused|never\s+silently upgraded/);
+  const served=(handleRequest(ctx,'GET','/v1/actions/workshop-doc').body as {
+   parameters:{properties:{document:{description:string}}}}).parameters.properties.document.description;
+  expect(served).toContain('schemaVersion must be 2');
  });
 });
