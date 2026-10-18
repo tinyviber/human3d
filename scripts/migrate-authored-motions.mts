@@ -195,33 +195,11 @@ const buildDoc=(id:string):WorkshopDoc=>{
  return doc;
 };
 
-const motionSchema={
- $schema:'https://json-schema.org/draft/2020-12/schema',$id:'https://kinesis.local/motion.schema.json',
- title:'Motion file envelope',type:'object',
- required:['schemaVersion','kind','id','order','name','english','duration','description','method','focus','phases'],
- additionalProperties:false,
- properties:{
-  schemaVersion:{const:1},kind:{enum:['workshop-motion','clip-motion']},
-  id:{type:'string',minLength:1},order:{type:'number'},
-  name:{type:'string'},english:{type:'string'},duration:{type:'number',exclusiveMinimum:0},
-  description:{type:'string'},method:{type:'string'},
-  focus:{type:'array',items:{type:'string'}},
-  phases:{type:'array',items:{type:'object',required:['time','label'],additionalProperties:false,properties:{time:{type:'number'},label:{type:'string'}}}},
-  notes:{type:'array',items:{type:'string'}},license:{type:'string'},oneShot:{type:'boolean'},
-  capabilities:{type:'object',additionalProperties:false,properties:{
-   prop:{type:'object',required:['kind','trail','handView'],additionalProperties:false,properties:{kind:{const:'racket'},trail:{type:'boolean'},handView:{type:'boolean'}}},
-   camera:{type:'object',required:['targetHeight','distance'],additionalProperties:false,properties:{targetHeight:{type:'number'},distance:{type:'number'}}},
-   locomotion:{enum:['in-place','follow']}}},
-  document:{type:'object'},
-  clip:{type:'object',required:['url'],additionalProperties:false,properties:{url:{type:'string'},meta:{type:'string'}}},
- },
- allOf:[
-  // Kind exclusivity: a `false` property schema rejects the sibling payload
-  // outright (strictRequired forbids `not:{required:[...]}` here).
-  {if:{properties:{kind:{const:'workshop-motion'}}},then:{required:['document'],properties:{document:{type:'object'},clip:false}}},
-  {if:{properties:{kind:{const:'clip-motion'}}},then:{required:['clip'],properties:{clip:{type:'object',required:['url'],properties:{url:{type:'string'}}},document:false}}},
- ],
-};
+/* The envelope schema is authored on disk at assets/motions/motion.schema.json
+ * and has evolved independently of this script (WP-D added dynamics-motion
+ * plus capabilities.prop.side). This script used to write it from an embedded
+ * copy, which silently regressed the file — the write is removed so a rerun
+ * only regenerates the envelopes, goldens and the report it owns. */
 
 const write=(file:string,v:unknown)=>fs.writeFileSync(file,JSON.stringify(v,null,2)+'\n');
 const report:string[]=['# Authored → workshop-motion migration report',
@@ -245,7 +223,6 @@ for(const id of IDS){
  write(path.join(motionsDir,'walk.json'),{schemaVersion:1,kind:'clip-motion',id:'walk',order:ORDER.indexOf('walk'),
   name:w.name,english:w.english,duration:w.duration,description:w.description,method:w.method,focus:w.focus,phases:w.phases,
   clip:{url:'/models/walk.json',meta:'/models/walk-meta.json'},capabilities:{locomotion:'follow'}} satisfies MotionFile);
- write(path.join(motionsDir,'motion.schema.json'),motionSchema);
 }
 
 /* Residual measurement: read each envelope back off disk, normalize through the

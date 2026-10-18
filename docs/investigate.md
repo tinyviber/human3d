@@ -463,3 +463,118 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 - **动力链非完全 proximal→distal**:相对峰时刻上臂 .875s → 骨盆/躯干同帧 .971s → 手 .988s → 前臂 1.212s——近端次序在 240fps 帧粒度未拉开(骨盆/躯干同帧),手部峰夹在前臂之前;门只钉「近端先于前臂」,全序留待后续。
 - **D/E 待办**:D 按裁决推迟、E 判出本 WP,若重启需新工单;选项原文见 WP-C 工单记录。
 - **study 晋升 bundled**:夹具目前是 spec 示例 + 探针门,未进 `assets/motions/` 信封与主页动作库;晋升(文档→motion-file 信封、进内置动作)留后续 WP。
+
+# WP-D — 动力学动作目录化(D2)
+
+## 目标与裁定
+
+- **范围**:把两条肌肉驱动动作(`baseball-throw`/`punch`)从 `motions.ts` 的 Vite-only `import.meta.glob` 注册迁入 `assets/motions/*.json` 信封注册表,与 authored/clip 动作共用同一条 `MOTION_FILES` 静态注册链路。
+- **信封形态**:`kind:'dynamics-motion'`;`dynamics.action` 承载原 action JSON 全部字段(schemaVersion/title/model/simulation/controller/reference/display/notes),`dynamics.records` 按 case 给出 `{meta,data}` URL;原始信封不写任何显示字段(name/english/duration/description/method/focus/phases 及 oneShot/capabilities/notes/license),全部由 `normalizeMotionFile` 从 `dynamics.action` 用旧 `actionMotions` 同一套公式派生(duration 保留仿真网格取整、phases 默认取关键帧时刻并经 lead/scale 换算、clamp 到 duration)。
+- **不引入 `dynamics.model`**:记录 meta 已携带 `modelMeta`/`modelXml` 与哈希,信封再加模型字段只会产生第二份可漂移的模型身份。
+- **记录文件迁入 per-action 目录**:`public/dynamics/<id>/<case>.{json,bin}`;信封 `dynamics.records` URL 是运行期抓取契约,`DynamicsReplay.load` 优先用信封 URL,裸 `{kind:'dynamics'}` spec 回退同一 per-action `/dynamics/<id>/<case>` 约定(本轮 review 修复前曾写死旧扁平 `<id>-<case>` 路径——迁移后磁盘上根本不存在,是必 404 的死路径,已更正,见文末修复轮)。中间产物(原始逐帧 run JSON、激励 bin、参考 npz)同样按动作分目录到 `assets/dynamics/<id>/`——它们是 export 管线的输入而非 web 资产,不进 public/。
+- **互斥与派生边界**(schema `allOf` + `validateMotionFileShape` 双轨):dynamics-motion 必须有 `dynamics`、不得有 `document`/`clip`、不得写显示字段;`unwrapMotionFile`/`motionDefinitionPayload` 对 dynamics-motion 显式抛错(不进姿态管线哈希)。
+- **服务目录不变**:`service.ts` 仍按 `f.kind==='workshop-motion'` 过滤,dynamics-motion 进文件注册表/网页动作库但不进 `/v1/actions`;`service.test.ts` 的「不预告不可服务动作」断言原样覆盖 `punch`/`baseball-throw`。
+- **类型解环**:`MuscleActionFile`/`DynamicsRecords` 抽到 `src/core/muscle-action.ts`,`dynamics.ts`/`motion-source.ts`/`motion-file.ts`/`types.ts` 都从这里取型,不再经 `motions.ts`。
+- **副产物**:`assets/actions/` 目录整体删除;`assets/source/dynamics/full-activation-model.xml` 是早期实验中间产物,随本次迁移删除(完整模型快照仍由 `myofullbody-complete.xml` + `myofullbody-parameters.json` 承载)。
+
+## WP-D(补)— 工作台洋葱皮:播放头相邻姿态幽灵叠加
+
+eval 裁决语义:编辑视图叠加播放头前后姿态的幽灵骨架线框——审阅「这一帧从哪里来到哪里去」,不是全轨迹拖尾。
+
+- **幽灵 = 逐骨世界位置的 `LineSegments`**(非克隆 SkinnedMesh):每方向×距离一个槽位(2×`ONION_MAX`=6),段表与实验室调试骨架共用 `rig.skeletonSegments`(从 `core/engine.ts` 抽出的同一份表,骨列表不会分叉)。每幽灵时刻走 `frameAt + solveEffectiveFrame` 真实求解路径——与 `rebuildAux` 60 次轨迹采样同路——逐骨记录世界位置后恢复播放头姿态。
+- **时刻选择**:`onionTimes` 纯函数。`keys` 模式 `sortedKeys` 括号取播放头前后各 N 个真实键时刻(严格不等式——压在播放头下的键是正在编辑的实姿态,不幽灵化);`step` 模式 `t±k·Δt` 随播放头每帧跟随,越界时刻丢弃。`ONION_MAX=3` 每向上限,maxKeys 文档永不全键幽灵化。
+- **重算节奏(签名缓存)**:`docDirty→rebuildAux` 置 `onionStale` 强制重解算;幽灵时刻签名(mode/count/step + 各时刻 dir/dist/time)不变则跳过——播放头在同两键间移动不触发重解;step 模式随 animate 每帧走同一签名门。拖动中 `!this.drag` 守卫冻结(与其他 aux 层同节奏)。
+- **视觉**:前帧冷色 0x367cff / 后帧暖色 0xe2543a,opacity .40→.20 按距离衰减,`depthTest:false`、renderOrder 8(低于手柄 20),挂场景根不进拾取集。开关与参数(count/mode/step)会话态不持久化,「显示」卡片控件。
+- **QA**:`workshopOnion`——幽灵池存在、keys/step 数量断言、真实拖动期间缓冲逐字节冻结、关闭全隐。
+
+## WP-D(补)— 固定相机渲染导出:静帧 + 关键帧拼图
+
+eval 裁决语义:**确定性出图参数的静帧导出 + 关键帧 contact-sheet 导出**(明确非相机跟随、非服务端 renders 端点)。
+
+- **引擎入口**:`WorkshopEngine.captureStill(t,{view?,overlays?})` / `captureSheet(times?,opts)`,与 `setView`/`seek` 同层的公开方法。出图契约自描述:固定 `STILL_WIDTH×STILL_HEIGHT` = 640×720 PNG、pixelRatio 钉 1、固定相机预设(默认 `CAPTURE_VIEW='threeQuarter'`,`setView` 语义——相对该时刻骨盆根定位)。流程 = `setPlaying(false)` → 快照 time/playing/view/相机位姿/逐对象叠加物可见态(快照记录**暂停前**的 playing,恢复才有意义)→ `seek(t)`+`solveCurrent`+`renderer.render`+`canvas.toBlob`(同任务内快照,`preserveDrawingBuffer:true` 已开)→ `finally` 原样恢复(`setPixelRatio` 先于 `resize()` 回 host 尺寸)。
+- **叠加物策略**:拼图/静帧用于姿态审阅,编辑器叠加物(手柄组/轨迹线/触球标记/洋葱皮/CoM 支撑)默认全部不入图——直切 `Object3D.visible`,不走 `setOptions`/`docDirty`(一次导出不应触发 rebuildAux 的文档级副作用);`opts.overlays:true` 保留入图。新增私有 `capturing` 标志:多格拼图的两个 await 之间 animate 循环照常跑,`rebuildAux`(轨迹线/触球标记)、`updateOnion`、`updateBalance` 都会按 options 重建可见性,标志位压住全部重显路径;同标志还挡住捕获中画布 pointerdown 起的 drag 与 pointermove 写入。
+- **拼图**:`captureSheet` 默认取全部关键帧时刻(sortedKeys);>12 键经纯函数 `sheetTimes` 均匀抽样到 `SHEET_MAX_TILES`=12,首尾帧必保留(step>1 保证严格递增无重复格)。逐 tile 走 captureStill 真路径 → `createImageBitmap` 解码 → 离屏 2D 画布 `SHEET_COLS`=4 列网格,每格下方 `SHEET_LABEL_H`=28px `t=…s` 标注带 → 单张 PNG。
+- **UI**:动作文档卡姿态包区旁新增「静帧渲染」子区——「渲染静帧」按 `e.time` 导 `<docId>.t<秒>.png`、「关键帧拼图」导 `<docId>.sheet.png`,复用既有 `download`/`safeName`;注释与 hint 写明固定相机预设+固定出图尺寸、不含编辑器手柄、播放/视角导出后恢复。
+- **测试/QA**:`workshop.test.ts` 补 `sheetTimes` 纯函数断言(键数 ≤ 上限全保留、30 键均匀抽 12 且端点钉死+无重复、自定义上限与调用序保持);`browser-qa.mjs` 新增 `workshopStillExport`——真实点击 → `waitForEvent('download')` → PNG magic(\x89PNG)+ IHDR 钉 640×720 与文件名约定,拼图断言 3 格宽度(1920×748)与体积大于单帧,并分别验证暂停态导出后 time/playing 原样恢复、播放中导出后 playing 恢复为 true。
+- **文档**:WORKSHOP.md 导出矩阵三行→五行(静帧/拼图归入「渲染品」,不携带 artifact 身份);QA.md 检查表补 `workshopStillExport` 行。
+
+## WP-D(补)— 握拍侧参数化:gripSide 镜像求解与左手球拍装载
+
+eval 裁决语义(方案A):`WorkshopDoc.gripSide?:'L'|'R'` 文档级字段选择握拍侧——整套握拍阶段(指节包裹、腕锥限位、抬肩辅助、球拍挂载)镜像到左手;侧别改变求解轨迹,所以它属于文档并进入请求指纹,不是展示元数据。
+
+- **规范形态**:缺省 = 右手;`normalizeDoc` 把显式 `'R'` 折叠回缺省——同义写法共享指纹与制品 id(`normalizedRequest` 内嵌整个文档,'R' 拼写在哈希前就归一掉);显式 `'L'` 保留并改变制品 id。
+- **镜像约定**:左挂载 = 右挂载的精确 x 镜像(M·q·M,x 反射 M——位置 x→−x、四元数 (x,−y,−z,w) 分量规则),`grip-side.test.ts` 在真实 `frameAt→solveEffectiveFrame` 路径上逐骨断言(163 骨位置 + 世界朝向,实测 ≤5e-16 m / ≤5e-8 rad)——含腕锥截幅、clavicle 辅助、指节缠绕各阶段,非对称输入全镜像后求解必须共轭到另一侧。
+- **求解路由**:`EffectiveFrame.gripSide` 由 `frameAt` 从文档拍平(与 clavicleLift 同一交付模式,调用方签名不变),`solveEffectiveFrame`/`solvePose` 按侧路由 `blendGrip`/手指/腕锥/锁骨(镜像符号)/放松;非握拍手保持松弛。
+- **球拍与 UI**:`gripFrame`/`applyGrip`/`blendGrip`/`attachRacket`/`mountRacket` 均收 `side` 参数(缺省 'R' 保持旧语义);工作台引擎在 `solveFrame` 一处统一检测挂载侧变化并重挂(文档编辑/切换触发,每帧至多一次);「握拍侧」下拉写文档(左握时约束行动态标「左手握拍」);实验室 `capabilities.prop.side`/`posePackageSpec` 的 `presentation.gripSide` hint 驱动 `propSide` 与手部相机;`analyzeProbeFrames` 仪表握拍臂而非右臂。
+- **QA**:`workshopGripSide`——真实下拉选左手 → 文档字段+重标+球拍重挂 `wrist_L` → 真实拖拍头写 `handL.target`,`handR.target` 逐字节不变。
+
+## WP-D(补)— 文档镜像(mirrorDoc):同一动作换边
+
+eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` 产出新 WorkshopDoc——右手正手变成左手正手,文档级变换而非求解开关。
+
+### 镜像约定表(与 grip-side.test.ts 的 M·q·M 实测约定对齐)
+
+| 字段 | 变换 |
+|---|---|
+| `pose.root` | `x→−x`,y/z 保持 |
+| `pose.yaw` / `chest` / `side` | 取反(YXZ 中的 Y/Z 分量;`rig.rotate` 与 `footRotation` 同为 YXZ Euler,M 共轭逐因子作用:Rx 保持、Ry/Rz 取反) |
+| `pose.lean` / 脚 `pitch` | 保持(X 分量) |
+| `handL⇄handR` | 对调;target/pole/forward/normal 全部 x→−x——Mf·Mn 逐位等于 f·n=0,正交框架契约 bit-for-bit 保持,`parseDoc`/`canonicalizeHands` 对镜像输出是恒等 |
+| `footL⇄footR` | 对调;target/pole x→−x、yaw→−yaw、pitch 保持 |
+| `constraints` | `plantL⇄plantR` 对调;`grip`/`contact` 为侧别无关布尔,保持 |
+| 接触区间 | 不存独立数据——区间语义由 plant 旗标 + 区间首帧存储脚位定义,随上述字段自动镜像:接触点、离地帧摆动中点、落地帧同一套存储重写 |
+| `handFrames` | `{L←R, R←L}` 随手换侧(插值坐标系跟随该手原样);对现有双手 pelvis 配置是恒等。骨盆系无需特判:rest root.x=0,M 与 buildModel 的 yaw 旋转换算可交换 |
+| `gripSide` | 翻转:缺省/`'R'`→`'L'`;`'L'`→缺省(镜回右手时写回规范形态,显式 `'R'` 不落盘) |
+| `clavicleLift`/`loop`/`duration`/`inbetweens`/键时间/标签/`videoTime` | 原样保留(标量与时间轴不变) |
+| `id`/`name`/`english` | 可回切标记:`.mirrored` / ` · 镜像` / ` · MIRRORED`,已带标记则剥除 |
+
+### 关键不变量与实测
+
+- **对合性**:`mirror∘mirror` 对规范字段序文档逐字节相等(seeds、shipped 资产、parseDoc/mirrorDoc 输出全在此类);手写乱序字段的文档按值相等(输出恒为规范字段序)。
+- **几何硬断言**(mirror.test.ts,真实 `frameAt→solveEffectiveFrame`,全部采样时刻 × inbetweens 双模式,163 骨位置+世界四元数):实测最大残差 位置 ≤2.8e-15 m、朝向 ≤5.96e-8 rad——与 grip-side 镜像断言同量级(其记录 ≤5e-16 m / ≤5e-8 rad)。
+- **两侧等价**:非对称 handFrames({L:'world',R:'pelvis'})、左握文档、loop 随机文档(seed 11/222)同口径通过——handFrames 换侧是该断言成立的必要条件。
+- **UI 事务**:「镜像动作」把镜像文档作为新库条目入库并选中(原文档保留);新文档的撤销书预存源文档快照——一步撤销回到源文档(undo/redo 在恢复 id ≠ 当前 id 时由 applyDoc + selectDoc 跟随,反向步经 `DocHistory.pushPast`/`pushFuture` 存到恢复文档的书上,双向对称)。
+- **QA**:`workshopMirror`——真实点击 → 新文档、`gripSide` 翻转、t=.5 腕位左右互换(容差 1e-5)、球拍重挂 `wrist_R`、撤销一步回源文档。
+
+## WP-D · 双审修复轮(review-D1 minors + review-D2 medium/lows)
+
+- **SERVICE_VERSION `0.3.0`→`0.4.0`**:`gripSide` 进 `solvePose`(指节包裹/腕锥/锁骨辅助/球拍挂载整段按侧镜像)是求解语义变化,`protocol.ts` 明令无条件 bump——WP-D 落地时漏升,本轮补上。`spec/examples/idle.pose.json` 经 `npm run protocol:example` 重生成:artifact id `mot_a9edd1d24e21d202`→`mot_c67dda30d91962fd`,顶层仅 `id` 与 `provenance.solverRevision` 变化——轨迹逐位不变(gripSide 缺省='R',idle 文档无 'L',既有轨迹不受影响)。`evidence/migration-report.txt` 经 `npx tsx scripts/migrate-authored-motions.mts` 重生成(仅首行 solver 版本号变化,残差逐字相同);顺带修复该脚本内嵌 `motionSchema` 漂移——WP-D 直接在磁盘信封 schema 上加 dynamics-motion/prop.side,脚本内嵌副本已旧,若重跑会把 schema 写回旧版,故移除其对 `motion.schema.json` 的写路径(schema 改为磁盘文件独立持有)。
+- **动力学 flat-fallback 死契约**:`DynamicsReplay.load` 裸 spec 回退路径 `/dynamics/<id>-<case>` 自迁移起即永 404,更正为真实布局 `/dynamics/<id>/<case>`(types.ts/motion-source.ts 注释同步);`load` 新增 `meta.id`/`meta.case` 与请求 id/profile 一致性校验,不匹配显式抛错——与 `scripts/test-dynamics-records.py` 同一闸门,信封 URL 指错动作的记录不再静默回放。
+- **HistoryBook.drop 死代码 + 复活路径**:`MotionLibrary.remove` 新增 `onRemoved` 钩子,`WorkshopApp` 接 `books.drop(id)`——删文档连同其撤销书;否则同 id 文档再导入(导入只在冲突时重编 id)会继承已删文档的整栈快照,undo 把旧内容写回新文档(僵尸写)。`applyDoc` 返回成败,undo/redo 恢复目标 id 不在库中(镜像源文档被删)时给出 hint 而非静默吞步。回归:删源文档→同 id 再导入→`books.of(id).canUndo()===false`。
+- **captureSheet 文档版本混排**:拼图逐 tile await(toBlob/createImageBitmap 让出事件循环)之间 `getDoc()` 每格重读活动文档,中途切文档/编辑会把两版文档拼进同一张图;入口即 `serializeDoc→parseDoc` 冻结副本并交换 getDoc,全部 tile 对同一文档版本求解。
+- **nits**:onionTimes keys 模式 loop 缝 wrap(loop 文档播放头近 0 时「上一姿态」跨缝取尾键自身时刻,去重且播放头下键不幽灵化,workshop.test.ts 断言);mirrorDoc 函数体补全字段枚举注释(新字段必须在此显式裁决,防静默保留源值)。
+- **文档同步**:WORKSHOP.md 三 kind 互斥补 dynamics-motion;README 工作台行补 grip-side/onion/静帧/镜像,「右手手指」改不假定侧别;AGENTS.md 测试计数按实测更新。
+
+# 外部 review 修复(对 PR #4/#5 代码的六项处置)
+
+外部 review 在 PR #4(动力学动作目录化)/#5(姿态包导入)上发现的问题;编号沿用工单。
+
+- **P1-1 动力学异步加载竞态**(`src/core/motion-source.ts` `DynamicsSource`):`load()` 的两个 await 点之间引擎可切走 source,旧路径仅靠 `s.retired`(dispose 才置位)与 `this.motionId!==id` 挡应用——`deactivate()` 不留标记,旧加载完成后 `status='ready'`+`replay.root.visible=true` 会复活 replay 盖住新 source。修法:`private gen` 代际计数,`load` 入口 `++this.gen` 记 `g`,`deactivate()`/`dispose()` 均 bump;两处 await 应用点与 catch 统一判 `this.gen!==g||s.retired` → `'superseded'`(不动 replay 状态)。dispose 分叉保持原语义:仅 retired 会话丢弃未被收编的 replay——被取代的会话不能丢,共享 `s.promise` 的当前属主还会收养它。回归测试:motion-source.test.ts「DynamicsSource — load supersession」四个用例(注入 `session.promise` 的假 replay,走真 `load`/`deactivate`/`dispose` 路径)。
+- **P1-2 events 元素结构校验**(`checkPosePackageShape`):`events` 存在时必须是数组,逐元素 isObj、`type` 限 spec 枚举五值(phase/keyframe/contact/support-start/support-end,与 schema 同步)、`time` 为 ≥0 有限数、`label` 字符串;support-start/end 另要 `side∈'L'|'R'`(与 validate.ts:169 同闸门)。顺带补上 spec 消费字段的最小形状:rig 块(`id===RIG_ID`、`manifestSHA256` 字符串、`bones` ≥1 整数)、action 对象 + `action.id` 字符串、quality 对象 + `warnings` 字符串数组、provenance 对象 + solver/solverRevision/source 字符串。`posePackageSpec` 的 events.filter 前加 isObj 守卫作纵深防御(单独调用不依赖前置 shape 检查)。
+- **P1-3 rig/definition 身份核验**:`engine.load()` 把 rig.json 改为 text 取回再 `JSON.parse`,经 `canonical(rigManifestBody(info))` + WebCrypto sha256 算本地 `manifestHash`;同时预算 `envelopeDefHash`(workshop-motion 信封逐一 `sha256(canonical(motionDefinitionPayload(f)))`,与服务端 `actionDefinitionHash` 同式)。无 `crypto.subtle`(非 secure context)两者记 undefined/空并 warn。`openPosePackage`:`rigMatches(p,manifestHash)` 不符→onError 拒收(声明哈希前缀写入错误信息);哈希不可知降级为既有骨骼名检查,spec description 注明「rig 未验证」。`posePackageSpec(p,id,trust?,rigVerified=true)`:信封恢复前过 `trust(actionId)`——包内 `action.definitionSHA256` 与信封预算哈希一致才信任,缺失/不符走 ad-hoc parameters 通道并在 description 注明「definitionSHA256 不符」;不传 trust 保持旧行为(无可核对方的调用方)。纯函数面 `rigMatches`/`trust` 闭包在 vitest 层测(篡改 definitionSHA256→capabilities 退回、manifestSHA256→rigMatches=false)。
+- **P2-4 多周期 wrap**(`engine.tick`):单 tick 跳过多个周期时长帧×高速时,`this.time%=duration` 只归位播放头而 `loopWrapAdvance` 只发一次——walk 步幅累积丢步。改为 `wraps=Math.floor(this.time/duration)` 取模后按 wraps 逐次发 `loopWrapAdvance`。
+- **P2-5 信封跨字段一致性**(`validateMotionFileShape`):workshop-motion 且 `document.duration` 为有限数时要求 `document.duration===duration`(零容差——两数字同源于 JSON;normalizeDoc 不改写 duration,故在校验器内检查即等价于归一化后);非 dynamics 分支 `phases` 增 `0≤p.time≤f.duration`(clip-motion 同样适用)。JSON Schema 表达不了跨字段一致,runtime 校验独担;测试断言 schema 接受而 normalize 拒绝,证明是新覆盖。
+- **P2-6 GLB 边界覆盖**(`glb-export.test.ts`):四个用例全走真链路 `solveWorkshop`(真 capture)→`posePackageToClip`→`exportGlb`→回导→独立 `fkWorldAt` 对比(worst<1e-3):a) fps=7、duration 0.8s 非整除网格,断言 `timestamps.at(-1)===duration` 精确、count=7(末尾补点存在)、clip.duration 贴合;b) forehand 信封文档 @30fps 大旋转;c) 根 x/z 位移+转身 60° 同帧变化,并断言根轨确实移动(roundtrip 非平凡);d) 0.4s 两键极短文档。测试内求解 rig 用独立 GLB 解析,不污染 bake() 的干净模型。
+
+**验证**:`npx tsc -b` ✓、`npm test`(249 项,235+14 新增)✓、`npm run spec:check` ✓、`npm run build` ✓;`npm run qa:dynamics` 全绿(29 项 checks,动力学真实加载路径回归)、`npm run qa` 全绿(posePackage/posePackageForehand 走真实 served 包经文件输入导入——rigMatches 与 trust 闭包在浏览器真实路径上被验证)。
+
+## 复核追加轮(必修 M1 + 顺手 nit)
+
+- **M1 `DynamicsSource.load` 失败段拆分**(`src/core/motion-source.ts`):原 catch 无条件 `s.promise=undefined`,把 replay 创建段与记录段混为一谈——`replay.load` 失败(记录 404/身份不符)时 `s.replay` 已收编而 promise 被清,重试 `s.promise??=` 新建第二个 DynamicsReplay,`if(!s.replay)` 为假 → 孤儿 replay 不入 `s.parent` 却 `root.visible=true` 返回 'applied',`session.replay`/`physics`/`duration` 永指无记录的旧对象(播放卡死);陈旧 load 的 catch 在闸判之前清 promise 也毒化当前属主。修法:两段 try——`await s.promise`(创建段)失败且 `s.promise===p` 身份吻合才清(已拒的创建承诺是所有后续 load 的毒药,但不得清掉新属主已替换的 promise);`replay.load`(记录段)失败保留 promise 与 `s.replay`,重试在同一 replay 上重放记录段。`gen!==g||s.retired` 闸保持在 status/error/replay 应用点之前。回归:记录段抛错→重试 'applied' 且 `session.replay` 同对象、`parent.children===[root]`;悬停中的陈旧 load 记录段抛错→'superseded' 且 `session.promise` 不变(旧实现下该断言失败)。顺手清掉死字段 `private motionId`(gen 闸已取代 `motionId!==id`,全文件再无读取点)。
+- **nits**:glb-export.test.ts 用例 a 补 `ts.at(-1)-ts.at(-2)≠1/fps` 显式钉死非均匀网格语义;`posePackageSpec` 把信封命中但未信任拆成两句——包带哈希且信封可核验(workshop-motion 且本地哈希可知)却说不过的→「definitionSHA256 与当前内置定义不符」,其余(包未带字段/非 workshop-motion 信封/本地哈希不可知即 envelopeDefHash 空)→「definitionSHA256 缺失/无法核验,按 ad-hoc 处理」;standalone spec 的 events filter 在 isObj 后追加 `typeof time==='number'`/`typeof label==='string'`,防 `{type:'phase'}` 半成品漏进 phases(新增回归断言)。
+
+**验证**:`npx tsc -b` ✓、`npm test`(253 项,249+4 新增)✓、`npm run spec:check` ✓。未跑 `npm run build`/`qa`/`dynamics:*`——改动限于 motion-source 运行时分支与测试断言,浏览器 E2E 与构建由 CI 覆盖。
+
+## 外部 review 第二轮(必修三项 + 文档裁决)
+
+- **跨文档 undo 覆写源文档(数据丢失)**:`WorkshopApp.tsx` 原 `undo()`/`redo()` 对恢复出的 prev/next 无条件 `applyDoc`(`L.docs[i]=next`)。场景实证:A 镜像出 B(B 的书预存 A 快照)→ 回 A 改关键帧 → 选中 B 按 undo → B.undo 弹出旧 A 快照 → `applyDoc` 用旧快照覆写**当前库里的 A**,A 的后续修改被无提示抹掉(redo 对称:A 的书 future 里 B 快照覆写被改过的 B)。修法钉死语义:**跨文档快照是指针,恢复只做选择切换,绝不向异 id 文档写内容**——`prev/next.id!==cur.id` 分支改为:库里有该 id → `selectDoc(id)`(不写库)并把 cur 按既有对称逻辑存到目标书的对侧栈;库里没有 → 既有 hint 路径。同 id 路径保持 applyDoc 覆写(文档自己的历史恢复自身,语义正确)。回归:mirror.test.ts 用真实 `MotionLibrary`+`HistoryBook` 复演 app 调用序——A→mirror B→recordBefore+edit 改 A→选 B 模拟 undo→断言库里的 A 保留新编辑(serializeDoc 逐位对比)、选中落到 A;再改 B 使 future 快照变旧→redo→断言选中回 B、B 内容未被覆写;源文档被删走 hint 分支不崩溃、不复活。
+- **姿态包导入校验补齐**(`checkPosePackageShape`,在既有结构/rig/事件三层之上):a) `tracks.rotations` 同 `bone` 重复轨道拒绝——解码是谁后写谁赢的静默歧义;`validBones` 传入时再断言轨数 ≤ 骨骼数。b) 逐轨逐样本四元数单位性 `|q|∈1±1e-3`(与 `server/validate.ts` 同容差),全零/NaN/非单位样本报骨骼+帧号;为此把旋转轨数组检查从 `isVec`(一否全否)拆成 `Array.isArray`+长度,让非有限分量落进逐样本分支。c) 资源上限:`count ≤ duration×240+1+1e-6`(密度上限对齐服务 fps≤240 语义)+ `count ≤ MAX_PACKAGE_SAMPLES=200_000` 绝对上限(≈13.9min@240fps,巨型 JSON 内存 DoS 闸)。
+- **捕获互斥 + 拼图全程持有**(`workshop/engine.ts`):a) 新增 `CaptureMutex` 导出类——`captureStill`/`captureSheet` 入口重入直接 reject(`'已有导出任务进行中'`);UI 按钮本就禁用,此闸给程序化并发/批处理兜底,防止两段捕获交错互踩状态快照。b) `capturing` 由布尔改**深度计数**(`captureDepth`),`captureSheet` 外层一对 begin/end 把标志从入口持有到拼图 toBlob——逐 tile 的 `renderStill` 仍各做 begin/end 重快照该 tile 的相机/传输态(LIFO 恢复),但 tile 间隙 flag 不再回落,间隙中的 pointerdown/drag 与叠加物重显全部压住;`getDoc` 冻结副本同样贯穿整段。QA `workshopStillExport` 断言点语义随之改变并同步适配:逐 tile 恢复点现在读到会话内暂停态(快照在外层暂停之后取得),仅最后一次外层恢复把播放态交回 true。
+- **文档裁决——golden 大体积是有意权衡**(回应"哈希化压缩 golden"的建议):`spec/examples/idle.pose.json`(~665KB)这类原始轨迹 golden 的价值在于**漂移可定位**——WP-C 正是靠逐位 diff 证伪了「轨迹逐位不变」的提交声明,并给出逐骨×逐帧的偏差位置表;压缩成哈希只能回答"变没变",回答不了"哪里变了"。**不接受哈希化压缩**;承认体积成本——若将来过大,可另加一份采样点摘要文件做速查,但 oracle 本体保持原始轨迹不缩水。
+- **文档级**:forehand-study.md 新增「验收边界」节——本 fixture 只证几何/平滑/接触约束达标,不证明符合真实网球正手运动学;峰领先触球门 `|Δt|≤0.25 s` 与链式验证仅「骨盆/躯干不晚于前臂(+0.05 s)」的口径写死(quality.test.ts 同注)。
+
+## 复核追加轮 2(密度上限 off-by-one + 顺手 nit)
+
+第二轮修复的独立复核抓到一处必修:密度上限公式 `count > duration×240+1+1e-6` 与生产者的真实采样网格不符——`pose-package.ts` `capture()` 的网格是「均匀 1/fps 步进 + 追加精确末端点」,最大合法计数是 `⌈duration·fps⌉+1`。反例:`duration=0.502s @240fps` 产出 `count=122`(网格顶到 0.5,补 0.502),而旧门限 `121.48` 会拒收本服务同款产线的合法包。修法:上限改 `⌈duration·fps−1e-6⌉+1`,且 `fps` 取包自己声明的 `timeline.fps`(顺带新增校验:声明值须在 (0,240] 内,缺省回退 240 外沿与 validate.ts 同容差)——声明 fps=60 却携带 240 密度的包是不一致数据,收紧到声明网格正好拒掉。回归:motion-source.test.ts 新增两例——真实 `solveWorkshop(rig,doc,240)` 在 0.502s 上产出 count=122 的包必须零问题通过;声明 fps=60+duration=.5 的黄金包篡改体按密度上限拒收。顺手 nit:`CaptureMutex.run` 改 `Promise.resolve().then(fn)` 把同步抛纳入 finally 链(busy 不再被同步异常楔死);四元数逐样本检查从「先 hypot 再查」换成逐分量 `Number.isFinite`(非强转,挡 `"0.5"` 这类字符串分量);mirror.test.ts 的 app-复演注释显式标注与 WorkshopApp.tsx 同步。
+
+**验证**:`npx tsc -b`(随 build)✓、`npm test`(259 项,257+2 新增)✓、`npm run spec:check`(19 项)✓、`npm run build` ✓。未跑浏览器 QA/dynamics:*——改动限导入校验门与互斥器同步路径,浏览器路径由前一轮 QA 覆盖,CI 全量兜底。

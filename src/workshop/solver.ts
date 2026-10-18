@@ -11,7 +11,10 @@ import {FOOT_CLEARANCE_M,footDepth,footGeometry,footRotation,type Side} from './
  * dynamics for authoring — muscle control stays a later stage. */
 export const DORSI_LIMIT_DEG=20;
 
-export interface SolveState{support?:SupportWeights;gripAmount?:number;clavicleLift?:boolean}
+export interface SolveState{support?:SupportWeights;gripAmount?:number;clavicleLift?:boolean;
+ /** Which hand grips (finger wrap + racket mount + clavicle assist). Absent
+  * means 'R' — the pre-WP-D behaviour every existing caller relied on. */
+ gripSide?:Side}
 export interface SolveReport{pelvisShift:number;pelvisSaturated:boolean}
 
 /** Solve one frame. `state` carries the interpolated support weights and grip
@@ -30,6 +33,7 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
 
   const support=state.support??{L:c.plantL?1:0,R:c.plantR?1:0};
   const gripAmount=state.gripAmount??(c.grip?1:0);
+  const gripSide=state.gripSide??'R';
   const legs=(['L','R'] as const).map(side=>{
     const f=side==='L'?p.footL:p.footR;
     return {side,target:toV(f.target),pole:toV(f.pole),footQ:footRotation(f.yaw,f.pitch),
@@ -45,21 +49,25 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   if(correction.shift>0){root.position.z-=correction.shift;rig.model.updateMatrixWorld(true);}
   for(const l of legs){rig.limb(l.side,'leg',l.target,l.pole);rig.worldRotation(`foot_${l.side}`,l.footQ);}
 
-  // Clavicle assist (doc flag): the right shoulder girdle rides up with a high
-  // hand target — the authored reach behaviour. `target.y − p.root.y` recovers
-  // the control-space height the authored formula used (world y minus root y).
+  // Clavicle assist (doc flag): the GRIPPING shoulder girdle rides up with a
+  // high hand target — the authored reach behaviour, mirrored across sides.
+  // `target.y − p.root.y` recovers the control-space height the authored
+  // formula used (world y minus root y). The local z-rotation flips sign under
+  // the x-mirror, hence the ±8/±5 pattern.
   if(state.clavicleLift){
-    const lift=Math.max(0,(toV(p.handR.target).y-p.root.y-1.1)/.62);
-    rig.rotate('clavicle_R',0,0,-lift*8);rig.rotate('shoulder01_R',0,0,-lift*5);
+    const lift=Math.max(0,(toV(gripSide==='R'?p.handR.target:p.handL.target).y-p.root.y-1.1)/.62);
+    const s=gripSide==='R'?-1:1;
+    rig.rotate(`clavicle_${gripSide}`,0,0,s*lift*8);rig.rotate(`shoulder01_${gripSide}`,0,0,s*lift*5);
     rig.model.updateMatrixWorld(true);
   }
   rig.limb('R','arm',toV(p.handR.target),toV(p.handR.pole));
   rig.limb('L','arm',toV(p.handL.target),toV(p.handL.pole));
   rig.hand('R',toV(p.handR.forward).normalize(),toV(p.handR.normal).normalize());
   rig.hand('L',toV(p.handL.forward).normalize(),toV(p.handL.normal).normalize());
-  // Grip ramp: relaxed fingers blend toward the wrap grip; amount 1 is the full grip.
-  blendGrip(rig,gripAmount);
-  rig.relaxHand('L');
+  // Grip ramp: relaxed fingers blend toward the wrap grip on the gripping
+  // side; amount 1 is the full grip. The other hand always relaxes.
+  blendGrip(rig,gripSide,gripAmount);
+  rig.relaxHand(gripSide==='R'?'L':'R');
   rig.model.updateMatrixWorld(true);
   return {pelvisShift:correction.shift,pelvisSaturated:correction.saturated};
 }
@@ -67,7 +75,7 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
 /** The single solve entry for a sampled document frame: support fades, the
  * grip ramp and the clavicle assist all come from the frame, never re-derived. */
 export function solveEffectiveFrame(rig:HumanRig,f:EffectiveFrame){
-  return solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift});
+  return solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide});
 }
 
 /** Ankle dorsiflexion (degrees) of the solved rig, from the shank direction

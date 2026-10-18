@@ -21,15 +21,23 @@ export class DocHistory{
   /** Step back: returns the restored document, or undefined when nothing is left. */
   undo(current:WorkshopDoc):WorkshopDoc|undefined{
     const prev=this.past.pop();if(prev===undefined)return undefined;
-    this.future.push(serializeDoc(current));if(this.future.length>this.limit)this.future.shift();
+    this.pushFuture(current);
     return normalizeDoc(JSON.parse(prev));
   }
   /** Step forward again after an undo. */
   redo(current:WorkshopDoc):WorkshopDoc|undefined{
     const next=this.future.pop();if(next===undefined)return undefined;
-    this.past.push(serializeDoc(current));if(this.past.length>this.limit)this.past.shift();
+    this.pushPast(current);
     return normalizeDoc(JSON.parse(next));
   }
+  /** Deposit a snapshot on the past stack without clearing the future. The
+   * one cross-document step (the mirror's undo restores the source document)
+   * uses this to hand the state being left behind to the arriving document's
+   * book, so undo/redo stay symmetric across the switch. */
+  pushPast(doc:WorkshopDoc){const s=serializeDoc(doc);if(this.past[this.past.length-1]!==s)this.past.push(s);if(this.past.length>this.limit)this.past.shift();}
+  /** Deposit a snapshot on the redo stack. Same collapse rule as record():
+   * consecutive identical snapshots are one step. */
+  pushFuture(doc:WorkshopDoc){const s=serializeDoc(doc);if(this.future[this.future.length-1]!==s)this.future.push(s);if(this.future.length>this.limit)this.future.shift();}
   clear(){this.past=[];this.future=[];}
 }
 /** One history per motion id, so undo never crosses between motions. */

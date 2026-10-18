@@ -21,7 +21,7 @@
 .ws-sub{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
 .ws-field{display:flex;align-items:center;gap:8px;font-size:11px;margin:8px 0}
 .ws-field span{width:44px;color:#7b899c;flex-shrink:0}
-.ws-field input{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:6px 8px;font-size:11px;background:#fff}
+.ws-field input,.ws-field select{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:6px 8px;font-size:11px;background:#fff}
 .ws-note{font-size:10px;color:#8b98aa;line-height:1.7;margin:8px 0 0}
 .ws-row{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap}
 .ws-row button,.ws-mini{display:inline-flex;align-items:center;gap:5px;font-size:10px;color:#42536b;border:1px solid var(--line);border-radius:5px;padding:6px 9px;background:#fff}

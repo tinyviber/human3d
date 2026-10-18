@@ -7,14 +7,7 @@
     "schemaVersion",
     "kind",
     "id",
-    "order",
-    "name",
-    "english",
-    "duration",
-    "description",
-    "method",
-    "focus",
-    "phases"
+    "order"
   ],
   "additionalProperties": false,
   "properties": {
@@ -24,7 +17,8 @@
     "kind": {
       "enum": [
         "workshop-motion",
-        "clip-motion"
+        "clip-motion",
+        "dynamics-motion"
       ]
     },
     "id": {
@@ -108,6 +102,11 @@
             },
             "handView": {
               "type": "boolean"
+            },
+            "side": {
+              "type": "string",
+              "enum": ["R", "L"],
+              "description": "Wrist the prop mounts on; absent means 'R'."
             }
           }
         },
@@ -152,6 +151,61 @@
           "type": "string"
         }
       }
+    },
+    "dynamics": {
+      "type": "object",
+      "required": [
+        "action",
+        "records"
+      ],
+      "additionalProperties": false,
+      "properties": {
+        "action": {
+          "type": "object",
+          "description": "The muscle-action parameter payload; validated against dynamics-action.schema.json."
+        },
+        "records": {
+          "type": "object",
+          "required": [
+            "baseline"
+          ],
+          "additionalProperties": false,
+          "properties": {
+            "baseline": {
+              "type": "object",
+              "required": [
+                "meta",
+                "data"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "meta": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "string"
+                }
+              }
+            },
+            "weak": {
+              "type": "object",
+              "required": [
+                "meta",
+                "data"
+              ],
+              "additionalProperties": false,
+              "properties": {
+                "meta": {
+                  "type": "string"
+                },
+                "data": {
+                  "type": "string"
+                }
+              }
+            }
+          }
+        }
+      }
     }
   },
   "allOf": [
@@ -165,13 +219,28 @@
       },
       "then": {
         "required": [
-          "document"
+          "document",
+          "name",
+          "english",
+          "duration",
+          "description",
+          "method",
+          "focus",
+          "phases"
         ],
         "properties": {
           "document": {
             "type": "object"
           },
-          "clip": false
+          "name": true,
+          "english": true,
+          "duration": true,
+          "description": true,
+          "method": true,
+          "focus": true,
+          "phases": true,
+          "clip": false,
+          "dynamics": false
         }
       }
     },
@@ -185,7 +254,14 @@
       },
       "then": {
         "required": [
-          "clip"
+          "clip",
+          "name",
+          "english",
+          "duration",
+          "description",
+          "method",
+          "focus",
+          "phases"
         ],
         "properties": {
           "clip": {
@@ -199,7 +275,47 @@
               }
             }
           },
-          "document": false
+          "name": true,
+          "english": true,
+          "duration": true,
+          "description": true,
+          "method": true,
+          "focus": true,
+          "phases": true,
+          "document": false,
+          "dynamics": false
+        }
+      }
+    },
+    {
+      "if": {
+        "properties": {
+          "kind": {
+            "const": "dynamics-motion"
+          }
+        }
+      },
+      "then": {
+        "required": [
+          "dynamics"
+        ],
+        "properties": {
+          "dynamics": {
+            "type": "object"
+          },
+          "document": false,
+          "clip": false,
+          "name": false,
+          "english": false,
+          "duration": false,
+          "description": false,
+          "method": false,
+          "focus": false,
+          "phases": false,
+          "oneShot": false,
+          "capabilities": false,
+          "notes": false,
+          "license": false
         }
       }
     }

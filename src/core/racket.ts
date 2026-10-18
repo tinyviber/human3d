@@ -23,34 +23,65 @@ export function createRacket(){
   group.traverse(o=>{if(o instanceof Mesh){o.castShadow=true;o.receiveShadow=true;}});
   return group;
 }
-export function gripFrame(rig:HumanRig){
-  const wrist=rig.rest.get('wrist_R')!;
-  const {forward,normal,flexionAxis:axis}=handFrame(rig.rest,'R');
-  const base=rig.rest.get('finger3-1_R')!.clone().add(rig.rest.get('finger4-1_R')!).multiplyScalar(.5);
+/** Palmar grip frame of one hand in wrist-local rest coordinates (which equal
+ * world axes at rest). `forward`/`normal`/`center` are polar vectors — the
+ * left frame is their x-mirror because handFrame negates the left normal —
+ * while `axis` is a cross product, so it mirrors as (x,−y,−z): the same
+ * handle line with opposite sense. */
+export function gripFrame(rig:HumanRig,side:'L'|'R'='R'){
+  const wrist=rig.rest.get(`wrist_${side}`)!;
+  const {forward,normal,flexionAxis:axis}=handFrame(rig.rest,side);
+  const base=rig.rest.get(`finger3-1_${side}`)!.clone().add(rig.rest.get(`finger4-1_${side}`)!).multiplyScalar(.5);
   return {forward,normal,axis,center:base.sub(wrist).addScaledVector(forward,.009).addScaledVector(normal,.031)};
 }
-export function attachRacket(rig:HumanRig){
-  const racket=createRacket(),frame=gripFrame(rig);
-  racket.position.copy(frame.center);racket.quaternion.setFromUnitVectors(new Vector3(0,1,0),frame.axis);
-  // Rotate the string bed about its long axis, independent from wrist movement.
-  const faceNormal=frame.forward;
-  const current=new Vector3(0,0,1).applyQuaternion(racket.quaternion);
-  const twist=Math.atan2(new Vector3().crossVectors(current,faceNormal).dot(frame.axis),current.dot(faceNormal));
-  racket.quaternion.premultiply(new Quaternion().setFromAxisAngle(frame.axis,twist));
-  rig.bone('wrist_R').add(racket);return racket;
+/** The racket's transform inside the right wrist's local frame, built from
+ * the right palmar frame: +Y handle along the grip axis, string-bed normal
+ * twisted onto the palmar forward (independent from wrist movement). */
+function racketLocalTransform(rig:HumanRig){
+  const frame=gripFrame(rig,'R');
+  const quaternion=new Quaternion().setFromUnitVectors(new Vector3(0,1,0),frame.axis);
+  const current=new Vector3(0,0,1).applyQuaternion(quaternion);
+  const twist=Math.atan2(new Vector3().crossVectors(current,frame.forward).dot(frame.axis),current.dot(frame.forward));
+  quaternion.premultiply(new Quaternion().setFromAxisAngle(frame.axis,twist));
+  return {position:frame.center.clone(),quaternion};
+}
+/** (Re)mount a racket on the requested wrist. The left mount is the exact
+ * x-mirror of the right transform — bilateral wrist local frames coincide
+ * with world axes at rest, so negating position.x and the quaternion's y/z
+ * is the true mirrored mount: the head exits on the left thumb side and the
+ * string bed faces the mirrored-palm direction. Computing the same
+ * construction from the LEFT grip frame would instead point +Y along the
+ * left axis — the head on the pinky side, a 180°-flipped handle — which is
+ * why the mount mirrors a canonical transform instead. */
+export function mountRacket(rig:HumanRig,racket:Group,side:'L'|'R'='R'){
+  const t=racketLocalTransform(rig);
+  racket.position.copy(t.position);racket.quaternion.copy(t.quaternion);
+  if(side==='L'){
+    racket.position.x=-racket.position.x;
+    racket.quaternion.set(racket.quaternion.x,-racket.quaternion.y,-racket.quaternion.z,racket.quaternion.w);
+  }
+  racket.removeFromParent();
+  rig.bone(`wrist_${side}`).add(racket);
+}
+export function attachRacket(rig:HumanRig,side:'L'|'R'='R'){
+  const racket=createRacket();mountRacket(rig,racket,side);return racket;
 }
 /** Circumscribed phalanx segments: each bone approaches a tangent to the
  * grip cylinder plus a 5mm finger pad allowance. No random per-frame angles. */
-/** Wrap the right hand's fingers around the handle, solved from the current finger pose. */
-export function applyGrip(rig:HumanRig){
-  const {axis,normal,forward,center}=gripFrame(rig);
-  const wrist=rig.bone('wrist_R'),wq=wrist.getWorldQuaternion(new Quaternion());
+/** Wrap one hand's fingers around the handle, solved from the current finger
+ * pose. The winding sign stays identical on both sides ON PURPOSE: the
+ * palmar frame already carries the handedness (handFrame negates the left
+ * normal), so every (x,y) coordinate on the left equals its right mirror
+ * and the same tangent rule emits the mirrored wrap. */
+export function applyGrip(rig:HumanRig,side:'L'|'R'='R'){
+  const {axis,normal,forward,center}=gripFrame(rig,side);
+  const wrist=rig.bone(`wrist_${side}`),wq=wrist.getWorldQuaternion(new Quaternion());
   const contactRadius=.022;
   for(let finger=1;finger<=5;finger++){
     let previousDirection:Vector3|undefined;
     const winding=finger===1?-1:1;
     for(let joint=1;joint<=3;joint++){
-      const name=`finger${finger}-${joint}_R`,bone=rig.bone(name);
+      const name=`finger${finger}-${joint}_${side}`,bone=rig.bone(name);
       const origin=wrist.worldToLocal(rig.point(name)).sub(center);
       const x=origin.dot(forward),y=origin.dot(normal),distance=Math.hypot(x,y);
       const theta=Math.atan2(y,x),alpha=Math.acos(Math.min(1,contactRadius/Math.max(contactRadius,distance)));
@@ -69,21 +100,22 @@ export function applyGrip(rig:HumanRig){
   rig.model.updateMatrixWorld(true);
 }
 
-/** Right-hand grip at `amount` in [0,1]: relaxed fingers at 0, full wrap at 1.
+/** Grip at `amount` in [0,1] on `side`'s hand: relaxed fingers at 0, full
+ * wrap at 1.
  * The wrap is solved once, from the rest finger pose (as the authored grip
  * poses are), and each finger joint is then blended from its relaxed local
  * rotation to its grip local rotation. Blending inside the sequential wrap
  * solve made the result jump as the amount approached 1, because each joint's
  * wrap geometry depends on the joints solved before it. */
-export function blendGrip(rig:HumanRig,amount:number){
+export function blendGrip(rig:HumanRig,side:'L'|'R',amount:number){
   const names:string[]=[];
-  for(let finger=1;finger<=5;finger++)for(let joint=1;joint<=3;joint++)names.push(`finger${finger}-${joint}_R`);
-  applyGrip(rig);
+  for(let finger=1;finger<=5;finger++)for(let joint=1;joint<=3;joint++)names.push(`finger${finger}-${joint}_${side}`);
+  applyGrip(rig,side);
   const grip=names.map(n=>rig.bone(n).quaternion.clone());
-  rig.relaxHand('R');
+  rig.relaxHand(side);
   // relaxHand curls fingers 2–5 but leaves the thumb where applyGrip put it;
   // the relaxed thumb is the rest pose, so amount 0 must reach identity too.
-  for(let joint=1;joint<=3;joint++)rig.bone(`finger1-${joint}_R`).quaternion.identity();
+  for(let joint=1;joint<=3;joint++)rig.bone(`finger1-${joint}_${side}`).quaternion.identity();
   names.forEach((n,i)=>rig.bone(n).quaternion.slerp(grip[i],amount));
   rig.model.updateMatrixWorld(true);
 }

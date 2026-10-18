@@ -10,6 +10,7 @@ import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from './limits';
 import {analyzePose,rotateHandFrame,solveEffectiveFrame,supportPolygon} from './solver';
+import {CaptureMutex,onionTimes,SHEET_MAX_TILES,sheetTimes} from './engine';
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
 // frameAt's origin must be the rest root — the same value the engine and the
@@ -394,6 +395,23 @@ describe('motion library',()=>{
   l.remove(b.id);l.remove('forehand-workshop');
   expect(l.docs.length).toBe(1);expect(l.docs[0].keys.length).toBe(2);
  });
+ it('drops the deleted doc\'s undo book so a same-id re-import cannot revive stale snapshots',()=>{
+  // The WorkshopApp wiring: removal drops the document's history book. A doc
+  // re-imported with the same id must start with an empty undo stack — an
+  // undeleted book would let undo restore the deleted doc's content onto the
+  // new document, a zombie write no edit ever produced.
+  const l=lib(memStorage()),books=new HistoryBook();
+  l.onRemoved=id=>books.drop(id);
+  const src=l.active();
+  books.of(src.id).record(src);
+  expect(books.of(src.id).canUndo()).toBe(true);
+  l.remove(src.id);
+  // Re-import the same serialized document: no id clash now, so it keeps the id.
+  const added=l.add(parseDoc(serializeDoc(src)));
+  expect(added.id).toBe(src.id);
+  expect(books.of(added.id).canUndo()).toBe(false);
+  expect(books.of(added.id).undo(added)).toBeUndefined();
+ });
  it('persists and restores the whole library through storage',()=>{
   const store=memStorage(),l=lib(store);
   const made=l.create('正手截击');made.keys[0].label='引拍';made.name='改名后的截击';l.save();
@@ -597,5 +615,90 @@ describe('document.interpolate hand frame cubic (WP-C squad)',()=>{
   expect(q1.angleTo(q0)).toBeCloseTo(2.704,2);    // the 155° key lands exactly
   expect(maxA).toBeLessThan(3.1);                  // stays on the 155° arc, never near ~205°
   expect(maxW).toBeLessThan(12);                   // no residual branch jump
+ });
+});
+
+describe('onion skin ghost instants',()=>{
+ // defaultDocument keys sit at 0 / .22 / .5 / .66 / .8 s. (built lazily —
+ // rig is only populated by beforeAll).
+ const doc=()=>defaultDocument(rig.rest);
+ const o={onionCount:2,onionMode:'keys' as const,onionStep:.1};
+ it('brackets the playhead with the ±N nearest real keys in keys mode',()=>{
+  // Parked ON the contact key: that key is the live pose — ghosts are the two
+  // keys before and after it, nearest first (dist 1).
+  expect(onionTimes(doc(),.5,o).map(g=>[g.dir,g.dist,g.time])).toEqual([[-1,2,0],[-1,1,.22],[1,1,.66],[1,2,.8]]);
+  expect(onionTimes(doc(),.6,{...o,onionCount:1}).map(g=>[g.dir,g.dist,g.time])).toEqual([[-1,1,.5],[1,1,.66]]);
+ });
+ it('caps ghosts at ONION_MAX per side — a dense document is never fully ghosted',()=>{
+  const dense=doc();for(let i=1;i<=9;i++)dense.keys.push({...dense.keys[0],id:`kx${i}`,time:i/10*dense.duration});
+  const t=onionTimes(dense,.5,{...o,onionCount:99});
+  expect(t.length).toBe(6); // 8 keys bracket each side; only the nearest 3 ghost
+  expect(t.filter(g=>g.dir===-1).map(g=>g.dist)).toEqual([3,2,1]);
+  expect(t.filter(g=>g.dir===1).map(g=>g.dist)).toEqual([1,2,3]);
+ });
+ it('step mode takes t±k·Δt and drops instants outside the document',()=>{
+  expect(onionTimes(doc(),.5,{onionCount:2,onionMode:'step',onionStep:.1}).map(g=>[g.dir,g.dist,+g.time.toFixed(6)]))
+   .toEqual([[-1,1,.4],[1,1,.6],[-1,2,.3],[1,2,.7]]);
+  // Near t=0 no past instants exist; only the future side is drawn.
+  const t=onionTimes(doc(),.05,{onionCount:3,onionMode:'step',onionStep:.1});
+  expect(t.every(g=>g.dir===1)).toBe(true);
+  expect(t.map(g=>+g.time.toFixed(6))).toEqual([.15,.25,.35]);
+ });
+ it('wraps the keys bracket across the seam on a loop document',()=>{
+  // Keys at 0/.3/.6/.9 in a 1.2 s loop. Parked at .05 the real past holds only
+  // k@0 — the next-nearest previous ghosts are the previous cycle's tail keys
+  // at their own instants (the sampler wraps the same way), so k@0 keeps
+  // dist 1 and k@.9 follows behind it, never duplicated onto the after side.
+  const d=blankDocument(rig.rest,'loop','loop');d.loop=true;d.duration=1.2;d.keys[1].time=.9;
+  for(const [id,t]of [['k-a',.3],['k-b',.6]]as const){const k:WorkshopKey=JSON.parse(JSON.stringify(d.keys[0]));k.id=id;k.time=t;d.keys.push(k);}
+  const ts=onionTimes(d,.05,{onionCount:2,onionMode:'keys',onionStep:.1}).map(g=>[g.dir,g.dist,g.time]);
+  expect(ts).toEqual([[-1,2,.9],[-1,1,0],[1,1,.3],[1,2,.6]]);
+  // The key under the playhead stays the live pose even across the wrap.
+  const on=onionTimes(d,.6,{onionCount:2,onionMode:'keys',onionStep:.1});
+  expect(on.every(g=>g.time!==.6)).toBe(true);
+ });
+});
+
+describe('contact-sheet time sampling (WP-D)',()=>{
+ it('keeps every key time when the count fits the tile budget',()=>{
+  expect(sheetTimes([0,.22,.5,.66,.8])).toEqual([0,.22,.5,.66,.8]);
+  expect(sheetTimes([])).toEqual([]);
+ });
+ it('decimates uniformly to the cap, pinning both endpoints',()=>{
+  const ts=Array.from({length:30},(_,i)=>i*.1);
+  const out=sheetTimes(ts);
+  expect(out.length).toBe(SHEET_MAX_TILES);
+  expect(out[0]).toBe(0);
+  expect(out.at(-1)).toBe(ts.at(-1)); // last key time always survives decimation (bit-exact, not re-derived)
+  expect(new Set(out).size).toBe(SHEET_MAX_TILES); // step>1 ⇒ strictly increasing, no dup tiles
+ });
+ it('honours a smaller cap and preserves caller order',()=>{
+  expect(sheetTimes([2,0,1],2)).toEqual([2,1]);
+  expect(sheetTimes([0,.5,1],99)).toEqual([0,.5,1]);
+ });
+});
+
+describe('capture export mutex (WP-D review)',()=>{
+ /* The engine can't be instantiated without WebGL, so the re-entrancy gate
+  * lives in an exported class — this is the real object captureStill /
+  * captureSheet delegate to. A second capture must reject outright (two
+  * interleaved captures would restore each other's state snapshots), and
+  * the flag must reset even when the capture itself throws. */
+ it('rejects a concurrent capture while one is in flight',async()=>{
+  const m=new CaptureMutex();
+  let release!:(v:string)=>void;
+  const pending=new Promise<string>(res=>{release=res;});
+  const first=m.run(()=>pending);
+  expect(m.held).toBe(true);
+  await expect(m.run(async()=>'nested')).rejects.toThrow('已有导出任务进行中');
+  release('done');
+  await expect(first).resolves.toBe('done');
+  expect(m.held).toBe(false);
+ });
+ it('resets the gate when the capture rejects, so the next export can run',async()=>{
+  const m=new CaptureMutex();
+  await expect(m.run(async()=>{throw new Error('encode boom');})).rejects.toThrow('encode boom');
+  expect(m.held).toBe(false);
+  await expect(m.run(async()=>'ok')).resolves.toBe('ok');
  });
 });

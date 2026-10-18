@@ -3,15 +3,17 @@ import {angleAt} from './kinematics';
 import {gripFrame} from './racket';
 import type {HumanRig} from './rig';
 import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
+import {RIG_ID} from './protocol';
 // Type-only: the decoder never runs the capture path, so a value import would
-// just add solver/sampler weight to the lab bundle.
-import type {PosePackage} from './pose-package';
+// just add solver/sampler weight to the lab bundle. (RIG_ID is a plain string
+// constant — importing it does not pull the solver.)
+import type {PackageEvent,PosePackage} from './pose-package';
 import type {MotionCapabilities} from './motion-file';
 import {motionFileById} from './motion-files';
 import {frameAt,type WorkshopDoc} from '../workshop/document';
 import {solveEffectiveFrame} from '../workshop/solver';
 import type {DynamicsCase,DynamicsReplay} from './dynamics';
-import type {MuscleActionFile} from './motions';
+import type {DynamicsRecords,MuscleActionFile} from './muscle-action';
 import type {DebugOptions,MotionId,MotionSpec} from './types';
 
 /** Per-frame measurements for the inspector/QA: joint angles from FK points,
@@ -32,6 +34,9 @@ export interface MotionSource{
   point(name:string):Vector3|undefined;
   /** Whether the prop is on screen this frame — the document grip ramp counts. */
   wantsProp():boolean;
+  /** Wrist the prop mounts on ('R' when absent) — constant per source, so the
+   * engine can remount the racket once per source instead of per frame. */
+  readonly propSide?:'L'|'R';
   /** Whole-model visual offset (walk accumulates one stride per loop wrap). */
   readonly modelOffset?:Vector3;
   /** Extra scene object managed by the source (dynamics replay root). */
@@ -47,13 +52,14 @@ export interface MotionSource{
 
 /** Shared skeleton measurement (the old engine.diagnostics() shape). The
  * racket grip error is only meaningful while the prop is wanted — callers pass
- * the racket in then, otherwise gripError is 0. */
-function rigReadout(rig:HumanRig,racket?:{getWorldPosition(v:Vector3):Vector3}):FrameReadout{
+ * the racket in then, otherwise gripError is 0. `side` selects the gripping
+ * wrist the error and `hand` anchor read (right remains the default). */
+function rigReadout(rig:HumanRig,racket?:{getWorldPosition(v:Vector3):Vector3},side:'L'|'R'='R'):FrameReadout{
   rig.model.updateMatrixWorld(true);
   const p=(n:string)=>rig.point(n);
   let gripError=0;
-  if(racket)gripError=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone()).distanceTo(racket.getWorldPosition(new Vector3()));
-  return {knee:angleAt(p('upperleg01_R'),p('lowerleg01_R'),p('foot_R')),elbow:angleAt(p('upperarm01_R'),p('lowerarm01_R'),p('wrist_R')),gripError,footL:p('foot_L').toArray(),footR:p('foot_R').toArray(),root:p('root').toArray(),vertices:rig.info.vertices,bones:rig.bones.size,hand:p('wrist_R').toArray()};
+  if(racket)gripError=rig.bone(`wrist_${side}`).localToWorld(gripFrame(rig,side).center.clone()).distanceTo(racket.getWorldPosition(new Vector3()));
+  return {knee:angleAt(p('upperleg01_R'),p('lowerleg01_R'),p('foot_R')),elbow:angleAt(p('upperarm01_R'),p('lowerarm01_R'),p('wrist_R')),gripError,footL:p('foot_L').toArray(),footR:p('foot_R').toArray(),root:p('root').toArray(),vertices:rig.info.vertices,bones:rig.bones.size,hand:p(`wrist_${side}`).toArray()};
 }
 
 /** A baked AnimationClip driven through the shared mixer. The engine owns the
@@ -95,13 +101,22 @@ export class DocumentSource implements MotionSource{
     solveEffectiveFrame(this.rig,f);this.grip=f.gripAmount;
   }
   wantsProp(){return this.grip>0;}
+  /** The document's authored grip side — the racket mount and readout follow it. */
+  get propSide(){return this.doc.gripSide==='L'?'L':'R';}
   rootPoint(){return this.rig.point('root');}
   point(name:string){return this.rig.bones.has(name)?this.rig.point(name):undefined;}
-  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined);}
+  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined,this.propSide);}
 }
 
 const isObj=(v:unknown):v is Record<string,unknown>=>!!v&&typeof v==='object'&&!Array.isArray(v);
 const isVec=(v:unknown):v is number[]=>Array.isArray(v)&&v.every(Number.isFinite);
+/** The events enum of spec/pose-package.schema.json — keep in lockstep. */
+const PACKAGE_EVENT_TYPES=new Set<string>(['phase','keyframe','contact','support-start','support-end']);
+/** Absolute sample bound for a delivered package: 200_000 samples ≈ 13.9 min
+ * at the service's 240 fps ceiling — far past any real take. A giant count
+ * multiplies into every per-track allocation and decode loop at import, so
+ * the bound is a memory-DoS gate, not a motion-quality judgement. */
+export const MAX_PACKAGE_SAMPLES=200_000;
 
 /** Structural self-check for a delivered pose package: wire constants, the
  * timestamp contract (strictly increasing, `timestamps.at(-1) === duration`),
@@ -122,12 +137,94 @@ export function checkPosePackageShape(pkg:unknown,validBones?:ReadonlySet<string
     for(let i=1;i<timestamps.length;i++)if(!(timestamps[i]>timestamps[i-1])){e.push(`timestamps 未严格递增（第 ${i} 项）`);break;}
     if(timestamps[timestamps.length-1]!==p.timeline.duration)e.push('末时间戳不等于 duration');
   }else e.push('timestamps 含非有限数');
+  /* Declared fps is validated here because the density cap below consumes
+   * it: our builders always emit it, and the validator tolerates up to 240 —
+   * anything outside (0,240] is corrupt. */
+  const fpsDecl=p.timeline?.fps;
+  if(fpsDecl!==undefined&&!(typeof fpsDecl==='number'&&Number.isFinite(fpsDecl)&&fpsDecl>0&&fpsDecl<=240))
+    e.push('timeline.fps 必须在 (0,240] 内');
+  /* Resource caps on the DECLARED count. The producers' real grid is uniform
+   * 1/fps steps PLUS the appended exact endpoint (pose-package.ts capture()),
+   * so the largest honest count is ⌈duration·fps⌉+1 — a flat duration·fps+1
+   * bound off-by-ones whenever duration·fps is not a whole number (e.g.
+   * 0.502 s @240fps legitimately carries 122 samples). The package's own
+   * declared fps tightens the bound when present; absent, the 240 outer
+   * bound stands. The absolute cap bounds the same work when duration itself
+   * is inflated (MAX_PACKAGE_SAMPLES ≈ 13.9 min @240fps). */
+  if(typeof count==='number'&&Number.isFinite(count)){
+    const fpsBound=typeof fpsDecl==='number'&&Number.isFinite(fpsDecl)&&fpsDecl>0?Math.min(fpsDecl,240):240;
+    if(count>MAX_PACKAGE_SAMPLES)e.push(`timeline.count=${count} 超过绝对上限 ${MAX_PACKAGE_SAMPLES}`);
+    else if(Number.isFinite(p.timeline?.duration)&&count>Math.ceil(p.timeline!.duration*fpsBound-1e-6)+1)
+      e.push(`timeline.count=${count} 超出采样密度上限（⌈${p.timeline!.duration} s × ${fpsBound} fps⌉+1）`);
+  }
   const T=p.tracks?.translation,c=typeof count==='number'?count:-1;
   if(!T||T.bone!=='root'||!isVec(T.values)||T.values.length!==c*3)e.push('root 位移轨缺失或长度不是 count×3');
   if(!Array.isArray(p.tracks?.rotations))e.push('tracks.rotations 缺失');
-  else for(const tr of p.tracks.rotations){
-    if(validBones&&!validBones.has(tr?.bone))e.push(`旋转轨引用了 rig 外的骨骼 ${tr?.bone}`);
-    if(!isVec(tr?.values)||tr.values.length!==c*4)e.push(`${tr?.bone??'?'} 的旋转值长度不是 count×4`);
+  else{
+    const rotations=p.tracks.rotations;
+    if(validBones&&rotations.length>validBones.size)e.push(`旋转轨数量 ${rotations.length} 超过 rig 骨骼数 ${validBones.size}`);
+    // One track per bone: a duplicate name decodes last-write-wins with no
+    // warning — ambiguity must be refused, never resolved silently.
+    const seen=new Set<string>();
+    for(const tr of rotations){
+      if(typeof tr?.bone==='string'){if(seen.has(tr.bone))e.push(`骨骼 ${tr.bone} 有重复旋转轨`);else seen.add(tr.bone);}
+      if(validBones&&!validBones.has(tr?.bone))e.push(`旋转轨引用了 rig 外的骨骼 ${tr?.bone}`);
+      if(!Array.isArray(tr?.values)||tr.values.length!==c*4){e.push(`${tr?.bone??'?'} 的旋转值长度不是 count×4`);continue;}
+      // Every delivered quaternion must be unit — the same 1e-3 tolerance
+      // the service validator applies (validate.ts). NaN, all-zero and
+      // non-unit samples are reported with bone + frame and refuse the
+      // package: decoding them would silently produce garbage poses.
+      for(let i=0;i<c;i++){
+        const o=i*4,q=[tr.values[o],tr.values[o+1],tr.values[o+2],tr.values[o+3]];
+        // Per-component Number.isFinite (non-coercing) — Math.hypot alone
+        // would ToNumber strings like "0.5" into a passable quaternion.
+        if(!q.every(Number.isFinite)){e.push(`${tr.bone}: 第 ${i} 帧四元数含非有限分量`);break;}
+        const l=Math.hypot(q[0],q[1],q[2],q[3]);
+        if(Math.abs(l-1)>1e-3){e.push(`${tr.bone}: 第 ${i} 帧四元数非单位（|q|=${l.toFixed(4)}）`);break;}
+      }
+    }
+  }
+  // The rig block the package claims to be solved against (schema requires id
+  // + manifestSHA256 + bones). A foreign rig id is refused here; the manifest
+  // hash itself is verified by the caller (rigMatches) where the local hash
+  // is known — the shape check can only insist it is a string.
+  if(!isObj(p.rig))e.push('rig 必须是对象');
+  else{
+    if(p.rig.id!==RIG_ID)e.push(`rig.id 必须是 ${RIG_ID}`);
+    if(typeof p.rig.manifestSHA256!=='string')e.push('rig.manifestSHA256 必须是字符串');
+    if(!Number.isInteger(p.rig.bones)||p.rig.bones<1)e.push('rig.bones 必须是 ≥1 的整数');
+  }
+  // events is optional to the DECODER, but a present-but-malformed array would
+  // silently lose timeline markers — reject loudly instead. Element shape
+  // mirrors spec/pose-package.schema.json's events enum plus the validator's
+  // support-event side rule (src/server/validate.ts).
+  if(p.events!==undefined){
+    if(!Array.isArray(p.events))e.push('events 必须是数组');
+    else for(const ev of p.events){
+      if(!isObj(ev)){e.push('events 元素必须是对象');continue;}
+      if(!PACKAGE_EVENT_TYPES.has(ev.type as string)){e.push(`events 元素 type 非法：${String(ev.type)}`);continue;}
+      if(!Number.isFinite(ev.time)||ev.time<0)e.push(`events.${ev.type} 的 time 必须是 ≥0 的有限数`);
+      if(typeof ev.label!=='string')e.push(`events.${ev.type} 的 label 必须是字符串`);
+      if((ev.type==='support-start'||ev.type==='support-end')&&ev.side!=='L'&&ev.side!=='R')
+        e.push(`events.${ev.type} 需要 side 'L'|'R'`);
+    }
+  }
+  // Minimum shape of the consumed metadata fields — posePackageSpec already
+  // filters defensively; flagging them here makes a malformed package refuse
+  // at the door rather than degrade quietly at render time.
+  if(p.action!==undefined){
+    if(!isObj(p.action))e.push('action 必须是对象');
+    else if(p.action.id!==undefined&&typeof p.action.id!=='string')e.push('action.id 必须是字符串');
+  }
+  if(p.quality!==undefined){
+    if(!isObj(p.quality))e.push('quality 必须是对象');
+    else if(p.quality.warnings!==undefined&&(!Array.isArray(p.quality.warnings)||p.quality.warnings.some(w=>typeof w!=='string')))
+      e.push('quality.warnings 必须是字符串数组');
+  }
+  if(p.provenance!==undefined){
+    if(!isObj(p.provenance))e.push('provenance 必须是对象');
+    else for(const k of ['solver','solverRevision','source']as const)
+      if(p.provenance[k]!==undefined&&typeof p.provenance[k]!=='string')e.push(`provenance.${k} 必须是字符串`);
   }
   return [...new Set(e)];
 }
@@ -175,10 +272,23 @@ export class PosePackageSource implements MotionSource{
     this.rig.model.updateMatrixWorld(true);
   }
   wantsProp(){return this.status==='ready'&&!!this.prop;}
+  /** The prop capability's declared mount side ('R' when undeclared). */
+  get propSide(){return this.prop?.side==='L'?'L':'R';}
   rootPoint(){return this.rig.point('root');}
   point(name:string){return this.rig.bones.has(name)?this.rig.point(name):undefined;}
-  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined);}
+  diagnostics(){return rigReadout(this.rig,this.wantsProp()?this.racket:undefined,this.propSide);}
 }
+
+/** Rig identity gate for a delivered package, used by engine.openPosePackage.
+ * When the engine computed the local manifest hash at load (WebCrypto needs a
+ * secure context — undefined means unknowable, not absent), the package's
+ * declared manifestSHA256 must equal it: a package solved for another rig
+ * would decode its local rotations against the wrong skeleton. An unknown
+ * local hash degrades to "true" — the caller then notes the unverified rig in
+ * the spec description, and the bone-name subset check inside
+ * checkPosePackageShape remains the only line of defence. */
+export const rigMatches=(p:PosePackage,manifestHash:string|undefined)=>
+  manifestHash===undefined||p.rig?.manifestSHA256===manifestHash;
 
 /** Derive the lab's MotionSpec for a delivered pose package — the inverse of
  * what solveWorkshop + workshopMeta stamped at solve time. Field priority:
@@ -190,10 +300,32 @@ export class PosePackageSource implements MotionSource{
  * data rather than whatever the action id claims. The description is the
  * honesty surface: solver provenance, the quality warnings the package
  * carries, and the constant-prop caveat (a v2 package cannot express the
- * document's per-frame grip ramp, so the prop is constantly shown). */
-export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
+ * document's per-frame grip ramp, so the prop is constantly shown).
+ * `trust(actionId)` gates envelope restore: the engine recomputes each
+ * bundled envelope's definition hash at load and passes a closure that
+ * accepts only when the package's `action.definitionSHA256` equals it — a
+ * forged or stale action.id then plays through the ad-hoc parameters channel
+ * instead of wearing foreign capabilities/name/phases. The description says
+ * which refusal it was: 'definitionSHA256 与当前内置定义不符' when the package
+ * carried a hash that failed the check, '缺失/无法核验' when no check could
+ * run (no hash in the package, a non-workshop-motion envelope, or no local
+ * hashing at all). Callers with nothing
+ * to check against may omit `trust` (bare id-match, the pre-gate behaviour).
+ * `rigVerified=false` marks the degraded path where no local manifest hash
+ * exists to compare (recorded on the description, honestly). */
+export function posePackageSpec(p:PosePackage,id:MotionId,trust?:(actionId:string)=>boolean,rigVerified=true):MotionSpec{
  const actionId=typeof p.action?.id==='string'&&p.action.id?p.action.id:'pose-package';
- const envelope=motionFileById(actionId);
+ const hit=motionFileById(actionId);
+ const trusted=hit!==undefined&&(trust===undefined||trust(actionId));
+ const envelope=trusted?hit:undefined;
+ // A hit that stays untrusted splits honestly: the package proved the WRONG
+ // definition ('与当前内置定义不符') only when a check could actually run —
+ // the package carries a definitionSHA256, the matched envelope is a
+ // workshop-motion (the only kind with a definition hash), and local hashing
+ // existed (rigVerified=false ⇒ no WebCrypto ⇒ envelopeDefHash is empty).
+ // Everything else is '缺失/无法核验': nothing was verifiable, nothing forged.
+ const declaredHash=typeof p.action?.definitionSHA256==='string'&&p.action.definitionSHA256!=='';
+ const provenMismatch=declaredHash&&hit?.kind==='workshop-motion'&&rigVerified;
  const params=isObj(p.action?.parameters)?p.action.parameters:{};
  const pres=isObj(params.presentation)?params.presentation:{};
  // 'racket' is the only prop kind the lab can mount — the ad-hoc hint maps to
@@ -201,12 +333,19 @@ export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
  // envelope exists it is authoritative: its absence of a prop is also truth,
  // so a forged presentation channel cannot add a prop to a bundled id.
  const prop=envelope?envelope.capabilities?.prop
-  :(pres.prop==='racket'?{kind:'racket' as const,trail:true,handView:true}:undefined);
+  :(pres.prop==='racket'?{kind:'racket' as const,trail:true,handView:true,
+    // Ad-hoc packages carry the document's grip side as a package-level
+    // constant (v2 has no per-frame grip channel); absent means 'R'.
+    ...(pres.gripSide==='L'?{side:'L' as const}:{})}:undefined);
  const capabilities:MotionCapabilities|undefined=envelope?envelope.capabilities:(prop?{prop}:undefined);
  // Loop semantics are authored in the document, not the package: bundled
  // envelopes carry the document, ad-hoc packages carry presentation.loop.
  const authoredLoop=envelope?envelope.document?.loop:(typeof pres.loop==='boolean'?pres.loop:undefined);
- const events=Array.isArray(p.events)?p.events:[];
+ // isObj + field types is belt-and-suspenders: the shape check already
+ // rejects malformed events when it ran, but this function is also called
+ // standalone — a half-baked `{type:'phase'}` must not leak undefined
+ // time/label into the spec's phases.
+ const events=(Array.isArray(p.events)?p.events:[]).filter(e=>isObj(e)&&typeof e.time==='number'&&typeof e.label==='string');
  const phases=events.filter(e=>e.type==='phase').map(({time,label})=>({time,label}));
  const keys=events.filter(e=>e.type==='keyframe').map(({time,label})=>({time,label}));
  const warnings=(Array.isArray(p.quality?.warnings)?p.quality.warnings:[]).filter((w):w is string=>typeof w==='string');
@@ -218,7 +357,11 @@ export function posePackageSpec(p:PosePackage,id:MotionId):MotionSpec{
   solver?`求解器 ${solver}${solverRev}`:'',
   source,
   warnings.length?`质量警告 ${warnings.length} 条：${warnings.slice(0,3).join('；')}${warnings.length>3?' …':''}`:'质量警告 0 条',
-  prop?'v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示':'',
+  prop?`v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示${prop.side==='L'?'（左手持拍）':''}`:'',
+  hit&&!trusted?(provenMismatch
+   ?'action.id 命中本地信封但 definitionSHA256 与当前内置定义不符，按外部包回放（信封能力未采用）'
+   :'action.id 命中本地信封但 definitionSHA256 缺失/无法核验，按 ad-hoc 处理（信封能力未采用）'):'',
+  rigVerified?'':'rig 未验证：本地 manifest 哈希不可知，降级为骨骼名匹配',
  ].filter(Boolean).join(' · ');
  const documentName=typeof params.documentName==='string'&&params.documentName?params.documentName:undefined;
  return {id,name:envelope?.name||documentName||actionId,
@@ -243,7 +386,12 @@ export class DynamicsSource implements MotionSource{
   /** The last requested case; mirrors the old physicsCase (set at load start so
    * the panel reports the attempted profile even when the load fails). */
   profile:DynamicsCase='baseline';
-  private motionId='';private debug?:DebugOptions;
+  private debug?:DebugOptions;
+  /** Load generation: load/deactivate/dispose each bump it, so a stale
+   * in-flight load can recognize that somebody else (a newer load, a source
+   * switch, engine teardown) owns the session now — and must not apply
+   * `status='ready'`/`root.visible=true` after the fact. */
+  private gen=0;
   private constructor(private session:DynamicsSession){}
   static create(session:DynamicsSession){return new DynamicsSource(session);}
   get physics(){return this.session.replay;}
@@ -251,25 +399,49 @@ export class DynamicsSource implements MotionSource{
   get duration(){return this.session.replay?.duration??0;}
   /** Load the record for `id`. 'applied' → the engine finishes activation;
    * 'superseded' → a newer load or a source switch owns the replay now;
-   * 'error' → status/error already carry the message. */
-  async load(id:string,profile:DynamicsCase,muscleAction?:MuscleActionFile):Promise<'applied'|'superseded'|'error'>{
-    this.motionId=id;this.profile=profile;this.status='loading';this.error=undefined;
+   * 'error' → status/error already carry the message. The envelope's
+   * `records` URLs take precedence inside the replay; a bare spec falls back
+   * to the per-action `/dynamics/<id>/<case>` path convention. */
+  async load(id:string,profile:DynamicsCase,muscleAction?:MuscleActionFile,records?:DynamicsRecords):Promise<'applied'|'superseded'|'error'>{
+    const g=++this.gen;
+    this.profile=profile;this.status='loading';this.error=undefined;
     const s=this.session;
-    try{
-      s.promise??=import('./dynamics').then(m=>m.DynamicsReplay.create(s.rig));
-      const replay=await s.promise;
-      if(s.retired){if(s.replay!==replay)replay.dispose();return 'superseded';}
-      if(!s.replay){s.replay=replay;s.parent.add(replay.root);}
-      const accepted=await replay.load(id,profile,muscleAction);
-      if(!accepted||this.motionId!==id)return 'superseded';
-      this.status='ready';replay.root.visible=true;if(this.debug)replay.setOptions(this.debug);
-      return 'applied';
-    }catch(err){
-      s.promise=undefined;
-      if(this.motionId!==id)return 'superseded';
+    // Segment 1 — obtain the shared replay. ONLY a failure here may clear
+    // s.promise, and only while it still names the dead one: a rejected
+    // creation promise is poison for every later load, but a stale load must
+    // not clear a promise a newer owner already replaced.
+    const p=s.promise??=import('./dynamics').then(m=>m.DynamicsReplay.create(s.rig));
+    let replay:DynamicsReplay;
+    try{replay=await p;}
+    catch(err){
+      if(s.promise===p)s.promise=undefined;
+      if(this.gen!==g||s.retired)return 'superseded';
       this.status='error';this.error=err instanceof Error?err.message:String(err);
       return 'error';
     }
+    if(this.gen!==g||s.retired){
+      // Only a RETIRED session disposes the fresh replay — it can never be
+      // adopted. A merely superseded one keeps it: the shared session
+      // promise hands the same object to whichever load owns it now.
+      if(s.retired&&s.replay!==replay)replay.dispose();
+      return 'superseded';
+    }
+    if(!s.replay){s.replay=replay;s.parent.add(replay.root);}
+    // Segment 2 — the record load inside the already-adopted replay. A failure
+    // here keeps s.promise and s.replay so a retry re-runs the record fetch on
+    // the SAME replay; clearing them would orphan a second DynamicsReplay the
+    // session can never adopt (physics/duration/seek would keep pointing at
+    // the first, record-less one — playback stuck at duration 0).
+    let accepted:boolean;
+    try{accepted=await replay.load(id,profile,muscleAction,records);}
+    catch(err){
+      if(this.gen!==g||s.retired)return 'superseded';
+      this.status='error';this.error=err instanceof Error?err.message:String(err);
+      return 'error';
+    }
+    if(!accepted||this.gen!==g||s.retired)return 'superseded';
+    this.status='ready';replay.root.visible=true;if(this.debug)replay.setOptions(this.debug);
+    return 'applied';
   }
   seek(t:number){const r=this.session.replay;if(this.status!=='ready'||!r)return;r.seek(Math.max(0,Math.min(r.duration,t)));}
   rootPoint(){return this.point('Full Body')??this.session.rig.point('root');}
@@ -277,8 +449,11 @@ export class DynamicsSource implements MotionSource{
   wantsProp(){return false;}
   setDebug(o:DebugOptions){this.debug=o;this.session.replay?.setOptions(o);}
   diagnostics(){return null;}
-  deactivate(){if(this.session.replay)this.session.replay.root.visible=false;}
-  dispose(){const s=this.session;s.retired=true;if(s.replay){const r=s.replay;s.replay=undefined;r.dispose();}}
+  /** The bump retires any in-flight load of this source: switching away while
+   * a record is still loading must not let the stale await resurrect the
+   * replay (status='ready', root.visible=true) over the new source. */
+  deactivate(){this.gen++;if(this.session.replay)this.session.replay.root.visible=false;}
+  dispose(){const s=this.session;this.gen++;s.retired=true;if(s.replay){const r=s.replay;s.replay=undefined;r.dispose();}}
 }
 
 /** Cross-source pose blend (~.32 s): snapshots the whole skeleton at switch

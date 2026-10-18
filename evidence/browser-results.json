@@ -421,7 +421,11 @@
     "workshopPackageExport": true,
     "workshopGlbExport": true,
     "workshopFootHeight": true,
-    "workshopWaypointDrag": true
+    "workshopWaypointDrag": true,
+    "workshopOnion": true,
+    "workshopStillExport": true,
+    "workshopGripSide": true,
+    "workshopMirror": true
   },
   "samples": {
     "idle": [

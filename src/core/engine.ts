@@ -1,15 +1,28 @@
 import {AmbientLight,AnimationClip,AnimationMixer,AxesHelper,BufferGeometry,Color,DirectionalLight,Float32BufferAttribute,GridHelper,Group,HemisphereLight,Line,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,PerspectiveCamera,PlaneGeometry,Quaternion,Scene,SkinnedMesh,SphereGeometry,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {HumanRig} from './rig';
+import {HumanRig,skeletonSegments} from './rig';
 import {MOTIONS,motionById,muscleActionById} from './motions';
-import {attachRacket} from './racket';
-import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,type DynamicsSession,type MotionSource} from './motion-source';
+import {MOTION_FILES} from './motion-files';
+import {motionDefinitionPayload} from './motion-file';
+import {canonical,rigManifestBody} from './protocol';
+import {attachRacket,mountRacket} from './racket';
+import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,rigMatches,type DynamicsSession,type MotionSource} from './motion-source';
 import type {PosePackage} from './pose-package';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
 import type {DebugOptions,MotionId,MotionSpec,RigInfo,ViewId} from './types';
 export interface FrameState{time:number;duration:number;phase:string;playing:boolean;knee:number;elbow:number;gripError:number;dynamics?:DynamicsReadout}
 const ZERO=new Vector3();
+/** sha256 hex of a canonical string via WebCrypto. `crypto.subtle` only
+ * exists on secure contexts (https/localhost); where absent the hash is
+ * unknowable — return undefined and let callers degrade honestly rather
+ * than fabricate a check that cannot run. */
+const sha256Hex=async(s:string):Promise<string|undefined>=>{
+ const subtle=globalThis.crypto?.subtle;
+ if(!subtle)return undefined;
+ const buf=await subtle.digest('SHA-256',new TextEncoder().encode(s));
+ return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+};
 export class HumanEngine{
  scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
  model?:Group;rig?:HumanRig;mixer?:AnimationMixer;
@@ -20,7 +33,13 @@ export class HumanEngine{
  private pkgSeq=0;
  private _source?:MotionSource;private fade=new PoseFade();private dynSession?:DynamicsSession;
  debug:DebugOptions={surface:true,skeleton:false,axes:false,targets:false,trail:false,muscles:false};
- racket?:Group;skeletonLines?:LineSegments;jointGroup=new Group();axesGroup=new Group();targetGroup=new Group();
+ racket?:Group;private racketSide:'L'|'R'='R';
+ /** Locally computed identities for the pose-package import gate: the rig
+  * manifest hash (compared against a package's rig block — see rigMatches)
+  * and each bundled envelope's definition hash (the trust closure in
+  * openPosePackage). Both stay undefined/empty without WebCrypto. */
+ private manifestHash?:string;private envelopeDefHash=new Map<string,string>();
+ skeletonLines?:LineSegments;jointGroup=new Group();axesGroup=new Group();targetGroup=new Group();
  targetMarkers=new Map<string,Mesh>();trail?:Line;trailPoints:Vector3[]=[];
  previousPosition=new Vector3();view:ViewId='front';
  private floor?:Mesh;private grid?:GridHelper;private keyLight?:DirectionalLight;private clock=new Clock();private lastNotify=0;private resizeObserver:ResizeObserver;private raf=0;
@@ -52,14 +71,27 @@ export class HumanEngine{
  async load(){
   try{
    const clipSpecs=MOTIONS.filter(m=>m.source?.kind==='clip');
-   const [gltf,info,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),...clipSpecs.map(async m=>{
+   const [gltf,rigText,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),...clipSpecs.map(async m=>{
     const s=m.source as {kind:'clip';clip:string;meta?:string};
     const data=await fetch(s.clip).then(r=>{if(!r.ok)throw new Error('动作片段加载失败');return r.json()});
     const meta=s.meta?await fetch(s.meta).then(r=>r.json()):undefined;
     return {id:m.id as MotionId,clip:AnimationClip.parse(data),stride:new Vector3().fromArray(meta?.stride??[0,0,0])};
    })]);
    if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
+   const info=JSON.parse(rigText) as RigInfo;
    this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
+   // Local identities for the pose-package import gate — the same
+   // canonical(rigManifestBody)/canonical(motionDefinitionPayload) sha256 the
+   // service stamps into packages (rig.manifestSHA256 / action.definitionSHA256).
+   // Without WebCrypto the hashes stay unknown and openPosePackage degrades to
+   // the structural check instead of trusting what it cannot verify.
+   this.manifestHash=await sha256Hex(canonical(rigManifestBody(info)));
+   if(this.manifestHash===undefined)
+    console.warn('crypto.subtle 不可用：姿态包导入的 rig/定义哈希核验降级为结构检查');
+   for(const f of MOTION_FILES)if(f.kind==='workshop-motion'){
+    const h=await sha256Hex(canonical(motionDefinitionPayload(f)));
+    if(h!==undefined)this.envelopeDefHash.set(f.id,h);
+   }
    this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
    // Sclerae at the original MakeHuman eye pivots, keeping facial silhouette intact.
    for(const side of ['L','R']){
@@ -80,6 +112,13 @@ export class HumanEngine{
   }catch(err){this.onError?.(err instanceof Error?err:new Error(String(err)));}
  }
  private specOf(id:MotionId){return this.specs.get(id)??motionById(id);}
+ /** Mount the shared racket on the wrist the source's prop declares. The side
+  * is constant per source, so this fires at most once per source switch;
+  * prop-less sources report 'R' and restore the canonical mount. */
+ private syncRacketSide(src:MotionSource){
+  const side=src.propSide??'R';
+  if(this.racket&&this.rig&&side!==this.racketSide){mountRacket(this.rig,this.racket,side);this.racketSide=side;}
+ }
  /** Register an externally delivered pose package as a temporary motion.
   * The package is shape-checked against the local rig; a malformed package is
   * refused loudly through onError, never decoded silently. */
@@ -88,20 +127,37 @@ export class HumanEngine{
   const problems=checkPosePackageShape(pkg,new Set(this.rig.bones.keys()));
   if(problems.length){this.onError?.(new Error(`姿态包不可用：${problems[0]}${problems.length>1?`（共 ${problems.length} 处问题）`:''}`));return undefined;}
   const p=pkg as PosePackage;
+  // Rig identity: the package declares the rig manifest it was solved against.
+  // With the local hash known a mismatch is a hard refusal — the delivered
+  // local rotations would decode onto the wrong skeleton and fail silently.
+  // Hash unknowable (non-secure context): degrade to the bone-name check that
+  // already ran, and let the spec description say the rig was not verified.
+  if(!rigMatches(p,this.manifestHash)){
+   this.onError?.(new Error(`姿态包不可用：rig manifest 哈希与本地骨架不一致（声明 ${typeof p.rig?.manifestSHA256==='string'?p.rig.manifestSHA256.slice(0,12):'?'}…），FK 重放会错位`));
+   return undefined;
+  }
   // Key the temp entry on the package's artifact id (content-addressed), not
   // the action id: two packages solved for the same action stay distinct
   // entries, and reopening the same package is idempotent.
   const specId=`pkg:${typeof p.id==='string'&&p.id?p.id:`unkeyed-${this.pkgSeq++}`}`;
   // The display spec is derived from what the package carries: bundled
-  // envelopes (matched by action.id) restore capabilities/name/phases, the
-  // ad-hoc parameters channel carries documentName and presentation hints.
-  const spec=posePackageSpec(p,specId);
+  // envelopes (matched by action.id) restore capabilities/name/phases — but
+  // only when the package's action.definitionSHA256 reproduces the envelope's
+  // own recomputed definition hash (a claimed-but-unproven bundled id falls
+  // back to the ad-hoc parameters channel); ad-hoc packages carry
+  // documentName and presentation hints there by design.
+  const spec=posePackageSpec(p,specId,
+   actionId=>this.envelopeDefHash.get(actionId)!==undefined&&this.envelopeDefHash.get(actionId)===p.action?.definitionSHA256,
+   this.manifestHash!==undefined);
   this.specs.set(spec.id,spec);this.sources.set(spec.id,new PosePackageSource(this.rig,p,spec.capabilities?.prop,this.racket));
   this.setMotion(spec.id,false);return spec;
  }
  private loadDynamics(source:DynamicsSource,profile:DynamicsCase){
   const spec=this.specOf(this.activeId);
-  void source.load(this.activeId,profile,muscleActionById(this.activeId)).then(result=>{
+  // The spec's dynamics source is authoritative: it carries the envelope's
+  // action parameters and record URLs straight into the replay.
+  const ds=spec.source?.kind==='dynamics'?spec.source:undefined;
+  void source.load(this.activeId,profile,ds?.action??muscleActionById(this.activeId),ds?.records).then(result=>{
    if(this._source!==source)return;
    const replay=source.physics;
    if(result==='applied'&&replay){
@@ -135,7 +191,7 @@ export class HumanEngine{
   if(fade&&previous&&previous!==source&&skinned(previous))this.fade.start(this.rig!);else this.fade.clear();
   source.activate?.();source.seek(this.time);
   this.model!.position.copy(source.modelOffset??ZERO);
-  if(this.racket)this.racket.visible=!!spec.capabilities?.prop&&source.wantsProp();
+  if(this.racket){this.syncRacketSide(source);this.racket.visible=!!spec.capabilities?.prop&&source.wantsProp();}
   this.trailPoints=[];this.previousPosition.set(0,0,0);this.playing=true;
   this.controls.target.set(0,.88,0);this.setView(this.view==='hand'?'threeQuarter':this.view);
   this.setDebug(this.debug);this.notify();
@@ -173,7 +229,9 @@ export class HumanEngine{
   target.y=spec.capabilities?.camera?.targetHeight??.87;
   if(view==='free'){const shift=target.clone().sub(this.controls.target);this.camera.position.add(shift);this.controls.target.copy(target);this.previousPosition.copy(root);this.controls.update();this.render();return;}
   if(view==='hand'&&this.rig){
-   const wrist=(this.isPhysics&&this.physics?.ready?this._source?.point('lunate_r'):this.rig.point('wrist_R'))??this.rig.point('wrist_R');
+   // The hand view anchors to the wrist the prop is mounted on — physics keeps
+   // the lunate anchor; prop-less sources read the default right wrist.
+   const wrist=(this.isPhysics&&this.physics?.ready?this._source?.point('lunate_r'):this.rig.point(`wrist_${this._source?.propSide??'R'}`))??this.rig.point('wrist_R');
    target.copy(wrist).add(new Vector3(0,.01,.03));this.camera.position.copy(target).add(new Vector3(-.34,.18,.42));
   }else{
    const distance=Math.max(this.isPhysics?4.15:spec.capabilities?.camera?.distance??3.65,2.0/Math.max(.4,this.camera.aspect));
@@ -206,7 +264,14 @@ export class HumanEngine{
   if(this.playing&&duration>0){
    this.time+=dt*this.speed;
    if(this.time>=duration){
-    if(this.loop&&!spec.oneShot){this.time%=duration;src.loopWrapAdvance?.();}
+    if(this.loop&&!spec.oneShot){
+     // One tick can skip several periods (a long frame at high speed): the
+     // playhead wraps modulo duration and the per-wrap side effect — walk's
+     // stride accumulation — fires once per crossed period, not once per tick.
+     const wraps=Math.floor(this.time/duration);
+     this.time%=duration;
+     for(let i=0;i<wraps;i++)src.loopWrapAdvance?.();
+    }
     else{this.time=duration;this.playing=false;}
    }
   }
@@ -217,12 +282,12 @@ export class HumanEngine{
   this.model.position.copy(src.modelOffset??ZERO);
   // The prop appears/disappears with the grip amount — during the grip ramp it
   // fades in/out rather than snapping, an acceptable semantics for the ramp.
-  if(this.racket)this.racket.visible=!!spec.capabilities?.prop&&src.wantsProp();
+  if(this.racket){this.syncRacketSide(src);this.racket.visible=!!spec.capabilities?.prop&&src.wantsProp();}
   this.model.updateMatrixWorld(true);
   const current=src.rootPoint(),delta=current.clone().sub(this.previousPosition);
   // Camera translation follows locomotion only; Orbit orientation / zoom remain independent.
   if(spec.capabilities?.locomotion==='follow'||this.fade.active){delta.y=0;this.controls.target.add(delta);this.camera.position.add(delta);}
-  if(this.view==='hand'){const target=(src.point('wrist_R')??this.rig.point('wrist_R')).add(new Vector3(0,.01,.03)),d=target.clone().sub(this.controls.target);this.controls.target.add(d);this.camera.position.add(d);}
+  if(this.view==='hand'){const target=(src.point(`wrist_${src.propSide??'R'}`)??this.rig.point('wrist_R')).add(new Vector3(0,.01,.03)),d=target.clone().sub(this.controls.target);this.controls.target.add(d);this.camera.position.add(d);}
   this.previousPosition.copy(current);if(this.floor){this.floor.position.x=current.x;this.floor.position.z=current.z;}if(this.grid){this.grid.position.x=Math.round(current.x/.25)*.25;this.grid.position.z=Math.round(current.z/.25)*.25;}if(this.keyLight){this.keyLight.position.set(current.x-3,5,current.z+4);this.keyLight.target.position.set(current.x,0,current.z);this.keyLight.target.updateMatrixWorld();}this.updateDebug();
   this.lastNotify+=dt;if(this.lastNotify>.07){this.lastNotify=0;this.notify();}
  }
@@ -235,8 +300,8 @@ export class HumanEngine{
  }
  private makeDebug(){
   if(!this.rig)return;
-  const major=this.rig.info.bones.filter(b=>/^(root|pelvis_|spine|neck|head$|clavicle_|shoulder|upperarm|lowerarm|wrist_|metacarpal|finger|upperleg|lowerleg|foot_|toe)/.test(b.name));
-  const segments=major.filter(b=>b.parent);const geo=new BufferGeometry();geo.setAttribute('position',new Float32BufferAttribute(new Float32Array(segments.length*6),3));
+  const segments=skeletonSegments(this.rig.info);
+  const geo=new BufferGeometry();geo.setAttribute('position',new Float32BufferAttribute(new Float32Array(segments.length*6),3));
   const lines=new LineSegments(geo,new LineBasicMaterial({color:0x367cff,depthTest:false,transparent:true,opacity:.85}));lines.renderOrder=10;lines.frustumCulled=false;lines.userData.segments=segments;this.skeletonLines=lines;this.scene.add(lines);lines.visible=false;
   const jointGeo=new SphereGeometry(.009,10,8);const jointMat=new MeshStandardMaterial({color:0x225bdb,depthTest:false});
   const names=['root','spine03','spine01','neck01','head',...['L','R'].flatMap(s=>['upperarm01_','lowerarm01_','wrist_','upperleg01_','lowerleg01_','foot_'].map(n=>n+s))];

@@ -1,16 +1,99 @@
-import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Group,HemisphereLight,Line,LineBasicMaterial,LineDashedMaterial,LineLoop,Mesh,MeshBasicMaterial,MeshStandardMaterial,PerspectiveCamera,Plane,PlaneGeometry,Raycaster,RingGeometry,Scene,SkinnedMesh,SphereGeometry,Vector2,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,GridHelper} from 'three';
+import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Float32BufferAttribute,Group,HemisphereLight,Line,LineBasicMaterial,LineDashedMaterial,LineLoop,LineSegments,Mesh,MeshBasicMaterial,MeshStandardMaterial,PerspectiveCamera,Plane,PlaneGeometry,Raycaster,RingGeometry,Scene,SkinnedMesh,SphereGeometry,Vector2,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,GridHelper} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
-import {HumanRig} from '../core/rig';
-import {attachRacket} from '../core/racket';
+import {HumanRig,skeletonSegments} from '../core/rig';
+import {attachRacket,mountRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
 import type {EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from './document';
-import {contactStartKey,frameAt,isReleaseKey,sortedKeys,toV} from './document';
+import {contactStartKey,frameAt,isReleaseKey,parseDoc,serializeDoc,sortedKeys,toV} from './document';
 import {analyzePose,solveEffectiveFrame,type Analysis} from './solver';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from './foot';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
-export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean}
+export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean;onion:boolean;onionCount:number;onionMode:'keys'|'step';onionStep:number}
+/** Ghost cap per direction: ≤3 keeps even a maxKeys document cheap — keys mode
+ * brackets only the ±N keys around the playhead, never the whole timeline. */
+export const ONION_MAX=3;
+/** Ghost instants for one playhead position. `keys` brackets the playhead with
+ * the nearest real key times on each side (strict — the key under the playhead
+ * is the live pose, not a ghost); on a loop document the bracket continues
+ * across the seam — the previous-cycle tail keys ghost the head of the strip
+ * and vice versa. `step` takes t±k·Δt, dropping instants that fall outside
+ * [0,duration]. Returned dist is 1 = nearest. */
+export function onionTimes(doc:WorkshopDoc,time:number,o:Pick<WorkshopOptions,'onionCount'|'onionMode'|'onionStep'>){
+  const out:{time:number;dir:-1|1;dist:number}[]=[];
+  const n=Math.max(1,Math.min(ONION_MAX,Math.round(o.onionCount)||1));
+  if(o.onionMode==='step'){
+    const dt=Math.max(.01,o.onionStep);
+    for(let d=1;d<=n;d++){
+      if(time-d*dt>=-1e-9)out.push({time:Math.max(0,time-d*dt),dir:-1,dist:d});
+      if(time+d*dt<=doc.duration+1e-9)out.push({time:Math.min(doc.duration,time+d*dt),dir:1,dist:d});
+    }
+    return out;
+  }
+  const keys=sortedKeys(doc);
+  // Walk order: descending away from the playhead on each side. For a loop
+  // document the bracket continues across the seam — the "previous" poses of
+  // a playhead near 0 are the tail keys' own instants (the sampler wraps the
+  // chain the same way), and vice versa. A key already bracketing one side is
+  // never duplicated onto the other (degenerate tiny docs).
+  const beforeDesc=keys.filter(k=>k.time<time-1e-9).reverse();
+  const after=keys.filter(k=>k.time>time+1e-9);
+  if(doc.loop){
+    // Only the SELECTED keys are taken: wrapping draws from the unused pool —
+    // and the key sitting on the playhead stays the live pose, never a ghost.
+    const used=new Set([...beforeDesc.slice(0,n),...after.slice(0,n)].map(k=>k.id));
+    const free=(k:WorkshopKey)=>Math.abs(k.time-time)>1e-9&&!used.has(k.id);
+    for(let i=keys.length-1;i>=0&&beforeDesc.length<n;i--){const k=keys[i];if(free(k)){used.add(k.id);beforeDesc.push(k);}}
+    for(let i=0;i<keys.length&&after.length<n;i++){const k=keys[i];if(free(k)){used.add(k.id);after.push(k);}}
+  }
+  const before=beforeDesc.slice(0,n).reverse(),afterN=after.slice(0,n);
+  before.forEach((k,i)=>out.push({time:k.time,dir:-1,dist:before.length-i}));
+  afterN.forEach((k,i)=>out.push({time:k.time,dir:1,dist:i+1}));
+  return out;
+}
+/* ---------- fixed-camera render export (WP-D) ---------- */
+/** Self-describing still contract: every exported frame is a
+ * STILL_WIDTH×STILL_HEIGHT PNG shot through a named camera preset (default
+ * CAPTURE_VIEW). Same document + time + view ⇒ same pixels — the live
+ * viewport size, device pixel ratio and the user's orbit never leak in. */
+export const STILL_WIDTH=640,STILL_HEIGHT=720;
+export const CAPTURE_VIEW:ViewId='threeQuarter';
+/** Sheet budget: even a maxKeys document must review as one image, so denser
+ * timelines are decimated by sheetTimes down to ≤SHEET_MAX_TILES tiles, laid
+ * out SHEET_COLS per row with a SHEET_LABEL_H caption band under each tile. */
+export const SHEET_MAX_TILES=12,SHEET_COLS=4,SHEET_LABEL_H=28;
+/** Uniform decimation pinning both endpoints — the first and last key are the
+ * two poses a reviewer least wants dropped. Step >1 when len>max keeps the
+ * picks strictly increasing (no duplicate tiles); input order is preserved. */
+export function sheetTimes(times:number[],max=SHEET_MAX_TILES):number[]{
+  if(times.length<=max)return times.slice();
+  const out:number[]=[];
+  for(let i=0;i<max;i++)out.push(times[Math.round(i*(times.length-1)/(max-1))]);
+  return out;
+}
+/** `view` picks the camera preset (default CAPTURE_VIEW); `overlays:true`
+ * keeps editor furniture (handles, trajectories, contact markers, onion
+ * ghosts, CoM/support gizmos) in the image — off by default because a review
+ * still must read as the pose itself, not as the editor. */
+export interface CaptureOptions{view?:ViewId;overlays?:boolean}
+interface CaptureSnapshot{time:number;playing:boolean;view:ViewId;cam:Vector3;target:Vector3;ratio:number;overlays:{handles:boolean;trajectories:boolean[];contacts:boolean[];onion:boolean[];balance:boolean[]}|null}
+/** Re-entrancy mutex for export captures: a second programmatic capture must
+ * refuse outright — two interleaved captures would snapshot and restore
+ * transport/camera/overlay state in the wrong order (the UI also disables
+ * the export buttons, but engine calls are not limited to those buttons).
+ * `run` owns the flag so a rejection or throw always releases it. */
+export class CaptureMutex{
+ private busy=false;
+ get held(){return this.busy;}
+ run<T>(fn:()=>Promise<T>):Promise<T>{
+  if(this.busy)return Promise.reject(new Error('已有导出任务进行中'));
+  this.busy=true;
+  // Defer fn into the promise chain: a synchronously throwing fn still lands
+  // in .finally instead of wedging busy forever.
+  return Promise.resolve().then(fn).finally(()=>{this.busy=false;});
+ }
+}
 type DragKind='root'|'hand'|'foot'|'swing'|'poleArm'|'poleLeg'|'tip'|'contact';
 /** `passive` handles render but never start a drag — used for the actual foot
  * during a release interval, where the editable control is the swing point. */
@@ -22,15 +105,36 @@ export class WorkshopEngine{
   scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
   model?:Group;rig?:HumanRig;racket?:Group;ready=false;disposed=false;
   playing=true;speed=1;time=0;view:ViewId='threeQuarter';
-  options:WorkshopOptions={handles:true,trajectories:true,balance:true};
+  options:WorkshopOptions={handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys',onionStep:.1};
   private clock=new Clock();private raf=0;private lastNotify=0;private resizeObserver:ResizeObserver;
   private keyLight?:DirectionalLight;
   private handleGroup=new Group();private handles:Handle[]=[];private contactMarkers:Mesh[]=[];
   private trajectories=new Map<string,Line>();private comMarker?:Mesh;private comLine?:Line;private supportLoop?:LineLoop;
+  /** Onion-skin ghosts: 2×ONION_MAX line skeletons, slots [0..2]=past,
+   * [3..5]=future by distance. userData.onion={dir,dist} for QA inspection. */
+  private onionLines:LineSegments[]=[];private onionSegs:{name:string;parent:string}[]=[];
+  private onionSig='';private onionStale=true;
   private raycaster=new Raycaster();private pointer=new Vector2();
   private drag?:{h:Handle;plane:Plane;offset:Vector3;key:WorkshopKey};private docDirty=true;
+  /** Read as "a still/sheet capture is in flight". The animate loop consults
+   * it wherever it re-derives overlay visibility (rebuildAux, updateOnion,
+   * updateBalance), so overlays hidden for the shot can't be resurrected
+   * between the awaits of a multi-tile sheet; it also blocks a mid-capture
+   * pointerdown on the canvas from starting a drag.
+   *
+   * Backed by a DEPTH count, not a bare boolean: a contact sheet nests its
+   * per-tile captures inside one outer session, so the flag must only fall
+   * when the LAST session ends — a per-tile endCapture that dropped it would
+   * reopen the overlay/drag windows between tiles. */
+  private captureDepth=0;
+  private get capturing(){return this.captureDepth>0;}
+  /** Hard re-entry gate for programmatic callers — see CaptureMutex. */
+  private readonly captureMutex=new CaptureMutex();
   private latestFrame?:EffectiveFrame;
   private footGeo?:Record<Side,FootGeometry>;
+  /** The wrist the racket is currently mounted on — remounted when a solve
+   * carries a different gripSide than the last mount (doc edits, doc switch). */
+  private racketSide:'L'|'R'='R';
   onFrame?:(f:WorkshopFrame)=>void;onReady?:(info:RigInfo)=>void;onError?:(e:Error)=>void;
   /** App hooks: begin edit = pick or auto-insert the key being dragged. */
   onBeginEdit?:(time:number,prefer?:string)=>WorkshopKey|null;
@@ -62,9 +166,9 @@ export class WorkshopEngine{
       if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
       this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
-      this.racket=attachRacket(this.rig);this.racket.visible=false;
+      this.racket=attachRacket(this.rig,this.getDoc().gripSide==='L'?'L':'R');this.racketSide=this.getDoc().gripSide==='L'?'L':'R';this.racket.visible=false;
       this.footGeo={L:footGeometry(this.rig.rest,'L'),R:footGeometry(this.rig.rest,'R')};
-      this.makeHandles();this.makeMarkers();
+      this.makeHandles();this.makeMarkers();this.makeOnion();
       this.ready=true;this.solveCurrent();this.setView('threeQuarter');this.onReady?.(info);
     }catch(err){this.onError?.(err instanceof Error?err:new Error(String(err)));}
   }
@@ -91,6 +195,21 @@ export class WorkshopEngine{
       const line=new Line(new BufferGeometry(),new LineBasicMaterial({color,transparent:true,opacity:.55}));line.frustumCulled=false;this.scene.add(line);this.trajectories.set(id,line);
     }
   }
+  /** Ghost skeletons are plain LineSegments (never a cloned SkinnedMesh): one
+   * per direction×distance slot, sharing the lab debug skeleton's segment
+   * table so the bone list can't drift. Past = cool, future = warm, opacity
+   * decays with distance; depthTest off, renderOrder below the handles (8 vs
+   * 20), and they stay out of the pick set by living on the scene root. */
+  private makeOnion(){
+    if(!this.rig)return;
+    this.onionSegs=skeletonSegments(this.rig.info);
+    for(const dir of [-1,1]as const)for(let dist=1;dist<=ONION_MAX;dist++){
+      const geo=new BufferGeometry();geo.setAttribute('position',new Float32BufferAttribute(new Float32Array(this.onionSegs.length*6),3));
+      const line=new LineSegments(geo,new LineBasicMaterial({color:dir<0?0x367cff:0xe2543a,depthTest:false,transparent:true,opacity:.4*(1-(dist-1)*.25)}));
+      line.renderOrder=8;line.frustumCulled=false;line.visible=false;line.userData.onion={dir,dist};
+      this.scene.add(line);this.onionLines.push(line);
+    }
+  }
   /** Foot geometry from the loaded rig (sole offsets for lift and clearance). */
   footGeometry(side:Side){return this.footGeo?.[side];}
   /* ---------- pointer / drag ---------- */
@@ -102,7 +221,7 @@ export class WorkshopEngine{
     const o=hits.find(x=>!x.object.userData.ref?.passive)?.object;return o?o.userData.ref as Handle|undefined:undefined;
   }
   private onPointerDown=(ev:PointerEvent)=>{
-    if(ev.button!==0||!this.ready)return;
+    if(ev.button!==0||!this.ready||this.capturing)return;
     const h=this.pick(ev);if(!h)return;
     const doc=this.getDoc();
     const time=h.keyId?doc.keys.find(k=>k.id===h.keyId)?.time??this.time:this.time;
@@ -130,7 +249,7 @@ export class WorkshopEngine{
     this.controls.enabled=false;try{this.renderer.domElement.setPointerCapture(ev.pointerId);}catch{/* synthetic events have no pointer */}
   };
   private onPointerMove=(ev:PointerEvent)=>{
-    if(!this.drag||!this.rig)return;
+    if(!this.drag||!this.rig||this.capturing)return;
     const rect=this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(((ev.clientX-rect.left)/rect.width)*2-1,-((ev.clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.pointer,this.camera);
@@ -148,7 +267,8 @@ export class WorkshopEngine{
       case 'tip':case 'contact':{
         if(!this.racket)break;this.solveCurrent();
         const tip=this.racket.localToWorld(new Vector3(0,.61,0));
-        const d=pos.clone().sub(tip);const t=k.handR.target;k.handR.target={x:t.x+d.x,y:t.y+d.y,z:t.z+d.z};break;}
+        const d=pos.clone().sub(tip),h=this.getDoc().gripSide==='L'?k.handL:k.handR;
+        const t=h.target;h.target={x:t.x+d.x,y:t.y+d.y,z:t.z+d.z};break;}
     }
     this.solveCurrent();this.docDirty=true;this.onDocChanged?.();
   };
@@ -169,6 +289,12 @@ export class WorkshopEngine{
   private solveFrame(f:EffectiveFrame){
     if(!this.rig)return;
     solveEffectiveFrame(this.rig,f);
+    /* Remount on side change — the frame carries the doc's gripSide, and the
+     * mount is a constant per document, so this fires at most once per edit
+     * (here, the one place every solve path funnels through, trajectory and
+     * ghost sampling included). */
+    const side=f.gripSide==='L'?'L':'R';
+    if(this.racket&&side!==this.racketSide){mountRacket(this.rig,this.racket,side);this.racketSide=side;}
   }
   /** Lowest ankle height keeping the sole on or above the rest sole plane. */
   private minAnkleY(side:Side,f:{yaw:number;pitch:number},y:number){
@@ -226,7 +352,9 @@ export class WorkshopEngine{
     for(const [id,line]of this.trajectories){
       const pts=paths[id]??[];
       line.geometry.dispose();line.geometry=new BufferGeometry().setFromPoints(pts);
-      line.visible=this.options.trajectories&&(id!=='tip'||keys.some(k=>k.constraints.grip));
+      // `capturing` wins over the option: a pending docDirty rebuild during a
+      // still/sheet export must not re-show editor overlays mid-capture.
+      line.visible=!this.capturing&&this.options.trajectories&&(id!=='tip'||keys.some(k=>k.constraints.grip));
     }
     // Contact markers: racket-head position at each contact key.
     for(const m of this.contactMarkers){this.scene.remove(m);m.geometry.dispose();}
@@ -239,16 +367,43 @@ export class WorkshopEngine{
       const ring=new Mesh(new RingGeometry(.035,.042,28),new MeshBasicMaterial({color:0xf0b429,side:DoubleSide,depthTest:false,transparent:true,opacity:.8}));
       ring.rotation.x=-Math.PI/2;ring.renderOrder=21;ball.add(ring);
       const h:Handle={kind:'contact',mesh:ball,keyId:k.id};ball.userData.ref=h;ball.userData.handle=true;
+      ball.visible=!this.capturing; // rebuilt markers default visible — keep them out of an in-flight capture
       this.contactMarkers.push(ball);this.scene.add(ball);
     }
     this.solveFrame(save);this.latestFrame=save;
     if(this.racket)this.racket.visible=save.gripAmount>0;
     this.updateHandles(save);
     this.docDirty=false;
+    // The document behind the ghost poses may have changed even when the
+    // ghost instants did not — flag the next updateOnion to re-solve.
+    this.onionStale=true;
+  }
+  /** Re-solve ghost poses only when their instant signature changes, or when
+   * rebuildAux flagged a document edit. Every ghost goes through the same
+   * frameAt+solveEffectiveFrame path as the trajectory sampler, records each
+   * bone's world position, then restores the playhead pose on the live rig. */
+  private updateOnion(){
+    // Captures pin ghosts hidden but keep the signature cache — the first
+    // post-capture frame resumes without a needless re-solve.
+    if(this.capturing){for(const l of this.onionLines)l.visible=false;return;}
+    if(!this.options.onion||!this.rig){for(const l of this.onionLines)l.visible=false;this.onionSig='';this.onionStale=false;return;}
+    const doc=this.getDoc(),times=onionTimes(doc,this.time,this.options);
+    const sig=[this.options.onionMode,this.options.onionCount,this.options.onionStep,times.map(t=>`${t.dir}${t.dist}@${t.time.toFixed(6)}`).join(',')].join('|');
+    if(sig===this.onionSig&&!this.onionStale)return;
+    for(const l of this.onionLines)l.visible=false;
+    for(const t of times){
+      const line=this.onionLines[t.dir<0?t.dist-1:ONION_MAX+t.dist-1];if(!line)continue;
+      this.solveFrame(this.frameAtTime(doc,t.time));
+      const a=line.geometry.getAttribute('position');
+      this.onionSegs.forEach((b,i)=>{const p=this.rig!.point(b.name),q=this.rig!.point(b.parent);a.setXYZ(i*2,p.x,p.y,p.z);a.setXYZ(i*2+1,q.x,q.y,q.z);});
+      a.needsUpdate=true;line.visible=true;
+    }
+    this.solveFrame(this.frameAtTime(doc,this.time));
+    this.onionSig=sig;this.onionStale=false;
   }
   private updateBalance(a:Analysis){
     if(!this.comMarker||!this.comLine||!this.supportLoop)return;
-    const on=this.options.balance;
+    const on=this.options.balance&&!this.capturing;
     this.comMarker.visible=on;this.comLine.visible=on;
     this.comMarker.position.copy(a.com);
     this.comLine.geometry.dispose();this.comLine.geometry=new BufferGeometry().setFromPoints([a.com,new Vector3(a.com.x,0,a.com.z)]);
@@ -271,6 +426,146 @@ export class WorkshopEngine{
     this.controls.target.copy(target);this.camera.lookAt(target);this.controls.update();
   }
   resize(){const w=this.host.clientWidth,h=this.host.clientHeight;if(!w||!h)return;this.camera.aspect=w/h;this.camera.updateProjectionMatrix();this.renderer.setSize(w,h);}
+  /* ---------- fixed-camera render export ---------- */
+  /** Render the pose at `t` to a fixed-size PNG (STILL_WIDTH×STILL_HEIGHT)
+   * through a fixed camera preset — deterministic output parameters: the
+   * same document + time + view always produce the same image, independent
+   * of the live viewport and the user's orbit.
+   *
+   * Flow: pause → snapshot transport/camera/overlay visibility → seek(t) +
+   * solve + render + toBlob inside one task → restore everything.
+   * `preserveDrawingBuffer:true` is already on, so toBlob (which snapshots at
+   * call time) reliably reads back the frame we just rendered.
+   *
+   * Overlay policy: a still is for pose review, so editor furniture — drag
+   * handles, trajectory lines, contact markers, onion ghosts, CoM/support
+   * gizmos — is hidden by default (`opts.overlays:true` keeps it). Hiding
+   * toggles Object3D.visible directly, deliberately NOT through
+   * WorkshopOptions/docDirty: an export must not trigger rebuildAux and its
+   * document-level side effects. Between the awaits of a captureSheet the
+   * `capturing` hold (a depth count — the sheet's outer session keeps it
+   * raised through every inter-tile gap and the sheet's own toBlob) keeps
+   * the animate loop from re-showing them, and the CaptureMutex refuses a
+   * second programmatic capture outright instead of interleaving state. */
+  async captureStill(t:number,opts:CaptureOptions={}):Promise<Blob>{
+    if(!this.ready||!this.rig)throw new Error('模型尚未加载完成，无法渲染静帧');
+    return this.captureMutex.run(()=>this.renderStill(t,opts));
+  }
+  /** captureStill's render path without the mutex — a contact sheet already
+   * holds the gate, so its per-tile stills re-enter through here. */
+  private async renderStill(t:number,opts:CaptureOptions):Promise<Blob>{
+    const saved=this.beginCapture(opts);
+    try{
+      this.seek(t);this.solveCurrent();
+      this.setView(opts.view??CAPTURE_VIEW);
+      this.renderer.render(this.scene,this.camera);
+      const blob=await new Promise<Blob|null>(res=>this.renderer.domElement.toBlob(res,'image/png'));
+      if(!blob)throw new Error('静帧编码失败：canvas.toBlob 返回空');
+      return blob;
+    }finally{this.endCapture(saved);}
+  }
+  /** Keyframe contact sheet: one still tile per instant (default: all key
+   * times, decimated by sheetTimes beyond SHEET_MAX_TILES) composed on an
+   * offscreen 2D canvas as a SHEET_COLS-wide grid with a per-tile timestamp
+   * caption — one deterministic PNG for whole-motion pose review. Every tile
+   * shares the still's fixed camera preset, output size and overlay policy,
+   * so a sheet cell is exactly what a single still would be. */
+  async captureSheet(times?:number[],opts:CaptureOptions={}):Promise<Blob>{
+    if(!this.ready||!this.rig)throw new Error('模型尚未加载完成，无法渲染拼图');
+    return this.captureMutex.run(async()=>{
+      /* Pin the document for the whole sheet: getDoc() reads the live library
+       * slot, and a doc switch or in-place edit landing between the per-tile
+       * awaits (toBlob/createImageBitmap yield to the event loop, where React
+       * can still run) would silently mix two document versions into one
+       * image. A serialized→parsed copy freezes content and identity;
+       * swapping the provider makes every tile's renderStill solve through
+       * it. Restored in finally so a mid-sheet failure can't leave the
+       * engine on the stale doc. */
+      const frozen=parseDoc(serializeDoc(this.getDoc()));
+      const ts=sheetTimes(times??sortedKeys(frozen).map(k=>k.time));
+      if(!ts.length)throw new Error('文档没有关键时刻，无法生成拼图');
+      const cols=Math.min(SHEET_COLS,ts.length),rows=Math.ceil(ts.length/cols);
+      const sheet=document.createElement('canvas');
+      sheet.width=cols*STILL_WIDTH;sheet.height=rows*(STILL_HEIGHT+SHEET_LABEL_H);
+      const ctx=sheet.getContext('2d');if(!ctx)throw new Error('无法创建 2D 拼图画布');
+      ctx.fillStyle='#f5f7fa';ctx.fillRect(0,0,sheet.width,sheet.height);
+      /* The whole sheet runs inside ONE outer capture session: `capturing`
+       * is held from here through the sheet's own toBlob (the depth count
+       * only falls when this last endCapture runs), so the between-tile
+       * awaits can no longer drop the flag — a mid-sheet pointerdown can't
+       * start a drag, and the animate loop can't re-show overlays. Per-tile
+       * renderStill calls still take their own begin/end snapshots
+       * (view/camera/transport — restored LIFO per tile); what stays held is
+       * the flag and the frozen document provider. */
+      const outer=this.beginCapture(opts);
+      const restoreDoc=this.getDoc;this.getDoc=()=>frozen;
+      try{
+        for(let i=0;i<ts.length;i++){
+          const x=(i%cols)*STILL_WIDTH,y=Math.floor(i/cols)*(STILL_HEIGHT+SHEET_LABEL_H);
+          const bmp=await createImageBitmap(await this.renderStill(ts[i],opts));
+          ctx.drawImage(bmp,x,y);bmp.close();
+          ctx.fillStyle='#eef1f6';ctx.fillRect(x,y+STILL_HEIGHT,STILL_WIDTH,SHEET_LABEL_H);
+          ctx.fillStyle='#33415c';ctx.font='600 13px "DM Sans",system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+          ctx.fillText(`t = ${ts[i].toFixed(2)} s`,x+STILL_WIDTH/2,y+STILL_HEIGHT+SHEET_LABEL_H/2);
+          ctx.strokeStyle='#d6dce4';ctx.strokeRect(x+.5,y+.5,STILL_WIDTH-1,STILL_HEIGHT+SHEET_LABEL_H-1);
+        }
+        const blob=await new Promise<Blob|null>(res=>sheet.toBlob(res,'image/png'));
+        if(!blob)throw new Error('拼图编码失败：canvas.toBlob 返回空');
+        return blob;
+      }finally{this.getDoc=restoreDoc;this.endCapture(outer);}
+    });
+  }
+  /** Snapshot every piece of transport/camera/render state a capture touches
+   * (the snapshot records the PRE-pause values — endCapture's restore is what
+   * "the session continues where it was" means), then pin the capture
+   * contract: paused transport, pixelRatio 1, fixed buffer size and aspect. */
+  private beginCapture(opts:CaptureOptions):CaptureSnapshot{
+    const saved:CaptureSnapshot={
+      time:this.time,playing:this.playing,view:this.view,
+      cam:this.camera.position.clone(),target:this.controls.target.clone(),ratio:this.renderer.getPixelRatio(),
+      // Visibility is snapshotted per object so the restore is exact even for
+      // layers the loop only re-derives lazily (trajectories and contact
+      // markers update on docDirty rebuilds, not every frame).
+      overlays:!opts.overlays?{
+        handles:this.handleGroup.visible,
+        trajectories:[...this.trajectories.values()].map(l=>l.visible),
+        contacts:this.contactMarkers.map(m=>m.visible),
+        onion:this.onionLines.map(l=>l.visible),
+        balance:[this.comMarker,this.comLine,this.supportLoop].map(o=>o?.visible??false),
+      }:null,
+    };
+    this.setPlaying(false);
+    // Depth, not a flag: only the LAST endCapture (the outer session's, after
+    // a sheet's own toBlob) re-opens the overlay/drag windows.
+    this.captureDepth++;
+    if(saved.overlays){
+      this.handleGroup.visible=false;
+      for(const l of this.trajectories.values())l.visible=false;
+      for(const m of this.contactMarkers)m.visible=false;
+      for(const l of this.onionLines)l.visible=false;
+      for(const o of [this.comMarker,this.comLine,this.supportLoop])if(o)o.visible=false;
+    }
+    this.renderer.setPixelRatio(1);this.renderer.setSize(STILL_WIDTH,STILL_HEIGHT,false);
+    this.camera.aspect=STILL_WIDTH/STILL_HEIGHT;this.camera.updateProjectionMatrix();
+    return saved;
+  }
+  private endCapture(saved:CaptureSnapshot){
+    this.captureDepth=Math.max(0,this.captureDepth-1);
+    const o=saved.overlays;
+    if(o){
+      this.handleGroup.visible=o.handles;
+      [...this.trajectories.values()].forEach((l,i)=>{l.visible=o.trajectories[i];});
+      this.contactMarkers.forEach((m,i)=>{m.visible=o.contacts[i];});
+      this.onionLines.forEach((l,i)=>{l.visible=o.onion[i];});
+      [this.comMarker,this.comLine,this.supportLoop].forEach((m,i)=>{if(m)m.visible=o.balance[i];});
+    }
+    this.renderer.setPixelRatio(saved.ratio);this.resize(); // pixelRatio first — setSize multiplies by it
+    this.view=saved.view;
+    this.camera.position.copy(saved.cam);this.controls.target.copy(saved.target);this.controls.update();
+    this.time=Math.max(0,Math.min(this.getDoc().duration,saved.time));
+    this.playing=saved.playing;
+    this.solveCurrent();this.notify(true);
+  }
   private animate=()=>{
     if(this.disposed)return;this.raf=requestAnimationFrame(this.animate);
     const dt=Math.min(this.clock.getDelta(),.1);
@@ -283,6 +578,9 @@ export class WorkshopEngine{
         else if(this.time>=doc.duration){this.time=doc.duration;this.playing=false;this.notify(true);}
       }
       if(this.docDirty&&!this.drag)this.rebuildAux();
+      // Ghosts freeze mid-drag like every other aux layer; step mode still
+      // follows the playhead each frame through this same signature-gated call.
+      if(!this.drag)this.updateOnion();
       this.solveCurrent();
       const a=this.rig?analyzePose(this.rig,this.latestFrame!.pose,this.latestFrame!.constraints,this.racket):undefined;
       if(a)this.updateBalance(a);

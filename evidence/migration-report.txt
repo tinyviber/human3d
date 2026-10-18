@@ -1,5 +1,5 @@
 # Authored → workshop-motion migration report
-Measured against solver 0.3.0 (SERVICE_VERSION) — replay path: envelope → normalizeMotionFile → frameAt → solveEffectiveFrame.
+Measured against solver 0.4.0 (SERVICE_VERSION) — replay path: envelope → normalizeMotionFile → frameAt → solveEffectiveFrame.
 
 ## idle (自然站立) — 42 keys · 42 instants × 163 bones
 quat angle diff (deg):  max 0.000 · p95 0.000 · mean 0.000

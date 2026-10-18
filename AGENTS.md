@@ -10,7 +10,7 @@
 ## 项目验证命令
 
 - `npx tsc -b` — 类型检查（CI 门禁）
-- `npm test` — vitest（185 项，CI 门禁）
+- `npm test` — vitest（253 项，CI 门禁）
 - `npm run spec:check` — 契约测试：Ajv 严格编译、OpenAPI 与服务一致、golden 样例（CI 门禁）
 - `npm run build` — 生产构建（CI 门禁）
 - `npm run qa` — 浏览器 E2E（需先 `npm run dev`；无本地 Playwright 浏览器时用 `QA_BROWSER_CHANNEL=chrome npm run qa` 走系统 Chrome；未进 CI）
@@ -28,7 +28,9 @@
 - 离地帧（`plant=false` 紧跟支撑）时刻脚仍在接触点，其存储脚位是**后续区间的摆动中点**；贴地存储 = 有意拖步。
 - 姿态包 `timestamps.at(-1) === duration` 恒成立；包 `id` 是制品身份（请求指纹 + 定义 + rig + solver 哈希），`provenance.requestFingerprint` 是请求身份。
 - 工作台「导出姿态包」≡ 同文档 `POST /v1/motions` 响应：共享 `buildPosePackageLocal`/`solveWorkshop`/`validatePosePackage` 路径，对等测试逐字节钉死；GLB 为派生品不承载身份契约——`animations[0].name` 与文件名都借用制品 id 便于对应，非内容寻址声明。
-- 实验室打开姿态包经 `posePackageSpec` 派生 spec：bundled 包按 `action.id` 取信封（capabilities/name/phases），adhoc 包读 `action.parameters.presentation`（`documentName`/`prop`/`loop`）；v2 包不携带逐帧握拍量，道具按包级 hint 常量显示（`wantsProp` 上限）。
+- 实验室打开姿态包经 `posePackageSpec` 派生 spec：bundled 包按 `action.id` 取信封（capabilities/name/phases），adhoc 包读 `action.parameters.presentation`（`documentName`/`prop`/`loop`/`gripSide`）；v2 包不携带逐帧握拍量，道具按包级 hint 常量显示（`wantsProp` 上限）。
+- 工作台文档 `gripSide`（`'R'|'L'`）决定握拍侧：缺省 = 右手且为规范形态（显式 `'R'` 在 `normalizeDoc` 折叠回缺省 → 同义写法共享指纹）；`'L'` 将指节包裹、腕锥限位、抬肩辅助与球拍挂载镜像到左手。侧别改变求解轨迹 → 属于文档并进入请求指纹；`presentation.gripSide` 只是给实验室 prop 挂载的同值提示。
+- `mirrorDoc` 以 x=0 平面整档镜像（同一动作换边）：所有侧别字段 L↔R 对调 + 位置/方向向量 x→−x，yaw 类（骨盆 yaw、chest/side、脚 yaw）取反而 lean/脚 pitch 保持，`gripSide` 翻转、`handFrames` 随手换侧；id/name/english 用可回切后缀，故 mirror∘mirror 对规范字段序的文档逐字节相等；撤销在新文档书上预存源快照 → 一步选回原文档（跨文档恢复只做选择切换，快照内容绝不写回异 id 文档）。
 
 ## 测试与验证策略
 

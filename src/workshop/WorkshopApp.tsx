@@ -1,11 +1,11 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,FlipHorizontal2,LayoutGrid,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from './document';
-import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,nearestKey,normalizeDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
+import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,setKeyTime,sortedKeys} from './document';
 import {MotionLibrary} from './library';
 import {HistoryBook,RecordGate} from './history';
 import {clampDuration,WORKSHOP_LIMITS} from './limits';
@@ -86,7 +86,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // crypto.subtle exists only on secure origins (https / localhost); without it
  // the digest would have to be fabricated, so the export degrades instead.
  const subtleOk=typeof globalThis.crypto?.subtle?.digest==='function';
- const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true});
+ // Session-only display toggles (never persisted) — same convention as the
+ // engine's WorkshopOptions defaults.
+ const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys' as 'keys'|'step',onionStep:.1});
  const [videoUrl,setVideoUrl]=useState('');const [sync,setSync]=useState(false);const syncOffset=useRef(0);const [videoPlaying,setVideoPlaying]=useState(false);
  useEffect(()=>{
   if(!mount.current)return;let e:WorkshopEngine;
@@ -124,13 +126,49 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   else if(Math.abs(el.currentTime-target)>.05)el.currentTime=target;
  },[frame,sync]);
  const L=lib.current!;
+ // Deleting a document drops its undo book with it — a doc that later reuses
+ // the id (re-import of the same file) must not inherit the deleted doc's
+ // snapshots and have undo resurrect stale content under the new doc.
+ L.onRemoved=id=>books.current.drop(id);
  /** Snapshot before an edit. Edits within 600 ms on the SAME document (a slider
   * drag) share one undo step; another document or a gap always starts a new one. */
  const recordBefore=(doc:WorkshopDoc)=>{if(gate.current.should(doc.id,performance.now()))books.current.of(doc.id).record(doc);};
  const edit=(fn:(d:WorkshopDoc)=>void)=>{recordBefore(L.active());fn(L.active());L.save();engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
- const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return;L.docs[i]=next;L.save();gate.current.reset();wristEpoch.current++;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);};
- const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(prev)applyDoc(prev);};
- const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(next)applyDoc(next);};
+ /** Write a history-restored document back under its own id. Returns false
+  * when that id no longer exists in the library (deleted meanwhile). */
+ const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return false;L.docs[i]=next;L.save();gate.current.reset();wristEpoch.current++;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);return true;};
+ /* A history step can restore a DIFFERENT library document: the mirrored
+  * document's first undo step is the source document it was made from.
+  * A cross-document snapshot is POINTER semantics — it only moves the
+  * selection, its content is NEVER written back: the library copy may carry
+  * edits newer than the moment the snapshot was taken (the mirror seeds the
+  * source's state at mirror time), and writing it back would silently erase
+  * those post-mirror edits. The departing doc's current state is still
+  * deposited on the target book's opposite stack, keeping undo/redo
+  * symmetric across the switch (the departing doc also keeps its own copy
+  * of the step, pushed by DocHistory itself). applyDoc — the same-document
+  * overwrite — runs only when the restored id IS the active document's own:
+  * a doc's own history restoring itself is the correct write. A restored id
+  * that no longer names a library document is skipped WITH a hint —
+  * silently consuming it would look like undo doing nothing. */
+ const undo=()=>{
+  const cur=L.active(),prev=books.current.of(cur.id).undo(cur);
+  if(!prev)return;
+  if(prev.id!==cur.id){
+   if(!L.docs.some(x=>x.id===prev.id)){setHint(`撤销的目标文档「${prev.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}
+   books.current.of(prev.id).pushFuture(cur);gate.current.reset();selectDoc(prev.id);return;
+  }
+  applyDoc(prev);
+ };
+ const redo=()=>{
+  const cur=L.active(),next=books.current.of(cur.id).redo(cur);
+  if(!next)return;
+  if(next.id!==cur.id){
+   if(!L.docs.some(x=>x.id===next.id)){setHint(`重做的目标文档「${next.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}
+   books.current.of(next.id).pushPast(cur);gate.current.reset();selectDoc(next.id);return;
+  }
+  applyDoc(next);
+ };
  shortcuts.current={undo,redo};
  useEffect(()=>{
   // Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes. Text fields keep their native undo.
@@ -155,6 +193,20 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const selectDoc=(id:string)=>{const doc=L.select(id);setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const createDoc=()=>{const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
+ // Mirror across x=0 (same motion on the other side): the mirrored document
+ // enters the library as a NEW doc (the source stays untouched) carrying the
+ // '.mirrored'/' · 镜像' markers, and becomes the active edit target. One undo
+ // step is seeded on the new document's book — its first "previous state" is
+ // the source it was mirrored from, so 撤销 lands back on the source.
+ const mirrorActiveDoc=()=>{
+  const src=L.active(),m=mirrorDoc(src);
+  while(L.docs.some(x=>x.id===m.id))m.id=newDocId(m.name); // a second mirror of the same source regenerates
+  const added=L.add(m);
+  books.current.of(added.id).record(src); // seed under the id that actually entered the library
+  setSelected(sortedKeys(added)[0]?.id??'');
+  engine.current?.setPlaying(false);engine.current?.seek(0);engine.current?.markDirty();
+  bump(v=>v+1);setHint(`已生成镜像动作「${added.name}」——左右互换，原文档保留在动作库中。`);
+ };
  const removeDoc=(id:string)=>{const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const addKey=()=>{
   if(d.keys.length>=WORKSHOP_LIMITS.maxKeys&&!nearestKey(d,frame.time)){setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，请先删除不再需要的关键帧。`);return;}
@@ -222,6 +274,31 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   }catch(err){setHint(err instanceof Error?err.message:String(err));}
   finally{setExporting(false);}
  };
+ // WP-D fixed-camera render export: the engine owns the whole pause →
+ // snapshot → seek+solve+render+toBlob → restore dance (captureStill /
+ // captureSheet), so a render never disturbs playback, view or overlay state;
+ // the app only turns the returned PNG blob into a named download. No !info
+ // gate — like solvePackage, a premature click lands on the engine's own
+ // readable error.
+ const exportStill=async()=>{
+  const e=engine.current;if(!e){setHint('模型尚未加载完成，无法导出。');return;}
+  setExporting(true);
+  try{
+   const t=e.time;
+   download(`${d.id}.t${t.toFixed(2)}.png`,await e.captureStill(t));
+   setHint(`已导出静帧 t=${t.toFixed(2)}s（640×720 · 固定 45° 相机 · 无编辑器叠加物）`);
+  }catch(err){setHint(err instanceof Error?err.message:String(err));}
+  finally{setExporting(false);}
+ };
+ const exportSheet=async()=>{
+  const e=engine.current;if(!e){setHint('模型尚未加载完成，无法导出。');return;}
+  setExporting(true);
+  try{
+   download(`${d.id}.sheet.png`,await e.captureSheet());
+   setHint('已导出关键帧拼图（每格 640×720 · 固定 45° 相机 · 无编辑器叠加物）');
+  }catch(err){setHint(err instanceof Error?err.message:String(err));}
+  finally{setExporting(false);}
+ };
  // Motion-file envelopes unwrap to their embedded WorkshopDoc first —
  // a bare envelope's schemaVersion:1 would otherwise be misread as a v1 doc;
  // clip-motion envelopes carry no document and unwrap throws a readable error.
@@ -260,11 +337,20 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <Row label="循环播放" detail={loopBlockers(d).join('；')||'首帧位于 0 s，末帧早于时长'} checked={d.loop} disabled={!d.loop&&loopBlockers(d).length>0} onChange={v=>edit(dd=>{if(v&&loopBlockers(dd).length)return;dd.loop=v;})}/>
      <label className="ws-field"><span>左手坐标系</span><select value={d.handFrames.L} onChange={e=>edit(dd=>{dd.handFrames.L=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
      <label className="ws-field"><span>右手坐标系</span><select value={d.handFrames.R} onChange={e=>edit(dd=>{dd.handFrames.R=e.target.value as HandFrame;})}><option value="pelvis">骨盆坐标（推荐）</option><option value="world">世界坐标（旧版）</option></select></label>
+     {/* The whole grip stage — finger wrap, wrist cone, clavicle assist and
+         the racket mount — mirrors onto the selected side; 'R' stores the
+         canonical absent value so serialized docs keep their legacy bytes. */}
+     <label className="ws-field"><span>握拍侧</span><select value={d.gripSide??'R'} onChange={e=>edit(dd=>{dd.gripSide=e.target.value==='L'?'L':undefined;})}><option value="R">右手（默认）</option><option value="L">左手</option></select></label>
      <Row label="抬肩辅助" detail="手高于胸口时锁骨与肩部随动上抬" checked={d.clavicleLift===true} onChange={v=>edit(dd=>{dd.clavicleLift=v||undefined;})}/>
      <div className="ws-row">
       <button onClick={exportDoc}><Download size={13}/>导出 JSON</button>
       <button onClick={()=>importRef.current?.click()}><Upload size={13}/>导入</button>
       <input ref={importRef} type="file" accept=".json,application/json" hidden onChange={e=>{const f=e.target.files?.[0];if(f)void importDoc(f);e.target.value='';}}/>
+     </div>
+     <div className="ws-row">
+      {/* x=0 平面整档镜像：同一动作换边（右手正手→左手正手）。产出入库并选
+          中，原文档保留；撤销一步回到镜像前的文档。 */}
+      <button onClick={mirrorActiveDoc} title="生成当前动作的左右镜像副本（换握拍侧，几何 x→−x）"><FlipHorizontal2 size={13}/>镜像动作</button>
      </div>
      <div className="ws-sub"><h3>姿态包 <small>本地求解 · 与服务同一条管线</small></h3>
       <label className="ws-field"><span>采样率 fps</span><input type="number" min={1} max={60} step={1} value={exportFps} disabled={!subtleOk||exporting} onChange={e=>setExportFps(Math.max(1,Math.min(60,Math.round(Number(e.target.value)||40))))}/></label>
@@ -277,6 +363,13 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
       {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'#c0392b'}}>上一次导出被语义校验拒绝，未生成文件：</p>
        <ul>{pkgProblems.items.map((p,i)=><li key={i}>{p}</li>)}</ul></div>:null}
+     </div>
+     <div className="ws-sub"><h3>静帧渲染 <small>固定相机预设 · 固定出图尺寸</small></h3>
+      <div className="ws-row">
+       <button onClick={()=>void exportStill()} disabled={exporting} title="以固定 45° 相机渲染当前时刻，640×720 PNG"><Camera size={13}/>渲染静帧</button>
+       <button onClick={()=>void exportSheet()} disabled={exporting} title="每个关键帧时刻渲染一格拼成单张 PNG；超过 12 帧时均匀抽 12 格"><LayoutGrid size={13}/>关键帧拼图</button>
+      </div>
+      <p className="ws-note">固定相机预设与固定出图尺寸（640×720 PNG），导出图像不含编辑器手柄等叠加物；播放与视角在导出后原样恢复。</p>
      </div>
     </section>
     <section className="ws-card"><h2>参考视频 <small>WHAM 自动估计待接入</small></h2>
@@ -322,7 +415,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        {(()=>{const ks=sortedKeys(d),si=ks.findIndex(k=>k.id===sel.id);
         return si===ks.length-1&&si>0&&((ks[si-1].constraints.plantL&&!sel.constraints.plantL)||(ks[si-1].constraints.plantR&&!sel.constraints.plantR))
           ?<p className="ws-note" style={{color:'#c0392b'}}>此离地帧位于动作末尾：没有后续区间，脚始终停在接触点 —— 请在其后添加关键帧，抬升高度才会形成摆动轨迹。</p>:null;})()}
-       <Row label="右手握拍" checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>
+       <Row label={d.gripSide==='L'?'左手握拍':'右手握拍'} checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>
        <Row label="触球 / 接触事件" detail="记录拍头位置为接触点" checked={sel.constraints.contact} onChange={v=>editSelected(k=>{k.constraints.contact=v;})}/>
       </div>
       <div className="ws-sub"><h3>躯干与骨盆</h3>
@@ -368,6 +461,12 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <Row label="编辑手柄" checked={opts.handles} onChange={v=>{setOpts(o=>({...o,handles:v}));engine.current?.setOptions({handles:v});}}/>
      <Row label="运动轨迹线" checked={opts.trajectories} onChange={v=>{setOpts(o=>({...o,trajectories:v}));engine.current?.setOptions({trajectories:v});}}/>
      <Row label="重心 / 支撑" checked={opts.balance} onChange={v=>{setOpts(o=>({...o,balance:v}));engine.current?.setOptions({balance:v});}}/>
+     <Row label="洋葱皮" detail="叠加前后姿态的幽灵骨架线框" checked={opts.onion} onChange={v=>{setOpts(o=>({...o,onion:v}));engine.current?.setOptions({onion:v});}}/>
+     {opts.onion?<>
+      <label className="ws-field"><span>数量</span><input type="number" min={1} max={3} step={1} value={opts.onionCount} onChange={e=>{const v=Math.max(1,Math.min(3,Math.round(Number(e.target.value)||1)));setOpts(o=>({...o,onionCount:v}));engine.current?.setOptions({onionCount:v});}}/></label>
+      <label className="ws-field"><span>模式</span><select value={opts.onionMode} onChange={e=>{const v=e.target.value as 'keys'|'step';setOpts(o=>({...o,onionMode:v}));engine.current?.setOptions({onionMode:v});}}><option value="keys">相邻关键帧</option><option value="step">固定步长</option></select></label>
+      {opts.onionMode==='step'?<label className="ws-field"><span>步长 s</span><input type="number" min={.02} max={1} step={.02} value={opts.onionStep} onChange={e=>{const v=Math.max(.02,Math.min(1,Number(e.target.value)||.1));setOpts(o=>({...o,onionStep:v}));engine.current?.setOptions({onionStep:v});}}/></label>:null}
+     </>:null}
     </section>
    </aside>
   </main>

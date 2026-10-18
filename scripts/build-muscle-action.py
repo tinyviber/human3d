@@ -8,13 +8,13 @@ ROOT = Path(__file__).resolve().parents[1]
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('action_id', help='action JSON basename in assets/actions')
+    parser.add_argument('action_id', help='dynamics-motion envelope basename in assets/motions')
     action_id = parser.parse_args().action_id
 
     validation = runpy.run_path(str(ROOT / 'scripts/validate-action-spec.py'))
     validation['validate_archive']()
     print('Validated full MyoSim archive.', flush=True)
-    print('Action spec:', validation['validate_action'](ROOT / f'assets/actions/{action_id}.json'), flush=True)
+    print('Action spec:', validation['validate_action'](ROOT / f'assets/motions/{action_id}.json'), flush=True)
 
     preparation = runpy.run_path(str(ROOT / 'scripts/prepare-muscle-actions.py'))
     preparation['configure_action'](action_id)
@@ -37,7 +37,7 @@ def main():
     print('Reduced-capacity forward simulation:', weak_run['peaks'], flush=True)
     print('Baseline audit:', baseline['audit'], flush=True)
     print('Capacity perturbation audit:', weak['audit'], flush=True)
-    print('Run `npm run build` to include this JSON-defined action in the web catalog.', flush=True)
+    print('Add the envelope to MOTION_FILES static imports and run `npm run build` to include this action in the web catalog.', flush=True)
 
 
 if __name__ == '__main__':

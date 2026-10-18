@@ -2,7 +2,16 @@ import {chromium} from 'playwright';
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 
-const throwSpec=JSON.parse(fs.readFileSync('assets/actions/baseball-throw.json','utf8'));
+const envelope=id=>JSON.parse(fs.readFileSync(`assets/motions/${id}.json`,'utf8'));
+const throwEnv=envelope('baseball-throw'),punchEnv=envelope('punch');
+assert.equal(throwEnv.kind,'dynamics-motion');assert.equal(punchEnv.kind,'dynamics-motion');
+const throwSpec=throwEnv.dynamics.action;
+// The envelope's records URLs are the runtime contract: assert each file
+// actually exists under public/ so path drift fails before the browser run.
+for(const env of [throwEnv,punchEnv])
+ for(const [profile,ref] of Object.entries(env.dynamics.records))
+  for(const url of [ref.meta,ref.data])
+   assert.ok(fs.existsSync(`public${url}`),`${env.id}: dynamics.records.${profile} target missing: ${url}`);
 const throwTime=(phase)=>throwSpec.simulation.leadSeconds+throwSpec.reference.keyframes.find(frame=>frame.phase===phase).timeSeconds/throwSpec.simulation.referenceSpeedScale;
 
 const browser=await chromium.launch({headless:true,...(process.env.QA_BROWSER_CHANNEL?{channel:process.env.QA_BROWSER_CHANNEL}:{})});
@@ -161,7 +170,7 @@ try{
  const peak=fist.frames.find(f=>f.time===1.7),hold=fist.frames.find(f=>f.time===1.975);result.checks.fistJointTargets=peak.skinMcp3Deg>45&&peak.skinPip3Deg>55&&peak.skinDip3Deg>25&&peak.thumbIndexContactM<.015;
  result.checks.wristMotion=Math.max(...fist.frames.map(f=>f.pronationDeg))-Math.min(...fist.frames.map(f=>f.pronationDeg))>10;
  result.checks.wristFlexesDuringPunch=Math.max(...fist.frames.map(f=>f.wristFlexionDeg))-Math.min(...fist.frames.map(f=>f.wristFlexionDeg))>3;
- const punchSpec=JSON.parse(fs.readFileSync('assets/actions/punch.json','utf8'));
+ const punchSpec=punchEnv.dynamics.action;
  const punchKey=phase=>punchSpec.reference.keyframes.find(frame=>frame.phase===phase).jointTargetsDeg;
  result.checks.wristAlignedAtExtension=punchSpec.display.handPoseSource==='task-keyframe-retarget'&&Math.abs(punchKey('full-extension').flexion_r)<=10&&peak.skinWristBendFromRestDeg<15&&hold.skinWristBendFromRestDeg<15;
  const throwRelease=result.chain.find(row=>row.time===throwTime('release'));

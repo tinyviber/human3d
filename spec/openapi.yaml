@@ -176,7 +176,8 @@ components:
                 (`parameters` in GET /v1/actions/{actionId}). Bundled actions
                 accept only `{}`. `workshop-doc` requires `document`: WorkshopDoc
                 JSON (named keyframes with pose targets and plant/grip/contact
-                constraints; optional document flags such as `clavicleLift`;
+                constraints; optional document flags such as `clavicleLift` and
+                `gripSide` — 'R'|'L', default 'R', which hand holds the racket;
                 at most 10 s and 120 keys). Documents with
                 schemaVersion 1 are upgraded on input.
         rig:

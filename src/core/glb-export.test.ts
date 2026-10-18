@@ -3,6 +3,11 @@ import fs from 'node:fs';
 import {AnimationMixer,Quaternion,Vector3,type AnimationClip,type Bone,type Group} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {exportGlb,posePackageToClip} from './glb-export';
+import {solveWorkshop} from './pose-package';
+import {HumanRig} from './rig';
+import {motionFileById} from './motion-files';
+import {WORKSHOP_REVISION,workshopMeta} from './protocol';
+import {blankDocument,type WorkshopDoc} from '../workshop/document';
 import {buildRigManifest,sha256,type RigManifest} from '../server/rig-manifest';
 import {installFileReaderShim} from '../../scripts/lib/filereader-shim.mts';
 import type {PosePackage} from './pose-package';
@@ -15,13 +20,18 @@ import type {PosePackage} from './pose-package';
  * of the package (the same second-implementation pattern motion-source.test
  * uses against PosePackageSource). A tampered-package control proves the
  * roundtrip binds the file bytes, not the package in memory. */
-let humanGlb:ArrayBuffer,manifest:RigManifest,golden:PosePackage;
+let humanGlb:ArrayBuffer,manifest:RigManifest,golden:PosePackage,rig:HumanRig;
 beforeAll(async()=>{
  const bytes=fs.readFileSync('public/models/human.glb');
  humanGlb=bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength);
  const rigJsonBytes=fs.readFileSync('public/models/rig.json');
- manifest=buildRigManifest(JSON.parse(rigJsonBytes.toString('utf8')),sha256(rigJsonBytes));
+ const rigJson=JSON.parse(rigJsonBytes.toString('utf8'));
+ manifest=buildRigManifest(rigJson,sha256(rigJsonBytes));
  golden=JSON.parse(fs.readFileSync('spec/examples/idle.pose.json','utf8'));
+ // The SOLVING rig gets its own parse — bake() re-parses a clean model every
+ // time, and a rig mutated by solveWorkshop must never double as the export
+ // surface (the live-rig contamination rule above).
+ rig=new HumanRig((await new GLTFLoader().parseAsync(humanGlb,'')).scene,rigJson);
  installFileReaderShim(); // GLTFExporter's binary path reads Blobs via FileReader
 },30000);
 
@@ -166,5 +176,73 @@ describe('exportGlb — golden package through a clean model parse',()=>{
   const bad=await bake(corrupted);
   const {worst,bone}=worstDeviation(bad.scene,bad.clip,golden,TIMES);
   expect(worst,`worst bone ${bone}`).toBeGreaterThan(1e-3);
+ },60000);
+});
+
+/* Boundary coverage: each case runs the REAL chain end to end — a workshop
+ * document solved through capture (solveWorkshop), keyed verbatim into a
+ * clip, exported to GLB, re-parsed, and compared to the independent FK walk.
+ * The golden fixture alone could not exercise these edges: a non-integer
+ * duration×fps grid, wide rotations, simultaneous root translation+yaw, and
+ * a sub-second two-key document. */
+describe('exportGlb — boundary coverage',()=>{
+ /** The shared meta assembly every builder uses (workshopMeta), with the
+  * test manifest — the package identity fields are irrelevant to the GLB
+  * roundtrip but the package must be structurally real. */
+ const metaFor=(doc:WorkshopDoc,fps:number,tag:string)=>workshopMeta({
+  motionId:`mot_test-${tag}`,manifestSHA256:manifest.manifestSHA256,bones:manifest.bones.length,
+  actionId:'workshop-doc',revision:WORKSHOP_REVISION,definitionSHA256:'test-definition',
+  documentName:doc.name,prop:doc.keys.some(k=>k.constraints.grip),loop:doc.loop,
+  source:'glb-export.test',license:'test',requestFingerprint:'test',
+  fps,duration:doc.duration,keys:doc.keys.length});
+ const roundtrip=async(pkg:PosePackage,times:number[])=>{
+  const {scene,clip}=await bake(pkg);
+  const {worst,bone}=worstDeviation(scene,clip,pkg,times);
+  return {clip,worst,bone};
+ };
+ it('non-integer duration×fps keeps the exact terminal sample through GLB',async()=>{
+  const doc=blankDocument(rig.rest,'非整除','non-integer');
+  doc.duration=.8;doc.keys[1].time=.8;        // 0.8 s × 7 fps = 5.6 — partial last interval
+  const pkg=solveWorkshop(rig,doc,7,metaFor(doc,7,'noninteger'));
+  const ts=pkg.timeline.timestamps;
+  expect(pkg.timeline.count).toBe(7);         // ceil(5.6)+1 — the appended endpoint proves it
+  expect(ts.at(-1)).toBe(pkg.timeline.duration);
+  expect(ts.at(-2)!).toBeLessThan(pkg.timeline.duration);
+  // The appended endpoint makes the last interval a truncated remainder —
+  // the grid is deliberately non-uniform, pin that it is NOT a full 1/fps step.
+  expect(ts.at(-1)!-ts.at(-2)!).not.toBeCloseTo(1/7,6);
+  const {clip,worst,bone}=await roundtrip(pkg,[0,.35,.71,.799,.8]);
+  expect(clip.duration).toBeCloseTo(pkg.timeline.duration,4);
+  expect(worst,`worst bone ${bone}`).toBeLessThan(1e-3);
+ },60000);
+ it('a large-rotation envelope (forehand) roundtrips at 30fps',async()=>{
+  const file=motionFileById('forehand')!;
+  const doc=file.document!;
+  const pkg=solveWorkshop(rig,doc,30,metaFor(doc,30,'forehand'),file.phases);
+  const {clip,worst,bone}=await roundtrip(pkg,[0,1.3,2.55,3.35,5.2]);
+  expect(clip.duration).toBeCloseTo(pkg.timeline.duration,4);
+  expect(worst,`worst bone ${bone}`).toBeLessThan(1e-3);
+ },60000);
+ it('root translation and pelvis yaw changing together roundtrip',async()=>{
+  const doc=blankDocument(rig.rest,'平移转身','translate-turn');
+  // Second key: pelvis displaced in x/z AND turned — the root translation
+  // track and the rotation tracks must stay in lockstep through the container.
+  doc.keys[1].pose.root={x:.3,y:-.05,z:.2};doc.keys[1].pose.yaw=60;
+  const pkg=solveWorkshop(rig,doc,20,metaFor(doc,20,'translate-turn'));
+  const {clip,worst,bone}=await roundtrip(pkg,[0,.25,.5,.75,1]);
+  expect(worst,`worst bone ${bone}`).toBeLessThan(1e-3);
+  // The motion is real: the exported root genuinely moved — the roundtrip is
+  // not vacuously trivial on a static pose.
+  const T=pkg.tracks.translation.values;
+  expect(Math.hypot(T.at(-3)!-T[0],T.at(-2)!-T[1],T.at(-1)!-T[2])).toBeGreaterThan(.1);
+ },60000);
+ it('a 0.4 s two-key document roundtrips',async()=>{
+  const doc=blankDocument(rig.rest,'极短','tiny');
+  doc.duration=.4;doc.keys[1].time=.4;doc.keys[1].pose.yaw=25;
+  const pkg=solveWorkshop(rig,doc,40,metaFor(doc,40,'tiny'));
+  expect(pkg.timeline.count).toBe(17);        // 0.4 × 40 + 1
+  const {clip,worst,bone}=await roundtrip(pkg,[0,.2,.39,.4]);
+  expect(clip.duration).toBeCloseTo(.4,4);
+  expect(worst,`worst bone ${bone}`).toBeLessThan(1e-3);
  },60000);
 });

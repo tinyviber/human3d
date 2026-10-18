@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import path from 'node:path';
 import Ajv2020 from 'ajv/dist/2020.js';
 import {createContract,readSpec,type Contract} from './contract';
-import {normalizeMotionFile} from '../core/motion-file';
+import {motionDefinitionPayload,normalizeMotionFile,unwrapMotionFile} from '../core/motion-file';
+import {MOTION_FILES} from '../core/motion-files';
+import {MOTIONS,muscleActionById} from '../core/motions';
 import {load as loadYaml} from 'js-yaml';
 import {createService,handleRequest,LIMITS_SVC,type ServiceContext} from './service';
 import {ERROR_CODES} from './errors';
@@ -89,35 +91,110 @@ describe('forehand-study example (WP-C acceptance fixture)',()=>{
 });
 
 describe('motion file envelopes',()=>{
+ const dir=path.resolve('assets/motions');
+ const ajv=new Ajv2020({allErrors:true,strict:true});
+ const check=ajv.compile(JSON.parse(fs.readFileSync(path.join(dir,'motion.schema.json'),'utf8')));
+ const checkAction=ajv.compile(JSON.parse(fs.readFileSync(path.join(dir,'dynamics-action.schema.json'),'utf8')));
+ const readMotion=(name:string)=>JSON.parse(fs.readFileSync(path.join(dir,`${name}.json`),'utf8'));
  it('every assets/motions/*.json satisfies its published schema and normalizes',()=>{
-  const dir=path.resolve('assets/motions');
-  const ajv=new Ajv2020({allErrors:true,strict:true});
-  const check=ajv.compile(JSON.parse(fs.readFileSync(path.join(dir,'motion.schema.json'),'utf8')));
-  const files=fs.readdirSync(dir).filter(n=>n.endsWith('.json')&&n!=='motion.schema.json').sort();
-  expect(files).toEqual(['forehand.json','idle.json','reach.json','ready.json','squat.json','walk.json']);
+  const files=fs.readdirSync(dir).filter(n=>n.endsWith('.json')&&!n.endsWith('.schema.json')).sort();
+  expect(files).toEqual(['baseball-throw.json','forehand.json','idle.json','punch.json','reach.json','ready.json','squat.json','walk.json']);
   for(const name of files){
-   const raw=JSON.parse(fs.readFileSync(path.join(dir,name),'utf8'));
+   const raw=readMotion(name.replace('.json',''));
    expect(check(raw),`${name}: ${JSON.stringify(check.errors)}`).toBe(true);
    expect(()=>normalizeMotionFile(raw),name).not.toThrow();
   }
  });
- it('enforces the document/clip kind exclusivity on both schema and runtime validator',()=>{
-  const dir=path.resolve('assets/motions');
-  const ajv=new Ajv2020({allErrors:true,strict:true});
-  const check=ajv.compile(JSON.parse(fs.readFileSync(path.join(dir,'motion.schema.json'),'utf8')));
-  const idle=JSON.parse(fs.readFileSync(path.join(dir,'idle.json'),'utf8'));
-  const walk=JSON.parse(fs.readFileSync(path.join(dir,'walk.json'),'utf8'));
+ it('enforces the document/clip/dynamics kind exclusivity on both schema and runtime validator',()=>{
+  const idle=readMotion('idle');
+  const walk=readMotion('walk');
+  const throwMotion=readMotion('baseball-throw');
   const drop=(o:Record<string,unknown>,k:string)=>{const c={...o};delete c[k];return c;};
   const bad=[
    {...idle,clip:{url:'/x.json'}},          // workshop-motion carrying a clip
    {...walk,document:idle.document},       // clip-motion embedding a document
    drop(idle,'document'),                  // workshop-motion without document
    drop(walk,'clip'),                      // clip-motion without clip
+   {...throwMotion,document:idle.document},// dynamics-motion carrying a document
+   {...throwMotion,clip:{url:'/x.json'}},  // dynamics-motion carrying a clip
+   drop(throwMotion,'dynamics'),           // dynamics-motion without dynamics
+   {...throwMotion,name:'影子字段'},        // dynamics-motion writing a derived display field
   ];
   for(const b of bad){
    expect(check(b),JSON.stringify(check.errors)).toBe(false);
    expect(()=>normalizeMotionFile(b)).toThrow();
   }
+ });
+ it('refuses envelopes whose cross-field data disagrees',()=>{
+  const idle=readMotion('idle');
+  const walk=readMotion('walk');
+  // The JSON schema cannot express field-to-field consistency — the runtime
+  // validator is the gate. Assert the schema accepts these shapes so the
+  // runtime check is proven to add coverage rather than restate the schema.
+  const durationMismatch={...idle,duration:idle.duration+1};
+  expect(check(durationMismatch)).toBe(true);
+  expect(()=>normalizeMotionFile(durationMismatch)).toThrow(/不一致/);
+  const phasePastEnd={...idle,phases:[{time:idle.duration+.5,label:'越界'}]};
+  expect(check(phasePastEnd)).toBe(true);
+  expect(()=>normalizeMotionFile(phasePastEnd)).toThrow(/phases/);
+  // The same phases range applies to clip-motion envelopes.
+  const clipPhasePastEnd={...walk,phases:[{time:walk.duration+.5,label:'越界'}]};
+  expect(()=>normalizeMotionFile(clipPhasePastEnd)).toThrow(/phases/);
+  const negativePhase={...idle,phases:[{time:-.1,label:'负'}]};
+  expect(()=>normalizeMotionFile(negativePhase)).toThrow(/phases/);
+  // Legal envelopes are untouched by the new guards.
+  expect(()=>normalizeMotionFile(idle)).not.toThrow();
+  expect(()=>normalizeMotionFile(walk)).not.toThrow();
+ });
+ it('validates dynamics.action against the dynamics-action schema',()=>{
+  for(const name of ['baseball-throw','punch']){
+   const raw=readMotion(name);
+   expect(checkAction(raw.dynamics.action),`${name}: ${JSON.stringify(checkAction.errors)}`).toBe(true);
+  }
+ });
+ it('every dynamics.records URL resolves to a real public file',()=>{
+  // The envelope's records paths are the runtime fetch contract; assert the
+  // files exist so a path move without a records update fails here.
+  for(const f of MOTION_FILES.filter(f=>f.kind==='dynamics-motion')){
+   for(const ref of Object.values(f.dynamics!.records)){
+    for(const url of [ref.meta,ref.data])
+     expect(fs.existsSync(path.resolve('public',url.replace(/^\//,''))),`${f.id}: ${url}`).toBe(true);
+   }
+  }
+ });
+ it('derives the same dynamics MotionSpec display values the glob registry produced',()=>{
+  // Field-by-field baseline pinned from the pre-registry importer output
+  // (git show HEAD~:src/core/motions.ts actionMotions). Duration keeps the
+  // simulation-grid rounding; phases default from keyframe times.
+  const expected:Record<string,unknown>={
+   'baseball-throw':{id:'baseball-throw',name:'原地棒球式上手投掷',english:'IN-PLACE BASEBALL THROW · NO OBJECT',
+    duration:3.8120000000000003,
+    description:'原地棒球式上手投掷：先屈膝并让右手在头后蓄力，骨盆和胸廓依次转向，手臂向前伸展；释放时张开手指，无球，随后前屈随挥。',
+    method:'MyoSim 肌肉正向仿真 · 皮肤腕 / 手指按关节关键帧显示',
+    focus:['双脚固定、脚尖外展','髋盆先行、躯干滞后跟进','高位引臂、肘部逐步伸展','腕部后伸到屈曲、手指在释放时张开'],
+    phases:[{time:0.3,label:'准备'},{time:0.7166667,label:'引臂蓄力'},{time:1.1333333,label:'最大蓄力 / 肩外展'},{time:1.5,label:'蹬地与骨盆启动'},{time:1.8833333,label:'躯干跟进'},{time:2.3,label:'肩肘加速与释放'},{time:2.8833333,label:'随挥制动'},{time:3.4666667,label:'恢复'}],
+    oneShot:true},
+   punch:{id:'punch',name:'后手直拳 · 后下收拳',english:'MUSCLE-DRIVEN REAR-HAND STRAIGHT PUNCH',duration:3.2,
+    description:'后手直拳：出拳拳从同侧后下方收起，双腿稳定支撑、骨盆和躯干转动后，右拳沿自身肩线直线向前推出；左拳始终贴近脸侧护住下颌，肘部收在肋侧。击出后回收到紧凑的身体前侧待发位。',
+    method:'MyoSim 肌肉正向仿真 · 右拳关键帧跟踪 · 左拳闭合护架',
+    focus:['右拳后下方起势，不向身体外侧摆出','骨盆、躯干、肩肘依次加速','拳路以前向为主，肘腕保持同轴','左拳贴脸护架，肘部收住','双手 MCP / PIP / DIP 与拇指对掌'],
+    phases:[{time:0.2,label:'后下收拳 / 左拳护颊'},{time:0.48,label:'稳固蓄势'},{time:0.8,label:'骨盆启动'},{time:1.3,label:'躯干跟进'},{time:1.7,label:'直线伸拳'},{time:1.975,label:'短暂停留'},{time:2.575,label:'回收到护架'},{time:2.95,label:'紧凑回收'}],
+    oneShot:false},
+  };
+  for(const id of Object.keys(expected)){
+   const spec=MOTIONS.find(m=>m.id===id)!;
+   for(const [key,value]of Object.entries(expected[id] as Record<string,unknown>))
+    expect(spec[key as keyof typeof spec],`${id}.${key}`).toEqual(value);
+   const file=MOTION_FILES.find(f=>f.id===id)!;
+   expect(file.kind).toBe('dynamics-motion');
+   expect(spec.source).toEqual({kind:'dynamics',action:file.dynamics!.action,records:file.dynamics!.records});
+   expect(muscleActionById(id)).toBe(file.dynamics!.action);
+  }
+ });
+ it('refuses to unwrap or hash a dynamics-motion through the workshop pipeline',()=>{
+  const file=MOTION_FILES.find(f=>f.id==='baseball-throw')!;
+  expect(()=>unwrapMotionFile({...file})).toThrow(/dynamics-motion/);
+  expect(()=>motionDefinitionPayload(file)).toThrow(/dynamics-motion/);
  });
 });
 

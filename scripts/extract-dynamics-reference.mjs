@@ -3,7 +3,9 @@
 import fs from 'node:fs';
 import {BVHLoader} from 'three/addons/loaders/BVHLoader.js';
 import {Vector3,Quaternion,Group,AnimationMixer} from 'three';
-const actions=fs.readdirSync('assets/actions').filter(name=>name.endsWith('.json')&&name!=='action.schema.json').map(name=>JSON.parse(fs.readFileSync(`assets/actions/${name}`,'utf8')));
+const actions=fs.readdirSync('assets/motions').filter(name=>name.endsWith('.json')&&!name.endsWith('.schema.json'))
+ .map(name=>JSON.parse(fs.readFileSync(`assets/motions/${name}`,'utf8')))
+ .filter(envelope=>envelope.kind==='dynamics-motion').map(envelope=>envelope.dynamics.action);
 const captures=actions.filter(a=>a.reference.kind==='captured-points').map(a=>({id:a.reference.captureId,file:a.reference.source.motionFile,start:a.reference.source.frameRangeSeconds[0],end:a.reference.source.frameRangeSeconds[1],url:a.reference.source.url??a.reference.source.urls?.[0]}));
 const result={license:'Source-specific terms are recorded in each action specification; do not redistribute raw capture data outside those terms.',captures:{}};
 for(const spec of captures){

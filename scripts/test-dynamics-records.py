@@ -8,7 +8,8 @@ import mujoco
 import numpy as np
 
 ROOT = Path(__file__).resolve().parents[1]
-PUBLIC = ROOT / 'public/dynamics'
+PUBLIC = ROOT / 'public'
+MOTION_DIR = ROOT / 'assets/motions'
 
 
 def require(ok, message):
@@ -16,11 +17,31 @@ def require(ok, message):
         raise ValueError(message)
 
 
-def check(action_id, case):
+def dynamics_envelopes():
+    """Action id → motion envelope for every bundled dynamics-motion."""
+    result = {}
+    for path in sorted(MOTION_DIR.glob('*.json')):
+        if path.name.endswith('.schema.json'):
+            continue
+        envelope = json.loads(path.read_text())
+        if envelope.get('kind') == 'dynamics-motion':
+            require(path.stem == envelope['id'], f'{path}: file name and envelope id differ')
+            result[envelope['id']] = envelope
+    return result
+
+
+def record_path(url):
+    return PUBLIC / url.lstrip('/')
+
+
+def check(action_id, case, envelope):
     name = f'{action_id}-{case}'
-    meta_path = PUBLIC / f'{name}.json'
-    meta = json.loads(meta_path.read_text())
-    blob = (PUBLIC / f'{name}.bin').read_bytes()
+    records = envelope['dynamics']['records']
+    ref = records.get(case)
+    require(ref is not None, f'{name}: dynamics.records.{case} is missing from the envelope')
+    meta = json.loads(record_path(ref['meta']).read_text())
+    require(meta['id'] == action_id and meta['case'] == case, f'{name}: record id/case mismatch')
+    blob = record_path(ref['data']).read_bytes()
     require(hashlib.sha256(blob).hexdigest() == meta['binarySHA256'], f'{name}: binary hash mismatch')
     values = np.frombuffer(blob, dtype='<f4')
     layout = meta['layout']
@@ -87,7 +108,7 @@ def check(action_id, case):
         return values[frame['offset']:frame['offset'] + layout['qpos']]
 
     if action_id == 'baseball-throw':
-        action_spec = json.loads((ROOT / 'assets/actions/baseball-throw.json').read_text())
+        action_spec = envelope['dynamics']['action']
         sim = action_spec['simulation']
         speed = float(sim.get('referenceSpeedScale', 1))
         lead = float(sim.get('leadSeconds', 0))
@@ -205,7 +226,7 @@ def check(action_id, case):
                     f'{name}: {joint} opened during the punch extension hold')
         require(min(float(peak[active['md5_flexion_r']]), float(hold[active['md5_flexion_r']])) > np.deg2rad(10),
                 f'{name}: little-finger DIP lost its flexed fist posture')
-        action_spec = json.loads((ROOT / 'assets/actions/punch.json').read_text())
+        action_spec = envelope['dynamics']['action']
         require(action_spec['display'].get('handPoseSource') == 'task-keyframe-retarget',
                 f'{name}: punch skin wrist/hand must use the authored joint pose targets')
         punch_keys = {frame['phase']: frame for frame in action_spec['reference']['keyframes']}
@@ -238,7 +259,9 @@ def check(action_id, case):
 
 
 if __name__ == '__main__':
-    ids = sys.argv[1:] or ['punch', 'baseball-throw']
+    envelopes = dynamics_envelopes()
+    ids = sys.argv[1:] or sorted(envelopes)
     for action in ids:
-        for profile in ('baseline', 'weak'):
-            check(action, profile)
+        envelope = envelopes[action]
+        for profile in envelope['dynamics']['records']:
+            check(action, profile, envelope)

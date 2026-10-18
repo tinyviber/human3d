@@ -27,7 +27,7 @@ export interface PoseParams{
 export interface KeyConstraints{
   /** A planted foot's contact (target, yaw, pitch) is held across the interval that starts at this key. */
   plantL:boolean;plantR:boolean;
-  /** Right hand keeps the grip-wrap fingers and shows the racket. */
+  /** The gripping hand (WorkshopDoc.gripSide) keeps the wrap fingers and shows the racket. */
   grip:boolean;
   /** Contact event: the racket head position at this key is a target point. */
   contact:boolean;
@@ -43,15 +43,27 @@ export interface WorkshopDoc{
   /** Periodic motion: the key chain wraps so velocity, contacts and grip are continuous across the seam. */
   loop:boolean;
   handFrames:Record<Side,HandFrame>;
-  /** Clavicle assist: the right shoulder girdle rides up with a high hand target
-   * (the authored reach behaviour — the solver derives the amount per frame). */
+  /** Clavicle assist: the gripping shoulder girdle (gripSide) rides up with a
+   * high hand target (the authored reach behaviour — the solver derives the
+   * amount per frame). */
   clavicleLift?:boolean;
+  /** Which hand grips the racket: 'L' mirrors the whole grip stage — wrap
+   * fingers, wrist cone, clavicle assist and racket mount — onto the left
+   * wrist. Absent means 'R' (canonical form; normalizeDoc folds an explicit
+   * 'R' back to absent so equivalent documents share fingerprints). The
+   * side changes the solved trajectory, so it lives on the document, not
+   * on presentation metadata. */
+  gripSide?:Side;
   keys:WorkshopKey[];
 }
 export type DocLike=Pick<WorkshopDoc,'keys'|'duration'|'loop'|'handFrames'>;
 /** Support weight of each foot in [0,1]: 1 = fully planted, 0 = free swing. */
 export interface SupportWeights{L:number;R:number}
-export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number;clavicleLift?:boolean}
+export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number;clavicleLift?:boolean;
+ /** The document-level grip side flattened onto the frame — same delivery
+  * pattern as clavicleLift, so solveEffectiveFrame sees it with no caller
+  * contract change. Absent on hand-built frames means 'R'. */
+ gripSide?:Side}
 
 /** Grip closes and opens over this window after the key that toggles it. */
 export const GRIP_TRANSITION_S=.25;
@@ -431,14 +443,14 @@ export function constraintsAt(keys:WorkshopKey[],time:number):{constraints:KeyCo
  * after the contact rewrite (the same numbers the Hermite path reaches at key
  * instants), with no support fades and no grip ramp. */
 export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):EffectiveFrame{
-  const m=buildModel(doc,origin),t=Math.max(0,Math.min(doc.duration,time));
+  const m=buildModel(doc,origin),t=Math.max(0,Math.min(doc.duration,time)),side:Side=doc.gripSide==='L'?'L':'R';
   if(!doc.inbetweens){
     const {keyIndex,constraints}=constraintsAt(m.keys,t),e=m.entries[keyIndex];
     return {pose:unflattenPose(e.flat.slice()),constraints:{...constraints},keyIndex,
-      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0,clavicleLift:doc.clavicleLift};
+      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0,clavicleLift:doc.clavicleLift,gripSide:side};
   }
   const r=interpolate(m,t),k=m.chain[r.i].real;
-  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift};
+  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift,gripSide:side};
 }
 export const sortedKeys=(doc:{keys:WorkshopKey[]})=>[...doc.keys].sort((a,b)=>a.time-b.time);
 
@@ -520,6 +532,7 @@ export function validateDocShape(d:unknown):string[]{
  if(typeof doc.inbetweens!=='boolean')e.push('inbetweens 必须是布尔值');
  if(typeof doc.loop!=='boolean')e.push('loop 必须是布尔值');
  if(doc.clavicleLift!==undefined&&typeof doc.clavicleLift!=='boolean')e.push('clavicleLift 必须是布尔值');
+ if(doc.gripSide!==undefined&&doc.gripSide!=='R'&&doc.gripSide!=='L')e.push('gripSide 必须是 R 或 L');
  for(const s of ['L','R']as const){
   const v=(doc.handFrames as Record<string,unknown>|undefined)?.[s];
   if(v!=='world'&&v!=='pelvis')e.push(`handFrames.${s} 必须是 world 或 pelvis`);
@@ -587,10 +600,97 @@ export function normalizeDoc(raw:unknown):WorkshopDoc{
   const errs=validateDocShape(up);
   if(errs.length)throw new Error(`${errs[0]}${errs.length>1?`（共 ${errs.length} 处问题）`:''}`);
   const d=up as WorkshopDoc;
+  /* Canonical form: 'R' is the implicit default, so an explicit 'R' is folded
+   * back to absent — documents that mean the same solve must serialize and
+   * fingerprint identically (normalizedRequest embeds the parsed doc). */
+  if(d.gripSide==='R')delete d.gripSide;
   for(const k of d.keys)canonicalizeHands(k.pose);
   return d;
 }
 export function parseDoc(text:string):WorkshopDoc{return normalizeDoc(JSON.parse(text));}
+
+/** Document mirror across the rig's bilateral plane x=0 (left = +X, right =
+ * −X): the same motion on the other side — a right-hand forehand becomes a
+ * left-hand one. A document-level transform, not a solver flag: every
+ * side-keyed input is swapped L↔R and x-mirrored, so the sampled trajectory
+ * of the mirrored document is the exact reflection of the source's. The
+ * convention is the one grip-side.test.ts pins on the real solve
+ * (M·q·M for the x-reflection M):
+ *
+ *   field                         mirror
+ *   root                          x→−x, y/z kept
+ *   yaw                           −yaw (rotation about Y)
+ *   lean                          kept (rotation about X)
+ *   chest / side                  negated (Y-twist / Z-roll — see solver
+ *                                 rig.rotate's YXZ Euler and foot.ts's YXZ)
+ *   handL ⇄ handR                 swapped; target/pole/forward/normal x→−x
+ *                                 (mirroring keeps forward·normal = 0
+ *                                 exactly, so the orthonormal contract holds
+ *                                 bit-for-bit and parseDoc stays a no-op)
+ *   footL ⇄ footR                 swapped; target/pole x→−x, yaw→−yaw,
+ *                                 pitch kept (footRotation YXZ)
+ *   constraints.plantL ⇄ plantR   swapped — contact intervals move to the
+ *                                 other foot: run-start contact points,
+ *                                 release swings' mid-waypoints and landing
+ *                                 contacts all mirror through the same
+ *                                 stored-target rewrite the sampler applies
+ *   constraints.grip / contact    kept (side-agnostic booleans)
+ *   handFrames                    side-swapped {L←R, R←L}: the interpolation
+ *                                 frame follows the hand — a right 'world'
+ *                                 hand becomes a left 'world' hand, so the
+ *                                 sampled path mirrors exactly. For the
+ *                                 (universal) symmetric config this is a
+ *                                 no-op; the pelvis frame needs no special
+ *                                 mirroring because x→−x commutes with the
+ *                                 yaw-rotation conversion in buildModel
+ *                                 (origin.x = 0 on this rig).
+ *   clavicleLift                  kept (scalar assist flag; the solver
+ *                                 re-derives the side from gripSide)
+ *   gripSide                      flipped — absent/'R' → 'L', 'L' → absent
+ *                                 (canonical form: the R side stays implicit)
+ *   duration / inbetweens / loop  kept; key times, ids, labels and videoTime
+ *                                 kept — contact-interval timing is
+ *                                 preserved verbatim
+ *   id / name / english           mirror markers that TOGGLE so the transform
+ *                                 is an involution: `id + '.mirrored'`,
+ *                                 `name + ' · 镜像'`, `english + ' · MIRRORED'`,
+ *                                 stripped when already present.
+ *
+ * The output is emitted in canonical field order, so mirror∘mirror is a
+ * byte-exact identity on every document the pipeline materialises (seeds,
+ * shipped assets, parseDoc output, mirrorDoc output itself); hand-scrambled
+ * property order round-trips value-exact, not byte-exact. */
+export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
+  const mv=(v:V3):V3=>({x:-v.x,y:v.y,z:v.z});
+  const hand=(h:HandTarget):HandTarget=>({target:mv(h.target),pole:mv(h.pole),forward:mv(h.forward),normal:mv(h.normal)});
+  const foot=(f:FootTarget):FootTarget=>({target:mv(f.target),pole:mv(f.pole),yaw:-f.yaw,pitch:f.pitch});
+  const toggle=(s:string,suffix:string)=>s.endsWith(suffix)?s.slice(0,s.length-suffix.length):s+suffix;
+  /* Field coverage — every WorkshopDoc/WorkshopKey/PoseParams member has an
+   * explicit rule here; when a field is added to any of those interfaces it
+   * must get a line below (swap, mirror or keep — silent omission means the
+   * mirrored document quietly keeps the source's value):
+   *   WorkshopDoc: schemaVersion · id · name · english · duration ·
+   *     inbetweens · loop · handFrames · clavicleLift · gripSide · keys
+   *   WorkshopKey: id · time · label · pose · constraints · videoTime
+   *   PoseParams:  root · yaw · lean · chest · side · handL · handR ·
+   *     footL · footR   (hand: target/pole/forward/normal; foot: +yaw/pitch)
+   *   KeyConstraints: plantL · plantR · grip · contact                       */
+  const keys=doc.keys.map(k=>{
+    const c=k.constraints,p=k.pose;
+    const key:WorkshopKey={id:k.id,time:k.time,label:k.label,
+      pose:{root:mv(p.root),yaw:-p.yaw,lean:p.lean,chest:-p.chest,side:-p.side,
+        handL:hand(p.handR),handR:hand(p.handL),footL:foot(p.footR),footR:foot(p.footL)},
+      constraints:{plantL:c.plantR,plantR:c.plantL,grip:c.grip,contact:c.contact}};
+    if(k.videoTime!==undefined)key.videoTime=k.videoTime;
+    return key;
+  });
+  return {schemaVersion:2,id:toggle(doc.id,'.mirrored'),name:toggle(doc.name,' · 镜像'),english:toggle(doc.english,' · MIRRORED'),
+    duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
+    handFrames:{L:doc.handFrames.R,R:doc.handFrames.L},
+    ...(doc.clavicleLift!==undefined?{clavicleLift:doc.clavicleLift}:{}),
+    ...(doc.gripSide==='L'?{}:{gripSide:'L' as const}),
+    keys};
+}
 
 /** Retiming rule: scaling duration preserves phase proportions and strict
  * ordering — never clamps times onto duplicates (repeated times would leave

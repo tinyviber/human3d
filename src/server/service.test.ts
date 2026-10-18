@@ -135,6 +135,49 @@ describe('POST /v1/motions — workshop-doc action',()=>{
   expect(r.status).toBe(400);
   expect((r.body as {error:{code:string}}).error.code).toBe('validation_failed');
  });
+ it('rejects a non-R/L gripSide at the document gate',()=>{
+  const raw=JSON.parse(JSON.stringify(blankDocument(ctx.rig.rest,'坏侧别','bad-side'))) as {gripSide?:string};
+  raw.gripSide='B';
+  const r=post({action:{id:'workshop-doc',parameters:{document:raw}}});
+  expect(r.status).toBe(400);
+  expect((r.body as {error:{code:string}}).error.code).toBe('validation_failed');
+ });
+ it('serves a left-grip document as a distinct artifact carrying the side hint',()=>{
+  const doc=blankDocument(ctx.rig.rest,'左持拍','left-grip');
+  doc.keys.forEach(k=>{k.constraints.grip=true;});
+  const r0=post({action:{id:'workshop-doc',parameters:{document:doc}}});
+  const left={...JSON.parse(JSON.stringify(doc)),gripSide:'L'};
+  const r1=post({action:{id:'workshop-doc',parameters:{document:left}}});
+  expect(r0.status).toBe(200);expect(r1.status).toBe(200);
+  const a=r0.body as PosePackage,b=r1.body as PosePackage;
+  for(const p of [a,b])expect(validatePosePackage(p,ctx.manifest)).toEqual([]);
+  // The side selects which wrist and fingers the grip stage solves — a
+  // trajectory-level difference, so BOTH content hashes move; same document
+  // differing only in gripSide must never share an artifact id.
+  expect(b.id).not.toBe(a.id);
+  expect(b.action.definitionSHA256).not.toBe(a.action.definitionSHA256);
+  const pres=(p:PosePackage)=>p.action.parameters.presentation as {prop:string;loop:boolean;gripSide?:string};
+  expect(pres(a).gripSide).toBeUndefined();
+  expect(pres(b).gripSide).toBe('L');
+  // Solve-level proof: the left package wraps the LEFT fingers — its finger
+  // track is the mirror-conjugate (x,−y,−z,w) of the right package's right-
+  // finger track, not a copy of it.
+  const tr=(p:PosePackage,bone:string)=>p.tracks.rotations.find(t=>t.bone===bone)!.values;
+  const lv=tr(b,'finger2-1_L'),rv=tr(a,'finger2-1_R');
+  expect(lv.length).toBe(rv.length);
+  for(let i=0;i<lv.length;i+=4){
+   expect(lv[i]).toBeCloseTo(rv[i],9);expect(lv[i+1]).toBeCloseTo(-rv[i+1],9);
+   expect(lv[i+2]).toBeCloseTo(-rv[i+2],9);expect(lv[i+3]).toBeCloseTo(rv[i+3],9);
+  }
+ });
+ it('keeps an explicitly spelled R identical to the omitted default',()=>{
+  const doc=blankDocument(ctx.rig.rest,'同义','same-solve');
+  const a=post({action:{id:'workshop-doc',parameters:{document:doc}}}).body as PosePackage;
+  const spelled={...JSON.parse(JSON.stringify(doc)),gripSide:'R'};
+  const b=post({action:{id:'workshop-doc',parameters:{document:spelled}}}).body as PosePackage;
+  expect(b.id).toBe(a.id);
+  expect(b.provenance.requestFingerprint).toBe(a.provenance.requestFingerprint);
+ });
 });
 describe('request semantics',()=>{
  it('rejects unknown actions, bad fps, unsupported outputs and non-object bodies',()=>{

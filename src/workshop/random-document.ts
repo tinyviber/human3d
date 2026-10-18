@@ -286,10 +286,17 @@ export function randomDoc(rng:()=>number,rest:ReadonlyMap<string,Vector3>):Works
   const n=2+Math.floor(rng()*11);
   const times=randomTimes(rng,n,span);
   const base=blankDocument(rest,'随机文档','rand');
+  const idNum=Math.floor(rng()*1e9);
   const doc:WorkshopDoc={...base,
-   id:`rand-${Math.floor(rng()*1e9).toString(36)}`,name:'随机文档',english:'RANDOM DOCUMENT',
+   id:`rand-${idNum.toString(36)}`,name:'随机文档',english:'RANDOM DOCUMENT',
    duration,inbetweens:rng()<.8,loop,
    handFrames:{L:rng()<.5?'pelvis':'world',R:rng()<.5?'pelvis':'world'},
+   /* ~¼ of draws grip left-handed. The side is folded from the already-drawn
+    * id instead of another rng() call on purpose: the draw stream stays
+    * bit-identical to the pre-gripSide generator, so seeded sweeps keep
+    * producing the same documents (a stream shift would silently change
+    * every fixture the sweep was calibrated on). */
+   ...(idNum%4===0?{gripSide:'L' as const}:{}),
    keys:times.map((t,i)=>makeKey(i,t))};
   landTailReleases(doc);
   if(!strengthenContacts(doc))return undefined;

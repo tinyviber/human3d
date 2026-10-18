@@ -24,6 +24,10 @@ export class MotionLibrary{
   /** Set when the last save() failed (quota/private mode) — the UI must not
    * claim the motion was persisted when it only lives in memory. */
   lastError='';
+  /** Fired after a document leaves the library — the app drops the doc's
+   * undo book here so a later doc re-using the id can't inherit (and undo
+   * into) the deleted doc's snapshots. */
+  onRemoved?:(id:string)=>void;
   constructor(private rest:ReadonlyMap<string,Vector3>,private store?:StorageLike|null){}
   load(){
     let parsed:Partial<LibraryFile>|undefined,rawText:string|null=null,corrupt=false;
@@ -85,6 +89,7 @@ export class MotionLibrary{
     const idx=this.docs.findIndex(d=>d.id===id);if(idx<0)return;
     const wasActive=this.activeId===id;
     this.docs.splice(idx,1);
+    this.onRemoved?.(id);
     if(wasActive)this.activeId=this.docs[Math.min(idx,this.docs.length-1)]?.id??'';
     if(!this.docs.length)this.create('新动作');
     this.save();
