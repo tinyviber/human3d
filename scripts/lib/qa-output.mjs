@@ -48,6 +48,13 @@ export function assertTrackedWriteAllowed(target,{root,updateEvidence=false}){
  const canonicalRoot=fs.realpathSync(rootDir);
  const absoluteTarget=path.resolve(rootDir,target);
  const trackedCheckTarget=realPathForTarget(absoluteTarget);
+ try{
+  const stat=fs.lstatSync(trackedCheckTarget);
+  if(stat.nlink>1)throw new Error(`refusing to overwrite multiply-linked file ${trackedCheckTarget}; link count is ${stat.nlink}`);
+ }catch(error){
+  const code=error&&typeof error==='object'&&'code'in error?error.code:undefined;
+  if(code!=='ENOENT')throw error;
+ }
  const relativeTarget=path.relative(canonicalRoot,trackedCheckTarget);
  if(relativeTarget==='..'||relativeTarget.startsWith(`..${path.sep}`)||path.isAbsolute(relativeTarget))return absoluteTarget;
  try{

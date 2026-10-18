@@ -134,4 +134,32 @@ describe('tracked evidence write protection',()=>{
   }).toThrow();
   expect(fs.existsSync(trackedPath)).toBe(false);
  });
+
+ it('rejects a scratch hard link to staged evidence before writing through it',()=>{
+  const root=tempDir();
+  const trackedRelative='spec/evidence.json';
+  const trackedPath=path.join(root,'spec','evidence.json');
+  const aliasPath=path.join(root,'scratch','evidence-link.json');
+  const originalBytes=Buffer.from('original evidence bytes\n');
+  const replacementBytes=Buffer.from('replacement evidence bytes\n');
+  fs.mkdirSync(path.dirname(trackedPath),{recursive:true});
+  fs.mkdirSync(path.dirname(aliasPath),{recursive:true});
+  fs.writeFileSync(trackedPath,originalBytes);
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
+  execFileSync('git',['add','--',trackedRelative],{cwd:root,stdio:'ignore'});
+  fs.linkSync(trackedPath,aliasPath);
+
+  let writeReached=false;
+  let writeError:unknown;
+  try{
+   const allowedTarget=assertTrackedWriteAllowed(aliasPath,{root,updateEvidence:false});
+   writeReached=true;
+   fs.writeFileSync(allowedTarget,replacementBytes);
+  }catch(error){
+   writeError=error;
+  }
+  expect(writeError).toBeInstanceOf(Error);
+  expect(writeReached).toBe(false);
+  expect(fs.readFileSync(trackedPath)).toEqual(originalBytes);
+ });
 });
