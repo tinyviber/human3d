@@ -3,6 +3,13 @@
 // snapshot) into WorkshopDoc envelopes under assets/motions/, and measure how
 // faithfully the workshop pipeline reproduces them against golden captures
 // taken in the same run. Rerunnable — all outputs are overwritten.
+//
+// WP-C note: the authored-pipeline captures this script produces are written
+// under evidence/migration-authored/ — they are the residual measurement's
+// reference, not a test baseline. The regression goldens in spec/migration/
+// are SOLVER captures owned by scripts/recapture-migration-goldens.mts (a
+// change-detector baseline; see migration.test.ts), and must not be
+// overwritten with authored-pipeline output.
 // Usage: npx tsx scripts/migrate-authored-motions.mts
 import fs from 'node:fs';
 import path from 'node:path';
@@ -15,6 +22,7 @@ import {footRotation} from '../src/workshop/foot';
 import {motionFileById} from '../src/core/motion-files';
 import {controlsToPoseParams,frameAt,validateDocShape,type KeyConstraints,type WorkshopDoc,type WorkshopKey} from '../src/workshop/document';
 import {solveEffectiveFrame,solvePose} from '../src/workshop/solver';
+import {SERVICE_VERSION} from '../src/core/protocol';
 import {normalizeMotionFile,type MotionCapabilities,type MotionFile} from '../src/core/motion-file';
 import type {RigInfo} from '../src/core/types';
 
@@ -109,7 +117,7 @@ const rigJson=fs.readFileSync(path.join(assetDir,'models/rig.json'));
 const gltf=await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset,glb.byteOffset+glb.byteLength),'');
 const rig=new HumanRig(gltf.scene,JSON.parse(rigJson.toString('utf8')) as RigInfo);
 const rest=rig.rest,bones=[...rig.bones.keys()];
-const motionsDir=path.resolve('assets/motions'),goldenDir=path.resolve('spec/migration'),evidenceDir=path.resolve('evidence');
+const motionsDir=path.resolve('assets/motions'),goldenDir=path.resolve('evidence/migration-authored'),evidenceDir=path.resolve('evidence');
 for(const d of [motionsDir,goldenDir,evidenceDir])fs.mkdirSync(d,{recursive:true});
 
 /* Golden capture: 41 uniform instants + every authored key + every adjacent-key
@@ -216,7 +224,9 @@ const motionSchema={
 };
 
 const write=(file:string,v:unknown)=>fs.writeFileSync(file,JSON.stringify(v,null,2)+'\n');
-const report:string[]=['# Authored → workshop-motion migration report',''];
+const report:string[]=['# Authored → workshop-motion migration report',
+ `Measured against solver ${SERVICE_VERSION} (SERVICE_VERSION) — replay path: envelope → normalizeMotionFile → frameAt → solveEffectiveFrame.`,
+ ''];
 const goldens=new Map<string,Golden>();
 
 for(const id of IDS){
@@ -272,12 +282,13 @@ for(const id of IDS){
  report.push('');
 }
 report.push(`Tolerances chosen to cover the measured maxima: quat ${TOLERANCE.quatDeg}°, world position ${TOLERANCE.posMm}mm.`,
- 'Graded for the migration test: idle/reach/squat/ready keep a 1° quat budget (measured ≤0.5°);',
- 'forehand gets 5° — its only spikes are isolated wrist_R/lowerarm02_R twist-split samples in',
- 'the fastest palm-rotation stretch (bend-clamp + roll extraction is ill-conditioned there),',
- 'not trajectory error: forehand position stays ≤3mm and p95 quat ≤0.01°.',
- 'Residual sources: second-order Hermite error on the baked hand targets/poles, hand-frame',
- 'quaternion slerp vs authored component-wise Hermite, and the poseAt root-y clamp, which is',
- 'reproduced by extra keys straddling every clamp crossing (the plateau goes flat).');
+ 'Residual sources: second-order Hermite error on the baked hand targets/poles, the hand-frame',
+ 'SO(3) cubic (corrected-slerp squad) vs authored component-wise Hermite, the poseAt root-y clamp (reproduced by',
+ 'extra keys straddling every clamp crossing — the plateau goes flat), and the WP-C tangent',
+ 'clamp: the workshop spline now caps interior tangent magnitude at 2× the smaller adjacent',
+ 'secant while the frozen authored capture keeps raw centre differences — a deliberate',
+ 'semantics change recorded in docs/investigate.md. The regression goldens this report is',
+ 'measured against live in spec/migration/ and are solver captures (recapture-migration-',
+ 'goldens.mts), NOT the authored captures written under evidence/migration-authored/.');
 fs.writeFileSync(path.join(evidenceDir,'migration-report.txt'),report.join('\n')+'\n');
 console.log(report.join('\n'));

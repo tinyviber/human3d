@@ -241,3 +241,225 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 - v3 `presentation` 顶层字段（逐帧握拍量/真逐键事件类型）推迟：见上裁决——通道在 `parameters` 里够用，schema 升级成本高于收益。
 - `wantsProp` 常量上限：v2 无逐帧 grip，道具全程常量显示已属诚实上限；逐帧化随 v3 一并考虑。
 - 422 拒绝不产文件是既定语义（制品不存在）；GLB 文件名借用 artifact id 仅为对应关系，不做内容寻址声明。
+
+---
+
+# WP-C — Catmull-Rom 切线限界：稀疏键鞭打过冲修复
+
+> 分支 `feat/pose-pipeline`，前置 `5cc74e8`（质量探针模块——本次校准与回归的度量基础）。落点：`src/workshop/document.ts` `tan()` + `TANGENT_SECANT_CAP`。
+
+## 缺陷与定界
+
+- 文档插值对内部键用非均匀 Catmull-Rom 中心差分 `m=(v_{j+1}−v_{j−1})/(t_{j+1}−t_{j−1})`，切线幅值无约束：稀疏键的非对称邻域把"快侧割线"的速度带进"慢侧区间"（|m·Δt|≫|Δv|），曲线越过键值外插。`defaultDocument`（5 键 0.8s）探针 wrist_R 峰值 22.07 rad/s @240fps，密集烘焙的 bundled forehand（49 键 5.2s）只有 5.4——稀疏文档的鞭打属离群。
+- 但要分清两层读数：**通道层位移过冲**（样条曲线越过键值包络）与**求解骨角速度**（IK 对目标序列的解算输出）。本修复界住前者；后者峰值由求解器主导，能量迁移而非消失（见探针对照）。回归断言锚在通道层。
+
+## 实现与对评审原案的偏离
+
+- 每内部键切线限界 `|m| ≤ κ·min(|s左|,|s右|)`，κ=`TANGENT_SECANT_CAP=2`，方向对称、保号；端点切线仍为 0；rest/锁定通道的零切线约定不破；每键单一切线值 → C¹ 保持。
+- **偏离：原案写 `max` 相邻割线幅值，实现用 `min`。** 中心差分是两割线的 Δt 加权均值，幅值必落在两割线张成的区间内——`max` 帽数学上永不触发（实测全零）。真正致病的是切线被快邻域放大后施加在慢区间里，故界读较小割线；这是唯一"同时限制向两侧区间外插且每键单值"的取法。
+- loop 幽灵链与主链同走 `tan()`：wrap 键的钳位值在接缝两侧一致，接缝 C¹（有专测）。
+- release-swing 两段式（interpolate 的 release 分支）有自己的 chord/end 切线逻辑，不经 `tan()`——不二次钳制。
+
+## κ 校准（240fps 探针 + 通道级过冲直接度量）
+
+逐通道"采样值越过键值包络"的过冲（全区间求和 / 单区间最差）与对密集文档的扰动（同文档钳制前后曲线差）：
+
+| κ | default 过冲和 mm | default 最差 mm | forehand 过冲和 mm | forehand 最差 mm | forehand 扰动 mm / ° |
+|---|---|---|---|---|---|
+| ∞（修前） | 12620 | 97.7 | 1909 | 3.5 | — |
+| 1.2 | 7205 | 68.8 | 958 | 3.0 | 1.91 / 0.137 |
+| 1.5 | 7865 | 72.3 | 1131 | 3.1 | 1.27 / 0.128 |
+| **2** | **8527** | **76.8** | **1261** | **3.2** | **1.12 / 0.112** |
+| 3 | 9814 | 86.2 | 1470 | 3.4 | 1.04 / 0.081 |
+
+**κ=2**：稀疏文档砍掉 ~⅓ 过冲、最差通道 −21%；密集文档扰动 ≤1.12mm/0.112°，在既有迁移预算内。κ≥3 对缺陷交付不足；κ≤1.5 把快区间前的真实加速也抹平（过冲和反而更小但扰动密集文档更大——κ 越小界越紧，对 dense 曲线是纯损失）。
+
+## 身份与 golden 语义
+
+- 求解运动语义变化 → `SERVICE_VERSION` `0.1.0`→`0.2.0`（`artifactIdPayload` 的 `solver.revision`、`provenance.solverRevision`、capabilities 同步变化）。`spec/examples/idle.pose.json` 重生成：artifact id `mot_6db10f3c7966b541`→`mot_85e6387dda9682db`——身份 bump 正确，但本提交当初声称的「轨迹逐位不变（各键邻域对称，钳制不触发）」经复核证伪，如实更正：钳制在 idle 上**实际触发 22 处（键×通道）**，全部位于 pelvis 系手部目标通道（flatten 通道 7–9/19–21；迁移细分键 6-7、19-20、34-35 的邻域非对称，被钳切线幅值 ≤7.7e-4 m/s）。功能影响可忽略：40fps 包网格（193 采样点）实测解算后仅 upperarm01/lowerarm01/lowerarm02/wrist 双侧 8 条旋转轨出现共 880 个四元数分量差、最大聚合角差 ~0.005°（0.0045°），平移轨逐位相同；下表 idle 行全零是因为 42 个 golden 采样点落在受扰区间内的时刻恰好全是键时刻（Hermite 过键逐位），受扰区间内部无采样。b450e79 提交说明里的 "the clamp never triggers there" 同步证伪，以此处实测为准。
+- `spec/migration/*.golden.json` 语义改写：**迁移等价断言 → 变更探测器基线**。原 golden 是 frozen authoring 管线（`migrate-authored-motions.mts` 内快照 `poseAt`）的捕获；本提交起由 `scripts/recapture-migration-goldens.mts` 走生产回放路径（frameAt→solveEffectiveFrame）重捕获，`migration.test.ts` 容差收紧到 1e-3°/1e-3mm——回放确定性（property.test 钉死逐位重解）意味着该余量只盖平台浮点抖动，任何未来求解语义漂移即红。authoring 参照捕获改落 `evidence/migration-authored/`（gitignored，可复现）；residual 报告仍由 migrate 脚本产出到 `evidence/migration-report.txt`，现含钳制效应（squat max 0.405→1.012°）。
+
+## 旧↔新迁移 delta（golden 网格，求解骨局部四元数角差，度）
+
+per-motion 汇总（163 骨 × 41–57 时刻；root 行为根骨平移差 mm）：
+
+| motion | max | p95 | mean | root max | bones touched(>0.0005°) |
+|---|---|---|---|---|---|
+| idle | 0.000 | 0.000 | 0.000 | 0.00 | 0 |
+| reach | 0.274 | 0.000 | 0.000 | 0.00 | 22 |
+| squat | 0.607 | 0.000 | 0.001 | 0.79 | 22 |
+| ready | 0.005 | 0.000 | 0.000 | 0.01 | 6 |
+| forehand | 0.272 | 0.000 | 0.001 | 0.25 | 21 |
+
+全部 p95=0.000°：钳制在密集烘焙文档上极少触发，绝大多数采样逐位相同。per-bone 表（任一 motion >0.001° 的骨）：
+
+| bone | idle | reach | squat | ready | forehand |
+|---|---|---|---|---|---|
+| root | 0.000 | 0.007 | 0.000 | 0.000 | 0.076 |
+| spine05–spine01 | 0.000 | 0.001 | 0.005 | 0.000 | 0.012 |
+| upperarm01_L | 0.000 | 0.011 | 0.294 | 0.000 | 0.203 |
+| lowerarm01_L | 0.000 | 0.017 | 0.607 | 0.000 | 0.214 |
+| lowerarm02_L | 0.000 | 0.003 | 0.019 | 0.000 | 0.024 |
+| wrist_L | 0.000 | 0.011 | 0.318 | 0.000 | 0.272 |
+| clavicle_R | 0.000 | 0.015 | 0.000 | 0.000 | 0.000 |
+| shoulder01_R | 0.000 | 0.009 | 0.000 | 0.000 | 0.000 |
+| upperarm01_R | 0.000 | 0.191 | 0.294 | 0.000 | 0.218 |
+| lowerarm01_R | 0.000 | 0.274 | 0.607 | 0.000 | 0.258 |
+| lowerarm02_R | 0.000 | 0.003 | 0.022 | 0.000 | 0.054 |
+| wrist_R | 0.000 | 0.121 | 0.317 | 0.000 | 0.167 |
+| neck01 | 0.000 | 0.001 | 0.005 | 0.000 | 0.009 |
+| neck02 | 0.000 | 0.000 | 0.005 | 0.000 | 0.000 |
+| head | 0.000 | 0.000 | 0.003 | 0.000 | 0.000 |
+| upperleg01_L | 0.000 | 0.008 | 0.299 | 0.002 | 0.082 |
+| lowerleg01_L | 0.000 | 0.001 | 0.588 | 0.005 | 0.076 |
+| foot_L | 0.000 | 0.001 | 0.289 | 0.003 | 0.036 |
+| upperleg01_R | 0.000 | 0.008 | 0.299 | 0.002 | 0.081 |
+| lowerleg01_R | 0.000 | 0.000 | 0.588 | 0.004 | 0.075 |
+| foot_R | 0.000 | 0.001 | 0.289 | 0.003 | 0.035 |
+
+## 回归
+
+- `workshop.test.ts` 新增 `Catmull-Rom tangent clamp` 三项：①过冲界用例（稀疏三键文档：峰值位移过冲 0.0079m ≤ κ·min割线·Δt·max h10 解析界，且 < 同键未钳制参照曲线的 0.6×；三键时刻采样逐位等于存储值）②C¹：被钳键两侧单侧差分收敛同一速度（ε=1e-4 处 |Δ|≈4e-4 m/s）③loop 接缝：wrap 键被钳时接缝两侧速度连续、接缝值逐位相等。
+- `property.test.ts` ×4 松弛注释改注（钳制后内部切线 ≤2×较小割线，slack 变双倍余量）；`quality.test.ts` 基线块刷新为修后数值。
+- `measure-quality-probe.mts` 的 `all` 列表与单选支持 `default`（defaultDocument 即稀疏键最坏样本）。
+
+## 探针前后对照（240fps，`evidence/quality-probe-{default,forehand}.json`）
+
+| 指标 | default 修前 → 修后 | forehand 修前 → 修后 |
+|---|---|---|
+| wrist_R 骨峰 rad/s | 22.07 @0.600 → 22.60 @0.600 | 5.4 @3.004 → 5.8 @2.163 |
+| 最差骨峰 rad/s | 24.50 lowerarm02_R → 25.51 | 10.5 lowerarm01_R @2.421 → 11.4 upperarm01_R @2.163 |
+| wrist vmax m/s | 5.90 @0.733 → 6.02 @0.579 | 1.60 → 1.60 |
+| tip vmax m/s | 18.60 @0.596 → 18.96 @0.596 | 4.23 @3.004 → 4.23 @3.004 |
+| tip 速度 kick>0.1m/s | 191 → 191 | 62 → 62 |
+| tip 折返>25° | 2 → 1 | 1 → 2 |
+
+**诚实结论**：钳制界住的是样条通道过冲（过冲和 12620→8527mm −32%，最差通道 97.7→76.8mm −21%；探针报告的求解骨峰值不降、个别微升）。若 WP-C 的验收口径是"求解侧 wrist_R 峰值降到密集文档量级"，本实现不满足——钉住的语义是评审原案的切线限界本身，通道层过冲才是它的直接对象。
+
+# WP-C(续)— 手部朝向 slerp→SO(3) 三次插值:键时刻角速度 C⁰ 跳变修复
+
+## 缺陷与定界
+
+- 原实现:`interpolate()` 对 `hand.forward`/`hand.normal` 逐段 `Quaternion.slerp`。段内角速度恒定、键时刻方向阶跃——角速度是 C⁰ 的;0.61m 球拍杆臂把每个键的 ω 跳变放大成拍头速度 kick(修前实测:defaultDocument tip kick>0.1m/s 共 191 帧、forehand 62 帧,且集中贴键:forehand 键时刻 ±20ms 内占 44 帧)。
+- 实测:defaultDocument handR 键时刻有限差分 |ωL−ωR| 最差 10.29 rad/s(ε=1e-3);ε 缩小不收敛——真 C⁰ 跳变不随 dt 缩放(对照:探针同口径 240fps 7.45° vs 60fps 27.35° 单帧转角)。
+
+## 实现:corrected-slerp 形式的 SO(3) 三次曲线(squad 族)
+
+`interpolate()` 段内姿态:
+
+```
+q(u) = slerp(q_i, q_{i+1}, u) · exp( u(1−u)·(d0 + u·d1) )
+d0 = T_i·Δt − b          (把左端导数从割线修正到 T_i)
+d1 = 2b − (T_i + T_{i+1})·Δt   (同时满足右端导数 T_{i+1})
+b  = ln(q_i⁻¹q_{i+1})  —— 段割线对数(体坐标)
+```
+
+右乘修正项在两端消失 → **过每个键帧逐位精确**(实测键时刻 f/n 误差 ≤7.3e-16);对任意 T_j 恒有 q⁻¹q'(0)/Δt=T_i、q⁻¹q'(1)/Δt=T_{i+1} → **角速度 C¹**(对截幅/端点取值同样成立)。
+
+**与字面 Shoemake 双 slerp squad 的偏离(诚实记录)**:评审原案允许"正确实现 squad 或用近似实现"。字面形式 `slerp(slerpAB(u), slerpCD(u), 2u(1−u))` 在本仓库文档族上实测崩溃:defaultDocument 稀疏大旋转键(≥90°/0.15s)下,内控制链 s_i→s_{i+1} 与弦几乎反向(dot 最深 −0.925),外层 slerp 的逐对半球选择中途切换 → 输出旋转真实跳变,采样 ω 峰 ~6275 rad/s、服务语义门拒件(wrist_R 101.7 rad/s)——比被修的缺陷更糟的 C⁰。修正式不可能反极:修正是有界相对旋转增量(defaultDocument 实测最大偏离弦 0.11rad)。语义等价:squad 要求的"过键、C¹、SO(3) 三次"三条契约全部由测试钉死。
+
+**切线构造(非均匀键距处理)**:T_j = (b−a)/(t_{j+1}−t_{j−1}),a/b 为相邻割线对数——与标量通道 `tan()` 的中心差分同一构造,按**时间**而非 u 参数匹配 → 非均匀键下仍 C¹(标准 s_i 公式只匹配 per-u 导数,均匀键距才等价)。|T| 截幅 κ·min(|a|/dt_L,|b|/dt_R),κ=TANGENT_SECANT_CAP=2,同 tan() 契约——相邻同姿键割线为 0 → T=0,静止区间天然静止,无特判(测试断言逐位不动)。
+
+**端点约定**:T=0(与 tan() 链端 rest 切线一致;文档起止静止)。
+
+**半球链**:log/割线计算前对**整条链**(含 loop 幻影拷贝)做 dot<0 符号连续——同 `unwrapAngle` 之于 `ANGLE_CHANNELS` 的契约,而非旧代码逐段修端点符号。
+
+**loop**:幻影链每侧两个周期拷贝(尾二、末键 −D 在前;首、次键 +D 在后),与 tan() 完全同构;夹住接缝的内侧幻影(末键 −D、首键 +D)是链内节点,内部切线分支按周期性直接算出其源键的 T——无需回拷(最初实现按单层幻影的心智模型回拷 `sq[0]←sq[len−2]`/`sq[len−1]←sq[1]`,在两层链上是 ghost←ghost 误植且条目从不被 [0,D] 采样消费,已移除;400 篇随机 loop 文档 ×204 采样点逐位复算零差异)。实测接缝值差 0、ω 差 0.001(ε=1e-4,quatLn 半角率口径)。
+
+**pelvis 系**:四元数链建在 `interp` 数组上——即已经骨盆旋转后的坐标,world/pelvis 两手同一套代码,转换时点不变(Rt(out yaw) 左乘,learning[16])。
+
+## 键时刻角速度连续(有限差分,quatLn 半角率口径——数值为 |ω|/2,物理 rad/s 需 ×2;修前修后同口径,比较有效)
+
+| 文档 | 指标 | 修前(slerp) | 修后(cubic) |
+|---|---|---|---|
+| defaultDocument | worst |ωL−ωR| @ε=1e-3 | handR 10.2939 | handL 0.0387 · handR 0.1692 |
+| defaultDocument | worst |ωL−ωR| @ε=1e-4 | ~10(不收敛) | 0.01698 |
+| forehand | worst |ωL−ωR| @ε=1e-3 | handR 0.9459 | handL 0.0024 · handR 0.0140 |
+| forehand | worst |ωL−ωR| @ε=1e-4 | ~0.95(不收敛) | 0.00141 |
+
+ε 缩小残差 ~线性收敛 → 有限差分截断,不是跳变;旧 slerp 残差不随 ε 缩小——跳变本体。
+
+键时刻 f/n 逐位误差:default 5.09e-16 · forehand 7.31e-16。
+
+## 身份与 golden 语义
+
+- 求解运动语义变化 → `SERVICE_VERSION` `0.2.0`→`0.3.0`。`spec/examples/idle.pose.json` 重生成:artifact id `mot_85e6387dda9682db`→`mot_a9edd1d24e21d202`,轨迹逐位不变(idle 手帧各键不动,下表全零行)。
+- `spec/migration/*.golden.json` 走既有 `recapture-migration-goldens.mts` 重捕获,容差 1e-3°/1e-3mm 不变。
+
+## 旧↔新迁移 delta(本次 squad;golden 网格,求解骨局部四元数角差,度)
+
+per-motion 汇总(163 骨 × 41–57 时刻):
+
+| motion | max | p95 | mean | root max | bones touched(>0.0005°) |
+|---|---|---|---|---|---|
+| idle | 0.000 | 0.000 | 0.000 | 0.00 | 0 |
+| reach | 0.614 | 0.000 | 0.001 | 0.00 | 73 |
+| squat | 0.288 | 0.000 | 0.001 | 0.00 | 148 |
+| ready | 0.000 | 0.000 | 0.000 | 0.00 | 0 |
+| forehand | 1.443 | 0.000 | 0.002 | 0.00 | 75 |
+
+p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同。per-bone 表(任一 motion >0.0005° 的骨):
+
+| bone | idle | reach | squat | ready | forehand |
+|---|---|---|---|---|---|
+| lowerarm02_L | 0.000 | 0.000 | 0.025 | 0.000 | 0.000 |
+| lowerarm02_R | 0.000 | 0.049 | 0.027 | 0.000 | 0.438 |
+| wrist_L | 0.000 | 0.000 | 0.288 | 0.000 | 0.000 |
+| wrist_R | 0.000 | 0.614 | 0.287 | 0.000 | 1.443 |
+
+差异全部集中在 wrist/lowerarm02——正是手帧朝向驱动的骨;躯干腿逐位不变。
+
+## 回归
+
+- `workshop.test.ts` 新增 `hand frame cubic (WP-C squad)` 七项:①键时刻逐位复现(<1e-9)②键时刻角速度左右有限差分连续(ε=1e-4,|ωL−ωR|<0.05,半角率口径;实测 0.017,旧 slerp 同口径 ~10)③稀疏世界系文档 C¹ ④相邻同姿键逐位静止+ω≈0(截幅自然结果,无特判)⑤loop 接缝值逐位相等+ω 连续 ⑥handFrames=pelvis 下立方在骨盆系运行(定姿相对骨盆→世界输出逐位跟随 yaw(t))⑦反极 quat 表示的键取短弧(max<3.1rad,不触 ~205° 长弧)。
+- `quality.test.ts` 新增 kick 断言(共享 `probeDocument` 真实求解路径):forehand tip kicks<40(实测 26,修前 62);defaultDocument atKey 步长中位<interior×0.5(实测 0.17°/1.47°,修前 1.38°/1.50°)、tip accelTop<1500 m/s²(实测 1169,修前 2463@keyΔ0ms)。
+- `migration.test.ts` 沿用重捕获机制;`evidence/quality-probe-*.json` 全部重生成。
+
+## 探针前后对照(240fps,`evidence/quality-probe-{default,forehand}.json`)
+
+| 指标 | default 修前 → 修后 | forehand 修前 → 修后 |
+|---|---|---|
+| tip 速度 kick>0.1m/s | 191 → 191(物理下限,见下) | 62 → **26**(其中键±20ms 44 → 9) |
+| tip accelTop m/s² | 2463 @0.500 keyΔ0ms → 1169 @0.563 keyΔ63ms | 320 @2.163 → 326 @2.163 |
+| tip vmax m/s | 18.96 → 24.19 | 4.23 → 4.25 |
+| wristStep @key 中位 | 1.38° → 0.17°(interior 1.50°→1.47°) | 0.21° → 0.21°(interior 0.20°→0.21°) |
+| hand 链峰 rad/s | 22.6 → 31.2 | 5.8 → 5.9 |
+| tip 折返>25° | 1(130°@0.5) → 0 | 2 → 1(40°@2.163) |
+
+**诚实结论**:① kick 阈值 0.1m/s 对 defaultDocument 已到下限——0.8s 挥拍 tip 合法速度 ~24m/s,|Δv|>0.1 几乎每帧成立,真正消失的是键邻域 C⁰ kick(最差单帧 Δv 10.26→4.87,且时间从 keyΔ0ms 挪到 keyΔ63ms)。② tip vmax 上升 28%:slerp 在键时刻的方向阶跃等效于每键一次刹车,平滑后能量不再被人为吃掉——这是物理上更诚实的轨迹,hand 链峰 31.2 rad/s 仍低于 40 rad/s 语义门。③ forehand 是 kick 指标真正能区分的文档:62→26,且残余集中在 keyΔ13ms 的接触区物理挥速,不是朝向插值缺陷。
+
+# WP-C(收尾)— 验收夹具、硬质量门与裁决摘要
+
+> 承接上两节(切线限界 `b450e79`、手部 SO(3) 三次 `5f3f2b9`)。收尾交付:`72f78e3`(UI 制作的 forehand-study 夹具 + 账本)+ `0b17c6d`(契约/质量硬门);本工单补全量浏览器复验与文档同步。
+
+## 决策裁决摘要(评审选项,提案原文见 WP-C 工单)
+
+- **B 进**:手部朝向逐段 slerp → SO(3) 三次插值(角速度 C¹)——已交付,见上节。
+- **C 进**:经工作台真实 UI 写路径制作验收文档 + 探针硬质量门——已交付,见下。
+- **D 推迟**:不在本 WP 交付,列入遗留待后续工单定夺。
+- **E/F 出**:判出本 WP 范围,不做。
+- **锥角不拓宽**:`WRIST_BEND_LIMIT_DEG` 维持 59.8° 不变。defaultDocument 的腕弯曲需求(240fps 实测 maxBend 92.03° @0.600s、46/193 帧=23.8% 超限、deficit 峰 32.23°、clamp 切换 @0.5625/0.7542s)是种子文档自身的真实超限,不是限幅过紧的证据;验收文档在现有锥内完成(maxBend 48.2°、0/481 帧截幅),不靠放宽限幅凑指标。
+
+## study 夹具与账本位置
+
+- 夹具:`spec/examples/forehand-study.request.json`(2.0s、5 键正手:准备→引拍→触球→随挥→恢复;`handFrames` 双手 pelvis;唯一 contact 键 @1.15s)。
+- 账本:`spec/examples/forehand-study.md`——逐键 UI 编辑路径、~35 轮探针迭代拐点、240/60fps 最终指标表、残余偏差如实记录。全部编辑经真实 UI 写路径(`drive.mjs` 回放 `ops.json`:滑块/字段 input 事件 + 双视角画布指针拖拽),无姿态数据注入;引擎方法直调仅限读路径/播放控制(`getDoc`/`setPlaying`/`solveCurrent`/camera 读数)。
+- 工具链:`scripts/forehand-study/`(drive/ops 配方、probe、grid、inspect、retune、kickmap、tiptrace、delta-decomp、finalize、pkgcheck),各文件头注明用途与入口参数,保留作复现与后续校准用途。
+- 逐轮指标快照:`evidence/forehand-study/rounds.jsonl`(`final-240`/`final-60` 为定稿读数)+ `doc-*.json` 中间稿。
+
+## 硬质量门校准值(quality.test.ts,实测 ×1.25 上限 / ÷1.25 下限)
+
+@240fps:腕截幅 `clamped=0` 且 `maxBend<55°`(实测 48.2);IK arm/leg 残差 `<3mm`(实测 ~1e-16);`reachMax<1`(实测 94.3%);支撑脚滑移 `<1mm`(实测 ~4e-16);鞋底穿透 `<1e-6`;踝背屈 L/R `≤20.1°`(实测 19.6/20.0,R 贴限由 pelvis 修正顶住,`saturated=0`);`root.maxA<16`(实测 12.56)、`maxStep<1.6mm`(实测 1.27);contact 键 tip `>3.0`(实测 3.79)、tip vmax `>7.0`(实测 8.94 @0.983,峰领先触球 0.17s、门 |Δt|≤0.25s);tip kicks `≤170`(实测 136,回归门不宣称清零)、wrist kicks `≤9`(实测 7);动力链近端峰先于前臂 +0.05s 容差。60fps 复跑同门不变。`contract.test.ts` 钉:≤5 键、恰好一个 contact、逐键双足支撑、pelvis 手系、schema/服务 200 全通过。
+
+## 求解语义两轮变更后的全量复验(本工单)
+
+- `QA_BROWSER_CHANNEL=chrome npm run qa`:全部检查过(errors/warnings 空)——含 `posePackageForehand`(信封恢复/球拍重挂载/oneShot)、`workshopDragPersist`(拖动→刷新后内存文档与求解腕位一致)、`workshopWaypointDrag`(路径点真实拖动跟手)等既有断言在新求解语义下复验;证据文件随运行刷新。
+- `QA_BROWSER_CHANNEL=chrome node scripts/dynamics-browser-qa.mjs`:29 项全过(投掷相位、直拳手部、录屏),动力学回放无回归。
+- `npx tsc -b` / `npm test`(185)/ `npm run spec:check`(14)/ `npm run build` 全绿;`measure-motions.mts` 重测刷新 `docs/validation.md` 表(漂移均在余量内:内置峰 forehand 6.95 rad/s,工坊默认文档 29.22→32.98 rad/s——共享键切线带真实角速度过键,仍低于 40 门)。
+
+## 遗留(如实记录,未达标或待后续)
+
+- **tip kicks 136 @240fps(study 文档)**:物理残余而非插值缺陷——0.1m/s/帧阈值 ≈ 24m/s² 等效加速度,而 8.9m/s 挥拍鞭打段 accelTop ~80m/s²,大部分 kick 帧是合法速度变化;已用 ≤170 回归门防恶化,不宣称达标。
+- **动力链非完全 proximal→distal**:相对峰时刻上臂 .875s → 骨盆/躯干同帧 .971s → 手 .988s → 前臂 1.212s——近端次序在 240fps 帧粒度未拉开(骨盆/躯干同帧),手部峰夹在前臂之前;门只钉「近端先于前臂」,全序留待后续。
+- **D/E 待办**:D 按裁决推迟、E 判出本 WP,若重启需新工单;选项原文见 WP-C 工单记录。
+- **study 晋升 bundled**:夹具目前是 spec 示例 + 探针门,未进 `assets/motions/` 信封与主页动作库;晋升(文档→motion-file 信封、进内置动作)留后续 WP。

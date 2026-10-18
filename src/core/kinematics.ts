@@ -1,5 +1,10 @@
 import {Matrix4, Quaternion, Vector3, MathUtils} from 'three';
 export const DEG = Math.PI / 180;
+/** Wrist bend clamp applied inside HumanRig.hand() (deg): forearm→hand
+ * directions beyond this are slerped back onto the limit cone. One named
+ * constant so the solver's clamp and the quality probe's clamp-demand metric
+ * can never drift apart. */
+export const WRIST_BEND_LIMIT_DEG = 59.8;
 export const LIMITS = {
   hipFlexion: [-20, 120], kneeFlexion: [0, 135], ankleFlexion: [-40, 20],
   elbowFlexion: [0, 145], shoulderElevation: [0, 165], wristFlexion: [-60, 60],
