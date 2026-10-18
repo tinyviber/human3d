@@ -2,7 +2,7 @@ import {chromium} from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
 // Dev-server URL for a motion-core source module: the Vite root is apps/web,
 // so workspace sources outside it are served through /@fs/ (the config's
 // server.fs.allow covers the repo root).
@@ -10,7 +10,7 @@ const coreModule=p=>`/@fs/${path.resolve('packages/motion-core/src',p)}`;
 const repoRoot=process.cwd();
 const output=resolveOutputDir('browser-qa',process.argv.slice(2),repoRoot,process.env);
 if(output.args.length)throw new Error(`unexpected browser QA arguments: ${output.args.join(' ')}`);
-fs.mkdirSync(output.dir,{recursive:true});
+ensureOutputDir(output.dir,{root:repoRoot});
 const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root:repoRoot,updateEvidence:output.updateEvidence});
 const webBase=new URL(process.env.QA_WEB_URL??`http://127.0.0.1:${process.env.HUMAN3D_WEB_PORT??5173}/`);
 const serviceBase=new URL(process.env.QA_SERVICE_URL??`http://127.0.0.1:${process.env.HUMAN3D_PORT??8788}/`);

@@ -20,7 +20,7 @@ import {motionFileById} from '@human3d/motion-core';
 import {attachRacket} from '@human3d/motion-core';
 import {defaultDocument} from '@human3d/motion-core';
 import {formatProbeReport,probeDocument,probeFrames,stepAngles,type ProbeFrame} from '@human3d/motion-core';
-import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
 
 const root=process.cwd();
 const output=resolveOutputDir('measure-quality-probe',process.argv.slice(2),root,process.env);
@@ -31,7 +31,7 @@ const which=whichArg??'forehand';
 const ctx=await createService(path.resolve('public'));
 const racket=attachRacket(ctx.rig);
 const ids=which==='all'?['default','forehand','squat','reach','ready','idle']:[which];
-fs.mkdirSync(output.dir,{recursive:true});
+ensureOutputDir(output.dir,{root});
 const summary:Record<string,unknown>={};
 for(const id of ids){
  const doc=id==='default'?defaultDocument(ctx.rig.rest):motionFileById(id)?.document;

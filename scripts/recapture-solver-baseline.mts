@@ -15,7 +15,7 @@ import {motionFileById} from '@human3d/motion-core';
 import {frameAt} from '@human3d/motion-core';
 import {solveEffectiveFrame} from '@human3d/motion-core';
 import type {RigInfo} from '@human3d/motion-core';
-import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
 
 const root=process.cwd();
 const output=resolveOutputDir('recapture-solver-baseline',process.argv.slice(2),root,process.env);
@@ -32,7 +32,7 @@ const bones=[...rig.bones.keys()];
 const origin=rig.rest.get('root')!;
 const goldenDir=path.resolve('spec/solver-baseline');
 const destinationDir=updateTrackedDefaults?goldenDir:output.dir;
-fs.mkdirSync(destinationDir,{recursive:true});
+ensureOutputDir(destinationDir,{root});
 
 interface GoldenFile{schema:string;id:string;times:number[];root:number[][];bones:string[];quats:number[][][]}
 for(const id of IDS){

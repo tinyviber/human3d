@@ -4,6 +4,8 @@ export type OutputDirectory = {
   updateEvidence: boolean;
 };
 
+export declare function canonicalOutputTarget(target: string): string;
+
 export declare function resolveOutputDir(
   scriptKey: string,
   args: readonly string[],
@@ -16,4 +18,4 @@ export declare function assertTrackedWriteAllowed(
   options: { root: string; updateEvidence?: boolean },
 ): string;
 
-export declare function ensureOutputDir(dir: string): string;
+export declare function ensureOutputDir(dir: string, options: { root: string }): string;

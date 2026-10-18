@@ -21,14 +21,14 @@ import {createService} from '@human3d/server';
 import {attachRacket,motionFileById,generateMotion,subsampleDoc,
  buildGenContext,applyGenMove,retimeStep,
  type ChannelGroup,type MotionGenResult,type WorkshopDoc} from '@human3d/motion-core';
-import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
 
 const root=process.cwd();
 const output=resolveOutputDir('generate-motion',process.argv.slice(2),root,process.env);
 const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root,updateEvidence:output.updateEvidence});
 const which=output.args[0]??'all';
 const ctx=await createService(path.resolve('public'));
-fs.mkdirSync(output.dir,{recursive:true});
+ensureOutputDir(output.dir,{root});
 
 const forehandSrc=()=>(JSON.parse(fs.readFileSync('spec/examples/forehand-study.request.json','utf8'))
  .action.parameters.document)as WorkshopDoc;

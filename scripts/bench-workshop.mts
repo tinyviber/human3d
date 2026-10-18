@@ -31,7 +31,7 @@ import {diffBaselines,formatProfileReport,formatReport,hotspotRanking,resolveBen
  runSkipFlushExperiment,runSolveProfile,runStageLoop,runWholeCalls,SOLVE_PROFILE_DISCLOSURES,
  summarizeProfileCell,summarizeScenario,
  type BaselineFile,type BenchDocSpec,type SolveProfileFile} from './lib/bench.mts';
-import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir,canonicalOutputTarget} from './lib/qa-output.mjs';
 
 const root=process.cwd();
 const output=resolveOutputDir('bench-workshop',process.argv.slice(2),root,process.env);
@@ -45,13 +45,21 @@ const seed=Number(arg('--seed')??1);
 const warmup=quick?1:Number(arg('--warmup')??2);
 const reps=quick?2:Number(arg('--reps')??7);
 const fpsList=(quick?'60':arg('--fps')??'40,60,240').split(',').map(Number);
-const out=assertTrackedWriteAllowed(arg('--out')??path.join(output.dir,profile?'bench-solve-profile.json':'bench-workshop.json'),{root,updateEvidence:output.updateEvidence});
-const reportPath=assertTrackedWriteAllowed(arg('--report')??path.join(output.dir,'bench-workshop-report.md'),{root,updateEvidence:output.updateEvidence});
+const outTarget=arg('--out')??path.join(output.dir,profile?'bench-solve-profile.json':'bench-workshop.json');
+const reportTarget=arg('--report')??path.join(output.dir,'bench-workshop-report.md');
 const comparePath=arg('--compare');
+const canonicalDestinationIdentity=(target:string)=>canonicalOutputTarget(path.resolve(root,target));
+assertTrackedWriteAllowed(outTarget,{root,updateEvidence:output.updateEvidence});
+if(!profile){
+ assertTrackedWriteAllowed(reportTarget,{root,updateEvidence:output.updateEvidence});
+ if(canonicalDestinationIdentity(outTarget)===canonicalDestinationIdentity(reportTarget)){
+  throw new Error('--out and --report resolve to the same destination');
+ }
+}
 /* --compare must name a DIFFERENT file than --out. A same-path invocation
  * reads back the just-written file (a vacuous +0% diff) after destroying the
  * old baseline, so refuse before measurement and load the comparand first. */
-if(comparePath&&path.resolve(out)===path.resolve(comparePath)){
+if(comparePath&&canonicalDestinationIdentity(outTarget)===canonicalDestinationIdentity(comparePath)){
  console.error(`--compare '${comparePath}' resolves to the --out target — comparing a baseline to itself is vacuous and would clobber it; pass a different --out or --compare file.`);
  process.exit(2);
 }
@@ -109,7 +117,7 @@ const run:BaselineFile['run']={command,commit:git('git rev-parse HEAD'),
  * equivalence experiment → bench-solve-profile.json + table. */
 if(profile){
  const skipFlush=has('--profile-skip-flush');
- const profileOut=out;
+
  const cells:SolveProfileFile['scenarios']=[];
  for(const spec0 of specs){
   const spec={...spec0,seed:spec0.builder==='bench'?spec0.seed??seed:undefined};
@@ -123,7 +131,8 @@ if(profile){
   }
  }
  const file:SolveProfileFile={bench:'solve-profile',version:1,run,disclosures:[...SOLVE_PROFILE_DISCLOSURES],scenarios:cells};
- fs.mkdirSync(path.dirname(profileOut),{recursive:true});
+ ensureOutputDir(path.dirname(outTarget),{root});
+  const profileOut=assertTrackedWriteAllowed(outTarget,{root,updateEvidence:output.updateEvidence});
  fs.writeFileSync(profileOut,JSON.stringify(file,null,1)+'\n');
  console.log('\n'+formatProfileReport(file));
  console.log(`\nwrote ${profileOut}`);
@@ -156,10 +165,24 @@ const baseline:BaselineFile={
  hotspots:hotspotRanking(scenarios),
 };
 
-fs.mkdirSync(path.dirname(out),{recursive:true});
-fs.writeFileSync(out,JSON.stringify(baseline,null,1)+'\n');
 let report=formatReport(baseline);
 if(compareBaseline)report+=`\n\n${diffBaselines(compareBaseline,baseline)}`;
-fs.mkdirSync(path.dirname(reportPath),{recursive:true});
-fs.writeFileSync(reportPath,report+'\n');
-console.log(`\nwrote ${out} + ${reportPath}${gcFn?'':'  (gc unavailable — rerun with NODE_OPTIONS=--expose-gc for heap trend)'}`);
+ensureOutputDir(path.dirname(outTarget),{root});
+const preflightOut=assertTrackedWriteAllowed(outTarget,{root,updateEvidence:output.updateEvidence});
+ensureOutputDir(path.dirname(reportTarget),{root});
+const preflightReportPath=assertTrackedWriteAllowed(reportTarget,{root,updateEvidence:output.updateEvidence});
+if(canonicalDestinationIdentity(preflightOut)===canonicalDestinationIdentity(preflightReportPath))
+ throw new Error('--out and --report resolve to the same destination');
+ensureOutputDir(path.dirname(outTarget),{root});
+const baselineOut=assertTrackedWriteAllowed(outTarget,{root,updateEvidence:output.updateEvidence});
+if(canonicalDestinationIdentity(baselineOut)===canonicalDestinationIdentity(preflightReportPath))
+ throw new Error('--out and --report resolve to the same destination');
+fs.writeFileSync(baselineOut,JSON.stringify(baseline,null,1)+'\n');
+
+
+ensureOutputDir(path.dirname(reportTarget),{root});
+const finalReportPath=assertTrackedWriteAllowed(reportTarget,{root,updateEvidence:output.updateEvidence});
+if(canonicalDestinationIdentity(baselineOut)===canonicalDestinationIdentity(finalReportPath))
+ throw new Error('--out and --report resolve to the same destination');
+fs.writeFileSync(finalReportPath,report+'\n');
+console.log(`\nwrote ${baselineOut} + ${finalReportPath}${gcFn?'':'  (gc unavailable — rerun with NODE_OPTIONS=--expose-gc for heap trend)'}`);

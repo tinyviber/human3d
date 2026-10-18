@@ -2,12 +2,12 @@ import {chromium} from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import {resolveOutputDir,assertTrackedWriteAllowed} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
 
 const repoRoot=process.cwd();
 const output=resolveOutputDir('dynamics-browser-qa',process.argv.slice(2),repoRoot,process.env);
 if(output.args.length)throw new Error(`unexpected dynamics QA arguments: ${output.args.join(' ')}`);
-fs.mkdirSync(output.dir,{recursive:true});
+ensureOutputDir(output.dir,{root:repoRoot});
 const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root:repoRoot,updateEvidence:output.updateEvidence});
 const webUrl=process.env.QA_WEB_URL??`http://127.0.0.1:${process.env.HUMAN3D_WEB_PORT??5173}/`;
 const envelope=id=>JSON.parse(fs.readFileSync(`assets/motions/${id}.json`,'utf8'));
