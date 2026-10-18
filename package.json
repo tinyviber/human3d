@@ -3,13 +3,17 @@
   "version": "1.0.0",
   "private": true,
   "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
   "scripts": {
-    "dev": "vite --host 127.0.0.1",
-    "build": "tsc -b && vite build",
-    "preview": "vite preview --host 127.0.0.1",
+    "dev": "npm run dev --workspace @human3d/web",
+    "build": "tsc -b && npm run build --workspace @human3d/web",
+    "preview": "npm run preview --workspace @human3d/web",
     "test": "vitest run",
-    "spec:check": "vitest run src/server/contract.test.ts",
-    "service": "tsx src/server/serve.ts",
+    "spec:check": "vitest run apps/server/src/contract.test.ts",
+    "service": "tsx apps/server/src/serve.ts",
     "protocol:example": "tsx scripts/export-pose-package.mts",
     "package-to-glb": "tsx scripts/package-to-glb.mts",
     "qa": "node scripts/browser-qa.mjs",
@@ -20,21 +24,11 @@
     "dynamics:build": "python3 scripts/build-muscle-action.py",
     "qa:dynamics": "node scripts/dynamics-browser-qa.mjs"
   },
-  "dependencies": {
-    "ajv": "^8.20.0",
-    "lucide-react": "^0.468.0",
-    "react": "^19.1.1",
-    "react-dom": "^19.1.1",
-    "three": "^0.180.0"
-  },
   "devDependencies": {
     "@types/node": "^24.19.2",
-    "@types/react": "^19.1.1",
-    "@types/react-dom": "^19.1.1",
-    "@types/three": "^0.180.0",
-    "@vitejs/plugin-react": "^5.0.4",
     "js-yaml": "^5.5.0",
     "playwright": "^1.55.0",
+    "three": "^0.180.0",
     "tsx": "^4.20.6",
     "typescript": "~5.9.3",
     "vite": "^7.1.9",

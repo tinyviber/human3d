@@ -7,10 +7,10 @@
 // under spec/examples is seed 1, document 2).
 import fs from 'node:fs';
 import path from 'node:path';
-import {createService,handleRequest} from '../src/server/service';
-import {blankDocument,serializeDoc,type WorkshopDoc,type WorkshopKey} from '../src/workshop/document';
-import {mulberry32} from '../src/workshop/random-document';
-import type {PosePackage} from '../src/core/pose-package';
+import {createService,handleRequest} from '@human3d/server';
+import {blankDocument,serializeDoc,type WorkshopDoc,type WorkshopKey} from '@human3d/motion-core';
+import {mulberry32} from '@human3d/motion-core';
+import type {PosePackage} from '@human3d/motion-core';
 
 const [seed0=1,count=8]=process.argv.slice(2,4).map(Number);
 const saveDir=process.argv[4];

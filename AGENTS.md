@@ -2,24 +2,39 @@
 
 ## 调查与经验记录
 
-- **PR #1 完整调查记录**：[`docs/investigate.md`](docs/investigate.md) —— Motion protocol v1 + 工作台的四轮 review 历程、每个问题的提案、被否方案的证据、最终确认的实现与测试。
+- **PR #1 完整调查记录**：[`docs/investigate.md`](docs/investigate.md) —— Motion protocol v1 + 工作台的四轮 review 历程、每个问题的提案、被否方案的证据、最终确认的实现与测试；文末另含**消融（简化）**与 **PR #8 workspaces 拆分**两节。
+- **架构与包边界**：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md) —— npm workspaces 三包的结构、依赖方向、迁移裁决与维护规则。
 - **跨任务通用规则**：[`docs/learning.md`](docs/learning.md) —— 从上述历程沉淀的十条工程规则（轨迹形态断言、哈希绑定真实数据、转换事件语义、真实路径测试、UI 可写性、显示/编辑分离、死数据提示、边界等式契约、契约兑现、真实交互 E2E）。
 
 在修改运动服务、工作台、姿态包相关代码前，请先读这两份文件：investigate.md 解释了现有语义为什么长这样，learning.md 解释了哪些错误模式已被 review 抓过。
 
+## 工作区布局（npm workspaces，依赖方向单向）
+
+完整设计记录（迁移裁决、被否备选、phase 2/3、维护规则）见 [`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。边界由 `tests/architecture.test.ts` **自动强制**（跨包违规导入、core 的 node/DOM 依赖、深路径导入、未声明依赖），随 `npm test` 与 CI 运行。
+
+| 包 | 拥有 | 边界规则 |
+|---|---|---|
+| `packages/motion-core`（`@human3d/motion-core`） | `document.ts` 采样器、`solver.ts` FK/IK、`kinematics/rig/racket`、`protocol/pose-package/package-inspect/package-const`、`motion-file(s)/motions`、`validate.ts`（交付包语义校验）、`quality-probe/random-document`、`package-export`、`glb-export`（子路径 `@human3d/motion-core/glb`） | **纯**：不得 import DOM / node 模块，three 只当数学库；跨包消费者一律从包名导入，不写深路径 |
+| `apps/web`（`@human3d/web`） | `src/lab/`（实验室引擎 `engine.ts`、动力学回放 `dynamics.ts`、React 面板）、`src/playback/`（播放源 `motion-source.ts` + `PoseFade`）、`src/workshop/`（`engine.ts` 场景、`WorkshopApp.tsx`、`library.ts`、`history.ts`）、两个入口页与 `vite.config.ts` | 可以 import motion-core；**不得** import `@human3d/server`（仅测试可用其 devDependency） |
+| `apps/server`（`@human3d/server`） | `serve.ts` 传输、`service.ts` 编排、`contract.ts` Ajv 契约、`rig-manifest.ts`（node:crypto） | 可以 import motion-core；不得 import web |
+
+- 路径不变的部分：`assets/motions/*.json` 仍是工具链与文档使用的注册表路径（motion-core 以相对路径静态导入）；`spec/` 由 `apps/server/src/contract.ts` 以 `import.meta.url` 相对定位；`public/` 与 `dist/` 仍在仓库根（Vite `publicDir`/`outDir` 指过去）。
+- 命令入口不变：`npm run dev|build|preview|test|spec:check|service|qa` 都在仓库根执行；`npm run dev` 委派给 `@human3d/web`，测试按包分布（core 6 / server 6 / web 3 个测试文件），定向跑用 `npm test -- <path>`。
+- 结构性迁移期间的行为契约：浏览器与服务端姿态包逐字节一致、`SERVICE_VERSION` 与 artifact id 不变、两个入口页可用、上述 `npm run` 命令可用。
+
 ## 项目验证命令
 
 - `npx tsc -b` — 类型检查（CI 门禁）
-- `npm test` — vitest（260 项，CI 门禁）
+- `npm test` — vitest（298 项，CI 门禁；含 `tests/architecture.test.ts` 的包边界检查）
 - `npm run spec:check` — 契约测试：Ajv 严格编译、OpenAPI 与服务一致、golden 样例（CI 门禁）
 - `npm run build` — 生产构建（CI 门禁）
 - `npm run qa` — 浏览器 E2E（需先 `npm run dev`；无本地 Playwright 浏览器时用 `QA_BROWSER_CHANNEL=chrome npm run qa` 走系统 Chrome；未进 CI）
 - `npm run protocol:example` — 重生成 `spec/examples/idle.pose.json`
-- `npm run package-to-glb -- <in.pose.json> [out.glb]` — 姿态包转二进制 glTF（与浏览器「导出 GLB」共用 `src/core/glb-export.ts`）
+- `npm run package-to-glb -- <in.pose.json> [out.glb]` — 姿态包转二进制 glTF（与浏览器「导出 GLB」共用 `packages/motion-core/src/glb-export.ts`）
 - `npm run service` — 本地 Motion Protocol v1 服务（127.0.0.1:8788）
 - `npm run dynamics:validate`、`npm run dynamics:test` — 动力学资产与物理记录校验，需要 Python 3.13 与 `scripts/requirements-dynamics.txt`（CI 门禁）
 - `npx tsx scripts/measure-motions.mts` — 测量内置动作的语义峰值，用于阈值校准（见 `docs/validation.md`）
-- `npx tsx scripts/measure-quality-probe.mts [fps=240] [motion|all]` — 高帧率质量探针 CLI；度量实现共享 `src/workshop/quality-probe.ts`（vitest 同源），基线在 `evidence/quality-probe-*.json`
+- `npx tsx scripts/measure-quality-probe.mts [fps=240] [motion|all]` — 高帧率质量探针 CLI；度量实现共享 `packages/motion-core/src/quality-probe.ts`（vitest 同源），基线在 `evidence/quality-probe-*.json`
 - `node scripts/forehand-study/drive.mjs <ops.json> <out.doc.json>` — 工作台真实 UI 写路径回放器（需 dev server :5173，默认走系统 Chrome，`QA_BROWSER_CHANNEL` 可覆盖）；制作 `spec/examples/forehand-study.request.json` 的工具链与账本见 `spec/examples/forehand-study.md`
 
 ## 关键语义速记

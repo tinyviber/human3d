@@ -127,7 +127,7 @@ RenderRequest 独立引用一个已完成的 motion，可包含命名相机预�
 
 ## 实现状态（MVP v1）
 
-已实现：`src/server/` 单体服务（`npm run service`，仅 loopback，`node:http` 零新增运行时依赖）+ `spec/` 契约文件；工作台侧浏览器构建器 `src/core/package-export.ts`（`POST /v1/motions` 对等，字节级钉死）+ 姿态包/GLB 导出入口；实验室 `openPosePackage` 经 `posePackageSpec` 派生回放 spec（信封/ad-hoc presentation 通道）。
+已实现：`apps/server/`（`@human3d/server`）单体服务（`npm run service`，仅 loopback，`node:http` 零新增运行时依赖）+ `spec/` 契约文件；工作台侧浏览器构建器 `packages/motion-core/src/package-export.ts`（`POST /v1/motions` 对等，字节级钉死）+ 姿态包/GLB 导出入口；实验室 `openPosePackage` 经 `posePackageSpec` 派生回放 spec（信封/ad-hoc presentation 通道）。
 
 | 端点 | 状态 |
 |---|---|
@@ -136,11 +136,11 @@ RenderRequest 独立引用一个已完成的 motion，可包含命名相机预�
 | `GET /v1/rigs/{id}` | ✅ rig manifest：163 骨拓扑、rest local TRS（平移=父子 head 差、旋转恒等）、VRM humanoid 语义映射（52 骨映射 / 111 extra）、manifestSHA256 + sourceSHA256 |
 | `POST /v1/motions` | ✅ 同步返回 pose-json；`Idempotency-Key` 重放 / 冲突 409（上限 256 键 / 15 分钟 TTL）；请求体支持 `Content-Encoding: gzip`（上限按解压后计）；`provenance.requestFingerprint` = 排序键 canonical JSON SHA-256（RFC 8785 JCS 待替换），包 `id` = artifact 身份（请求指纹 + 定义哈希 + rig manifest 哈希 + solver 版本联合哈希，求解器/骨架升级即变） |
 | `GET /v1/motions/{id}` | ❌ 未实现——当前全部同步完成，无异步任务 |
-| GLB 导出 | ⚠️ 部分实现——派生导出已落地（工作台「导出 GLB」+ `npm run package-to-glb`，共享 `src/core/glb-export.ts`；包时间轴原样入 clip，逐骨四元数 + root 位移轨）；服务端 `outputs.format:'glb'` 有意未做——GLB 是派生品不是交付格式，渲染分层属后置阶段 |
+| GLB 导出 | ⚠️ 部分实现——派生导出已落地（工作台「导出 GLB」+ `npm run package-to-glb`，共享 `packages/motion-core/src/glb-export.ts`；包时间轴原样入 clip，逐骨四元数 + root 位移轨）；服务端 `outputs.format:'glb'` 有意未做——GLB 是派生品不是交付格式，渲染分层属后置阶段 |
 | `POST .../renders`、VRMA 导出、MCP adapter | ❌ 未实现——按分阶段验收顺序后置 |
 
 目录诚实的边界：五个内置动作（idle/reach/squat/ready/forehand——`assets/motions/*.json` 的 `workshop-motion` 信封，内嵌规范化 WorkshopDoc，与服务端同一条求解管线）+ `workshop-doc`（提交校验过的 WorkshopDoc，≤10s/120 keys，参数即模板原语——对应第二优先的声明式模板雏形）。`walk`（CMU 动捕转换，`clip-motion` 信封指向外部片段，轨迹不进姿态管线，许可边界）、动力学动作（`punch`/`baseball-throw`，`dynamics-motion` 信封进文件注册表即网页动作库，但离线分钟级求解、需要记录回放→姿态包转换，按 `service.ts` 的 kind 过滤不进服务目录）均不在目录中；`shotput`/`throw` 无对应资产。forehand 的「上臂与躯干穿插」在目录 notes 与 quality.warnings 中显式标注。
 
-姿态包约定：仅输出非恒等旋转轨道 + root 平移（共享时间戳网格）、四元数半球连续化、事件（phase/keyframe/contact + 支撑区间事件 support-start/support-end，仅在 false↔true 转换处各发一次）、quality（膝/肘/肩限位与足底高度逐帧聚合 + workshop 逐关键帧约束检查 + warnings）。`action.definitionSHA256` 哈希的是解析后的真实动作定义（内置动作为 `motionDefinitionPayload`：规范化 document + phases + notes + license；`workshop-doc` 为规范化文档），不是动作名。`src/server/validate.ts` 是独立校验器（不共用求解代码），重算 FK 复查段长、范数、半球连续、时间戳；`spec/examples/idle.pose.json` 是黄金 fixture（`npm run protocol:example` 重新生成）。
+姿态包约定：仅输出非恒等旋转轨道 + root 平移（共享时间戳网格）、四元数半球连续化、事件（phase/keyframe/contact + 支撑区间事件 support-start/support-end，仅在 false↔true 转换处各发一次）、quality（膝/肘/肩限位与足底高度逐帧聚合 + workshop 逐关键帧约束检查 + warnings）。`action.definitionSHA256` 哈希的是解析后的真实动作定义（内置动作为 `motionDefinitionPayload`：规范化 document + phases + notes + license；`workshop-doc` 为规范化文档），不是动作名。`packages/motion-core/src/validate.ts` 是独立校验器（不共用求解代码），重算 FK 复查段长、范数、半球连续、时间戳；`spec/examples/idle.pose.json` 是黄金 fixture（`npm run protocol:example` 重新生成）。
 
 验证发现并已并入设计的修正：OpenAPI 锁 3.1（对齐本仓既有 draft-2020-12 schema）；语义表采用 VRM humanoid 词表而非自造命名；MuscleMimic/MyoSuite 消费的是特定 MuJoCo 骨架的 qpos 轨迹——TRS 姿态包是呈现/交付格式，未来可加 solver-native `qpos/qvel` 块而非把 TRS 当求解器输入。

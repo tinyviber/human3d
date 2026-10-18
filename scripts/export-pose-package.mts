@@ -2,9 +2,9 @@
 // Usage: tsx scripts/export-pose-package.mts [actionId] [outFile]
 import fs from 'node:fs';
 import path from 'node:path';
-import {createService,handleRequest} from '../src/server/service';
-import {validatePosePackage} from '../src/server/validate';
-import type {PosePackage} from '../src/core/pose-package';
+import {createService,handleRequest} from '@human3d/server';
+import {validatePosePackage} from '@human3d/motion-core';
+import type {PosePackage} from '@human3d/motion-core';
 const [id='idle',out=`spec/examples/${id}.pose.json`]=process.argv.slice(2);
 const ctx=await createService(path.resolve('public'));
 const res=handleRequest(ctx,'POST','/v1/motions',{action:{id,parameters:{}}},{});

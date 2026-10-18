@@ -20,6 +20,8 @@
   "strict": true
  },
  "include": [
-  "src"
+  "apps/*/src",
+  "packages/*/src",
+  "tests"
  ]
 }
