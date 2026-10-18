@@ -6,17 +6,15 @@ import {MOTION_FILES} from '../core/motion-files';
 import {motionDefinitionPayload} from '../core/motion-file';
 import {parseDoc,type WorkshopDoc} from '../workshop/document';
 import {WORKSHOP_LIMITS} from '../workshop/limits';
-import {buildRigManifest,sha256,type RigManifest} from './rig-manifest';
-import {actionDefinitionHash,solveWorkshop,type PosePackage} from './pose-package';
-import {RIG_ID,SERVICE_VERSION,SOLVER_NAME,WORKSHOP_REVISION,artifactIdPayload,canonical,normalizedRequest,workshopMeta} from '../core/protocol';
+import {buildRigManifest,sha256} from './rig-manifest';
+import {solveWorkshop,type PosePackage} from '../core/pose-package';
+import {RIG_ID,SERVICE_VERSION,SOLVER_NAME,WORKSHOP_REVISION,artifactIdPayload,canonical,normalizedRequest,workshopMeta,type RigManifest} from '../core/protocol';
 import {createContract,describeErrors,type Contract} from './contract';
 import {validatePosePackage} from './validate';
 import type {ErrorCode} from './errors';
 
-// Re-exported for the service's public surface (tests/scripts import these
-// protocol primitives from './service'); the implementations live in
-// src/core/protocol.ts so the browser builder shares them.
-export {SERVICE_VERSION,normalizedRequest};
+/** Sorted-key canonical JSON hash of the fully resolved action definition. */
+export const actionDefinitionHash=(payload:unknown)=>sha256(canonical(payload));
 export const LIMITS_SVC={maxFps:60,defaultFps:40,
  /** Same caps the workshop UI and validator use (src/workshop/limits.ts). */
  maxWorkshopDuration:WORKSHOP_LIMITS.maxDuration,maxWorkshopKeys:WORKSHOP_LIMITS.maxKeys,
