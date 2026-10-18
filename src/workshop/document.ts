@@ -10,7 +10,6 @@ import type {Side} from './foot';
  * kinematically (see solver.ts). */
 
 export interface V3{x:number;y:number;z:number}
-export const v3=(x=0,y=0,z=0):V3=>({x,y,z});
 export const toV=(v:V3)=>new Vector3(v.x,v.y,v.z);
 const fromV=(v:Vector3):V3=>({x:v.x,y:v.y,z:v.z});
 
@@ -116,7 +115,7 @@ export function canonicalizeHands(p:PoseParams){
   n.normalize();h.normal=fromV(n);
  }
 }
-export const clonePose=(p:PoseParams):PoseParams=>unflattenPose(flattenPose(p));
+const clonePose=(p:PoseParams):PoseParams=>unflattenPose(flattenPose(p));
 
 /* ---- Channel layout (flattenPose): root 0–2 · yaw 3 · lean 4 · chest 5 · side 6
  * handL target 7–9, pole 10–12, forward 13–15, normal 16–18 · handR 19–21, 22–24, 25–27, 28–30
@@ -714,12 +713,12 @@ export function setKeyTime(doc:WorkshopDoc,key:WorkshopKey,t:number){
  * workbench opens with a usable five-key motion instead of a T-pose. Hands
  * interpolate in the pelvis frame, as the laboratory does. ---- */
 
-export interface SeedControls{y:number;z:number;yaw:number;chest:number;lean:number;right:[number,number,number];left:[number,number,number];rf:[number,number,number];rn:[number,number,number];lf:[number,number,number];ln:[number,number,number];stance:number}
+interface SeedControls{y:number;z:number;yaw:number;chest:number;lean:number;right:[number,number,number];left:[number,number,number];rf:[number,number,number];rn:[number,number,number];lf:[number,number,number];ln:[number,number,number];stance:number}
 const readySeed:SeedControls={y:-.055,z:-.05,yaw:0,chest:0,lean:5,right:[-.24,1.09,.29],left:[.17,1.14,.30],rf:[0,0,1],rn:[1,0,0],lf:[-.6,-.2,.7],ln:[-.4,.8,0],stance:.20};
 /** Task-space controls → a key pose. `foot` sets the ankle target's forward
  * offset: `zBase + sign*zStep` (zStep 0 keeps both feet on the zBase line —
  * the idle/reach/squat convention; ±zStep is the staggered ready stance). */
-export function controlsToPoseParams(rest:ReadonlyMap<string,Vector3>,c:SeedControls,foot:{zBase:number;zStep:number}):PoseParams{
+function controlsToPoseParams(rest:ReadonlyMap<string,Vector3>,c:SeedControls,foot:{zBase:number;zStep:number}):PoseParams{
   const origin=rest.get('root')!;
   const yaw=new Quaternion().setFromAxisAngle(new Vector3(0,1,0),c.yaw*DEG);
   const rootPos=origin.clone().add(new Vector3(0,c.y,c.z));
