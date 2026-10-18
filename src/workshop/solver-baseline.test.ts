@@ -8,19 +8,15 @@ import {frameAt} from './document';
 import {solveEffectiveFrame} from './solver';
 import {normalizeMotionFile} from '../core/motion-file';
 
-/* Change-detector baseline for the bundled workshop motions. The goldens in
- * spec/migration/ were originally authored-pipeline captures; since the
- * tangent-clamp solver change (WP-C, document.ts tan()) they are recaptured
- * from the production replay path itself — envelope → normalizeMotionFile →
- * frameAt → solveEffectiveFrame — by scripts/recapture-migration-goldens.mts.
- * So this test no longer asserts migration equivalence with the retired
- * authoring pipeline; it pins the CURRENT solver's output, and any future
- * solve-semantics drift fails here. The historical old↔new delta is recorded
- * in docs/investigate.md (WP-C) and evidence/migration-report.txt.
+/* Change-detector baseline for the bundled workshop motions: the goldens in
+ * spec/solver-baseline/ are captures of the production replay path itself —
+ * envelope → normalizeMotionFile → frameAt → solveEffectiveFrame — taken by
+ * scripts/recapture-solver-baseline.mts. This test pins the CURRENT solver's
+ * output, and any future solve-semantics drift fails here.
  *
  * Replay is deterministic (property.test.ts asserts bitwise re-solve), so
- * the budget is pure platform-float margin — ~1000× tighter than the old
- * migration tolerances on purpose: the golden IS this code path's output. */
+ * the budget is pure platform-float margin: the golden IS this code path's
+ * output. */
 const TOL={quatDeg:.001,posMm:.001};
 interface Golden{schema:string;id:string;times:number[];root:number[][];bones:string[];quats:number[][][]}
 
@@ -34,7 +30,7 @@ beforeAll(async()=>{
 describe('bundled motion solver baseline',()=>{
  for(const id of ['idle','reach','squat','ready','forehand']){
   it(`replays ${id} to the captured solver baseline`,()=>{
-   const g=JSON.parse(fs.readFileSync(`spec/migration/${id}.golden.json`,'utf8')) as Golden;
+   const g=JSON.parse(fs.readFileSync(`spec/solver-baseline/${id}.golden.json`,'utf8')) as Golden;
    const doc=normalizeMotionFile(JSON.parse(fs.readFileSync(`assets/motions/${id}.json`,'utf8'))).document!;
    const origin=rig.rest.get('root')!;
    for(const [i,t] of g.times.entries()){

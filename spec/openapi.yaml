@@ -178,8 +178,9 @@ components:
                 JSON (named keyframes with pose targets and plant/grip/contact
                 constraints; optional document flags such as `clavicleLift` and
                 `gripSide` — 'R'|'L', default 'R', which hand holds the racket;
-                at most 10 s and 120 keys). Documents with
-                schemaVersion 1 are upgraded on input.
+                at most 10 s and 120 keys). `schemaVersion` must be 2: older
+                documents are refused with 400 `validation_failed`, never
+                silently upgraded.
         rig:
           type: string
           default: makehuman-body

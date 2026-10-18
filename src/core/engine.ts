@@ -8,6 +8,7 @@ import {motionDefinitionPayload} from './motion-file';
 import {canonical,rigManifestBody} from './protocol';
 import {attachRacket,mountRacket} from './racket';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,checkPosePackageShape,createDynamicsSession,posePackageSpec,rigMatches,type DynamicsSession,type MotionSource} from './motion-source';
+import {subtleDigest} from './package-export';
 import type {PosePackage} from './pose-package';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
 import type {DebugOptions,MotionId,MotionSpec,RigInfo,ViewId} from './types';
@@ -16,12 +17,12 @@ const ZERO=new Vector3();
 /** sha256 hex of a canonical string via WebCrypto. `crypto.subtle` only
  * exists on secure contexts (https/localhost); where absent the hash is
  * unknowable — return undefined and let callers degrade honestly rather
- * than fabricate a check that cannot run. */
+ * than fabricate a check that cannot run. The digest + hex encoding is the
+ * shared one from the package builder (package-export.ts); only the
+ * absence policy differs (the builder must fail loudly instead). */
 const sha256Hex=async(s:string):Promise<string|undefined>=>{
- const subtle=globalThis.crypto?.subtle;
- if(!subtle)return undefined;
- const buf=await subtle.digest('SHA-256',new TextEncoder().encode(s));
- return [...new Uint8Array(buf)].map(b=>b.toString(16).padStart(2,'0')).join('');
+ if(!globalThis.crypto?.subtle)return undefined;
+ return subtleDigest(s);
 };
 export class HumanEngine{
  scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;

@@ -4,7 +4,6 @@ import {frameAt,sortedKeys,type WorkshopDoc} from '../workshop/document';
 import {analyzePose,solveEffectiveFrame,type CheckItem} from '../workshop/solver';
 import {RIG_ID} from './protocol';
 import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
-export {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION};
 
 /** One aggregated quality check. `value` is the worst sample observed and
  * `worstTime` is when it occurred; `ok` holds only if every sample passed.

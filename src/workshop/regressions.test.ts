@@ -7,6 +7,7 @@ import {attachRacket} from '../core/racket';
 import {blankDocument,contactStartKey,flattenPose,frameAt,isReleaseKey,samplePose,validateDocShape,type WorkshopDoc,type WorkshopKey} from './document';
 import {ankleYForLift,footGeometry,footLift,type Side} from './foot';
 import {analyzePose,solveEffectiveFrame} from './solver';
+import {mulberry32} from './random-document';
 
 /** Regression tests for issue #2 P1-1..P1-5. Every case runs through the same
  * path the engine and the service use: frameAt → solveEffectiveFrame → rig
@@ -204,7 +205,7 @@ describe('loop seam, grip ramp, and random documents',()=>{
   expect(frameAt(d,1.5,origin()).gripAmount).toBeCloseTo(1,5);
  });
  it('keeps random valid documents finite and valid through the solver',()=>{
-  let seed=20240607;const rnd=()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+  const rnd=mulberry32(20240607);
   const r=(a:number,b:number)=>a+(b-a)*rnd();
   for(let n=0;n<8;n++){
    const duration=r(.6,4);const count=2+Math.floor(rnd()*3);

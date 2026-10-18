@@ -277,7 +277,7 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 ## 身份与 golden 语义
 
 - 求解运动语义变化 → `SERVICE_VERSION` `0.1.0`→`0.2.0`（`artifactIdPayload` 的 `solver.revision`、`provenance.solverRevision`、capabilities 同步变化）。`spec/examples/idle.pose.json` 重生成：artifact id `mot_6db10f3c7966b541`→`mot_85e6387dda9682db`——身份 bump 正确，但本提交当初声称的「轨迹逐位不变（各键邻域对称，钳制不触发）」经复核证伪，如实更正：钳制在 idle 上**实际触发 22 处（键×通道）**，全部位于 pelvis 系手部目标通道（flatten 通道 7–9/19–21；迁移细分键 6-7、19-20、34-35 的邻域非对称，被钳切线幅值 ≤7.7e-4 m/s）。功能影响可忽略：40fps 包网格（193 采样点）实测解算后仅 upperarm01/lowerarm01/lowerarm02/wrist 双侧 8 条旋转轨出现共 880 个四元数分量差、最大聚合角差 ~0.005°（0.0045°），平移轨逐位相同；下表 idle 行全零是因为 42 个 golden 采样点落在受扰区间内的时刻恰好全是键时刻（Hermite 过键逐位），受扰区间内部无采样。b450e79 提交说明里的 "the clamp never triggers there" 同步证伪，以此处实测为准。
-- `spec/migration/*.golden.json` 语义改写：**迁移等价断言 → 变更探测器基线**。原 golden 是 frozen authoring 管线（`migrate-authored-motions.mts` 内快照 `poseAt`）的捕获；本提交起由 `scripts/recapture-migration-goldens.mts` 走生产回放路径（frameAt→solveEffectiveFrame）重捕获，`migration.test.ts` 容差收紧到 1e-3°/1e-3mm——回放确定性（property.test 钉死逐位重解）意味着该余量只盖平台浮点抖动，任何未来求解语义漂移即红。authoring 参照捕获改落 `evidence/migration-authored/`（gitignored，可复现）；residual 报告仍由 migrate 脚本产出到 `evidence/migration-report.txt`，现含钳制效应（squat max 0.405→1.012°）。
+- `spec/solver-baseline/*.golden.json` 语义改写：**迁移等价断言 → 变更探测器基线**。原 golden 是 frozen authoring 管线（迁移脚本内快照 `poseAt`）的捕获；本提交起由 `scripts/recapture-solver-baseline.mts` 走生产回放路径（frameAt→solveEffectiveFrame）重捕获，`solver-baseline.test.ts` 容差收紧到 1e-3°/1e-3mm——回放确定性（property.test 钉死逐位重解）意味着该余量只盖平台浮点抖动，任何未来求解语义漂移即红。钳制效应读数（squat max 0.405→1.012°）见下节；authoring 迁移脚本及其参照捕获/残差报告已在消融批次退役（生成器不存在后是死数据）。
 
 ## 旧↔新迁移 delta（golden 网格，求解骨局部四元数角差，度）
 
@@ -384,7 +384,7 @@ b  = ln(q_i⁻¹q_{i+1})  —— 段割线对数(体坐标)
 ## 身份与 golden 语义
 
 - 求解运动语义变化 → `SERVICE_VERSION` `0.2.0`→`0.3.0`。`spec/examples/idle.pose.json` 重生成:artifact id `mot_85e6387dda9682db`→`mot_a9edd1d24e21d202`,轨迹逐位不变(idle 手帧各键不动,下表全零行)。
-- `spec/migration/*.golden.json` 走既有 `recapture-migration-goldens.mts` 重捕获,容差 1e-3°/1e-3mm 不变。
+- `spec/solver-baseline/*.golden.json` 走既有 `recapture-solver-baseline.mts` 重捕获,容差 1e-3°/1e-3mm 不变。
 
 ## 旧↔新迁移 delta(本次 squad;golden 网格,求解骨局部四元数角差,度)
 
@@ -413,7 +413,7 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 
 - `workshop.test.ts` 新增 `hand frame cubic (WP-C squad)` 七项:①键时刻逐位复现(<1e-9)②键时刻角速度左右有限差分连续(ε=1e-4,|ωL−ωR|<0.05,半角率口径;实测 0.017,旧 slerp 同口径 ~10)③稀疏世界系文档 C¹ ④相邻同姿键逐位静止+ω≈0(截幅自然结果,无特判)⑤loop 接缝值逐位相等+ω 连续 ⑥handFrames=pelvis 下立方在骨盆系运行(定姿相对骨盆→世界输出逐位跟随 yaw(t))⑦反极 quat 表示的键取短弧(max<3.1rad,不触 ~205° 长弧)。
 - `quality.test.ts` 新增 kick 断言(共享 `probeDocument` 真实求解路径):forehand tip kicks<40(实测 26,修前 62);defaultDocument atKey 步长中位<interior×0.5(实测 0.17°/1.47°,修前 1.38°/1.50°)、tip accelTop<1500 m/s²(实测 1169,修前 2463@keyΔ0ms)。
-- `migration.test.ts` 沿用重捕获机制;`evidence/quality-probe-*.json` 全部重生成。
+- `solver-baseline.test.ts` 沿用重捕获机制;`evidence/quality-probe-*.json` 全部重生成。
 
 ## 探针前后对照(240fps,`evidence/quality-probe-{default,forehand}.json`)
 
@@ -444,7 +444,7 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 
 - 夹具:`spec/examples/forehand-study.request.json`(2.0s、5 键正手:准备→引拍→触球→随挥→恢复;`handFrames` 双手 pelvis;唯一 contact 键 @1.15s)。
 - 账本:`spec/examples/forehand-study.md`——逐键 UI 编辑路径、~35 轮探针迭代拐点、240/60fps 最终指标表、残余偏差如实记录。全部编辑经真实 UI 写路径(`drive.mjs` 回放 `ops.json`:滑块/字段 input 事件 + 双视角画布指针拖拽),无姿态数据注入;引擎方法直调仅限读路径/播放控制(`getDoc`/`setPlaying`/`solveCurrent`/camera 读数)。
-- 工具链:`scripts/forehand-study/`(drive/ops 配方、probe、grid、inspect、retune、kickmap、tiptrace、delta-decomp、finalize、pkgcheck),各文件头注明用途与入口参数,保留作复现与后续校准用途。
+- 工具链:`scripts/forehand-study/`(drive/ops 配方,保留作夹具重制入口);研究期的 probe/grid/inspect/retune/kickmap/tiptrace/delta-decomp/finalize/pkgcheck 已随一次性校准退役,重测走共享探针 CLI(`measure-quality-probe.mts`)。
 - 逐轮指标快照:`evidence/forehand-study/rounds.jsonl`(`final-240`/`final-60` 为定稿读数)+ `doc-*.json` 中间稿。
 
 ## 硬质量门校准值(quality.test.ts,实测 ×1.25 上限 / ÷1.25 下限)
@@ -538,7 +538,7 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 
 ## WP-D · 双审修复轮(review-D1 minors + review-D2 medium/lows)
 
-- **SERVICE_VERSION `0.3.0`→`0.4.0`**:`gripSide` 进 `solvePose`(指节包裹/腕锥/锁骨辅助/球拍挂载整段按侧镜像)是求解语义变化,`protocol.ts` 明令无条件 bump——WP-D 落地时漏升,本轮补上。`spec/examples/idle.pose.json` 经 `npm run protocol:example` 重生成:artifact id `mot_a9edd1d24e21d202`→`mot_c67dda30d91962fd`,顶层仅 `id` 与 `provenance.solverRevision` 变化——轨迹逐位不变(gripSide 缺省='R',idle 文档无 'L',既有轨迹不受影响)。`evidence/migration-report.txt` 经 `npx tsx scripts/migrate-authored-motions.mts` 重生成(仅首行 solver 版本号变化,残差逐字相同);顺带修复该脚本内嵌 `motionSchema` 漂移——WP-D 直接在磁盘信封 schema 上加 dynamics-motion/prop.side,脚本内嵌副本已旧,若重跑会把 schema 写回旧版,故移除其对 `motion.schema.json` 的写路径(schema 改为磁盘文件独立持有)。
+- **SERVICE_VERSION `0.3.0`→`0.4.0`**:`gripSide` 进 `solvePose`(指节包裹/腕锥/锁骨辅助/球拍挂载整段按侧镜像)是求解语义变化,`protocol.ts` 明令无条件 bump——WP-D 落地时漏升,本轮补上。`spec/examples/idle.pose.json` 经 `npm run protocol:example` 重生成:artifact id `mot_a9edd1d24e21d202`→`mot_c67dda30d91962fd`,顶层仅 `id` 与 `provenance.solverRevision` 变化——轨迹逐位不变(gripSide 缺省='R',idle 文档无 'L',既有轨迹不受影响)。(同轮修复的迁移脚本内嵌 schema 漂移随该脚本在消融批次退役,不再是维护面。)
 - **动力学 flat-fallback 死契约**:`DynamicsReplay.load` 裸 spec 回退路径 `/dynamics/<id>-<case>` 自迁移起即永 404,更正为真实布局 `/dynamics/<id>/<case>`(types.ts/motion-source.ts 注释同步);`load` 新增 `meta.id`/`meta.case` 与请求 id/profile 一致性校验,不匹配显式抛错——与 `scripts/test-dynamics-records.py` 同一闸门,信封 URL 指错动作的记录不再静默回放。
 - **HistoryBook.drop 死代码 + 复活路径**:`MotionLibrary.remove` 新增 `onRemoved` 钩子,`WorkshopApp` 接 `books.drop(id)`——删文档连同其撤销书;否则同 id 文档再导入(导入只在冲突时重编 id)会继承已删文档的整栈快照,undo 把旧内容写回新文档(僵尸写)。`applyDoc` 返回成败,undo/redo 恢复目标 id 不在库中(镜像源文档被删)时给出 hint 而非静默吞步。回归:删源文档→同 id 再导入→`books.of(id).canUndo()===false`。
 - **captureSheet 文档版本混排**:拼图逐 tile await(toBlob/createImageBitmap 让出事件循环)之间 `getDoc()` 每格重读活动文档,中途切文档/编辑会把两版文档拼进同一张图;入口即 `serializeDoc→parseDoc` 冻结副本并交换 getDoc,全部 tile 对同一文档版本求解。

@@ -10,9 +10,8 @@ import type {Side} from './foot';
  * kinematically (see solver.ts). */
 
 export interface V3{x:number;y:number;z:number}
-export const v3=(x=0,y=0,z=0):V3=>({x,y,z});
 export const toV=(v:V3)=>new Vector3(v.x,v.y,v.z);
-export const fromV=(v:Vector3):V3=>({x:v.x,y:v.y,z:v.z});
+const fromV=(v:Vector3):V3=>({x:v.x,y:v.y,z:v.z});
 
 export interface HandTarget{target:V3;pole:V3;forward:V3;normal:V3}
 export interface FootTarget{target:V3;pole:V3;yaw:number;pitch:number}
@@ -66,7 +65,7 @@ export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIn
  gripSide?:Side}
 
 /** Grip closes and opens over this window after the key that toggles it. */
-export const GRIP_TRANSITION_S=.25;
+const GRIP_TRANSITION_S=.25;
 /** κ of the Hermite tangent clamp: every interior tangent's magnitude is
  * capped at κ× the SMALLER adjacent secant rate (see the tan() comment for
  * why the larger secant can never bind). κ=3 is the classic monotone-cubic
@@ -116,8 +115,7 @@ export function canonicalizeHands(p:PoseParams){
   n.normalize();h.normal=fromV(n);
  }
 }
-export const clonePose=(p:PoseParams):PoseParams=>unflattenPose(flattenPose(p));
-export const cloneConstraints=(c:KeyConstraints):KeyConstraints=>({...c});
+const clonePose=(p:PoseParams):PoseParams=>unflattenPose(flattenPose(p));
 
 /* ---- Channel layout (flattenPose): root 0–2 · yaw 3 · lean 4 · chest 5 · side 6
  * handL target 7–9, pole 10–12, forward 13–15, normal 16–18 · handR 19–21, 22–24, 25–27, 28–30
@@ -478,7 +476,7 @@ export function contactStartKey(doc:DocLike&{keys:WorkshopKey[]},side:Side,time:
 }
 
 export function keyAt(doc:WorkshopDoc,id:string){return doc.keys.find(k=>k.id===id);}
-export function insertKey(doc:WorkshopDoc,key:WorkshopKey){doc.keys.push(key);doc.keys.sort((a,b)=>a.time-b.time);}
+function insertKey(doc:WorkshopDoc,key:WorkshopKey){doc.keys.push(key);doc.keys.sort((a,b)=>a.time-b.time);}
 export function nearestKey(doc:WorkshopDoc,time:number,eps=.02){
   let best:WorkshopKey|undefined,bd=Infinity;
   for(const k of doc.keys){const d=Math.abs(k.time-time);if(d<bd){bd=d;best=k;}}
@@ -503,17 +501,6 @@ export function ensureKey(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3)
 export function serializeDoc(doc:WorkshopDoc){return JSON.stringify(doc,null,2);}
 const isV3=(v:unknown):v is V3=>!!v&&typeof v==='object'&&['x','y','z'].every(k=>Number.isFinite((v as Record<string,number>)[k]));
 
-/** Migration entry point. v1 documents become v2 with the behaviour they had:
- * no loop, world-space hands. Unknown versions are returned unchanged so the
- * validator reports them instead of guessing. */
-export function upgradeDoc(raw:unknown):unknown{
-  if(!raw||typeof raw!=='object')return raw;
-  const d=raw as Record<string,unknown>;
-  if(d.schemaVersion!==1)return raw;
-  const keys=Array.isArray(d.keys)?d.keys.map(k=>k&&typeof k==='object'?{...(k as object),label:(k as {label?:unknown}).label??''}:k):d.keys;
-  return {...d,schemaVersion:2,english:typeof d.english==='string'?d.english:'',loop:false,handFrames:{L:'world',R:'world'},keys};
-}
-
 /** Structural validator shared by import, library rehydrate and the service:
  * every numeric field must be finite, times strictly increasing and inside the
  * shared duration limits, constraint fields boolean, direction frames
@@ -523,7 +510,7 @@ export function validateDocShape(d:unknown):string[]{
  const e:string[]=[];
  if(!d||typeof d!=='object')return ['文档不是对象'];
  const doc=d as WorkshopDoc;
- if(doc.schemaVersion!==2)e.push('schemaVersion 必须为 2（v1 文档请先经 upgradeDoc 迁移）');
+ if(doc.schemaVersion!==2)e.push('schemaVersion 必须为 2');
  if(typeof doc.id!=='string'||!doc.id)e.push('缺少 id');
  if(typeof doc.name!=='string')e.push('缺少 name');
  if(typeof doc.english!=='string')e.push('english 必须是字符串');
@@ -594,12 +581,11 @@ export function loopBlockers(doc:Pick<WorkshopDoc,'keys'|'duration'>):string[]{
   if(Math.max(...times)>doc.duration-WORKSHOP_LIMITS.loopGap+1e-9)out.push(`循环需要末关键帧早于 ${(doc.duration-WORKSHOP_LIMITS.loopGap).toFixed(2)} s`);
   return out;
 }
-/** Upgrade, validate and normalise an already-parsed document. Throws on the first problem. */
+/** Validate and normalise an already-parsed document. Throws on the first problem. */
 export function normalizeDoc(raw:unknown):WorkshopDoc{
-  const up=upgradeDoc(raw);
-  const errs=validateDocShape(up);
+  const errs=validateDocShape(raw);
   if(errs.length)throw new Error(`${errs[0]}${errs.length>1?`（共 ${errs.length} 处问题）`:''}`);
-  const d=up as WorkshopDoc;
+  const d=raw as WorkshopDoc;
   /* Canonical form: 'R' is the implicit default, so an explicit 'R' is folded
    * back to absent — documents that mean the same solve must serialize and
    * fingerprint identically (normalizedRequest embeds the parsed doc). */
@@ -727,12 +713,12 @@ export function setKeyTime(doc:WorkshopDoc,key:WorkshopKey,t:number){
  * workbench opens with a usable five-key motion instead of a T-pose. Hands
  * interpolate in the pelvis frame, as the laboratory does. ---- */
 
-export interface SeedControls{y:number;z:number;yaw:number;chest:number;lean:number;right:[number,number,number];left:[number,number,number];rf:[number,number,number];rn:[number,number,number];lf:[number,number,number];ln:[number,number,number];stance:number}
+interface SeedControls{y:number;z:number;yaw:number;chest:number;lean:number;right:[number,number,number];left:[number,number,number];rf:[number,number,number];rn:[number,number,number];lf:[number,number,number];ln:[number,number,number];stance:number}
 const readySeed:SeedControls={y:-.055,z:-.05,yaw:0,chest:0,lean:5,right:[-.24,1.09,.29],left:[.17,1.14,.30],rf:[0,0,1],rn:[1,0,0],lf:[-.6,-.2,.7],ln:[-.4,.8,0],stance:.20};
 /** Task-space controls → a key pose. `foot` sets the ankle target's forward
  * offset: `zBase + sign*zStep` (zStep 0 keeps both feet on the zBase line —
  * the idle/reach/squat convention; ±zStep is the staggered ready stance). */
-export function controlsToPoseParams(rest:ReadonlyMap<string,Vector3>,c:SeedControls,foot:{zBase:number;zStep:number}):PoseParams{
+function controlsToPoseParams(rest:ReadonlyMap<string,Vector3>,c:SeedControls,foot:{zBase:number;zStep:number}):PoseParams{
   const origin=rest.get('root')!;
   const yaw=new Quaternion().setFromAxisAngle(new Vector3(0,1,0),c.yaw*DEG);
   const rootPos=origin.clone().add(new Vector3(0,c.y,c.z));

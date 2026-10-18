@@ -8,13 +8,12 @@ import {checkPosePackageShape,ClipSource,createDynamicsSession,DocumentSource,Dy
 import {motionDefinitionPayload,normalizeMotionFile} from './motion-file';
 import {motionFileById} from './motion-files';
 import {buildPosePackageLocal,subtleDigest} from './package-export';
-import {buildRigManifest,sha256,type RigManifest} from '../server/rig-manifest';
-import {actionDefinitionHash} from '../server/pose-package';
-import {createService,handleRequest,type ServiceContext} from '../server/service';
+import {buildRigManifest,sha256} from '../server/rig-manifest';
+import {actionDefinitionHash,createService,handleRequest,type ServiceContext} from '../server/service';
 import {blankDocument,defaultDocument,serializeDoc} from '../workshop/document';
 import type {DynamicsReplay} from './dynamics';
 import {solveWorkshop,type PosePackage} from './pose-package';
-import {WORKSHOP_REVISION,workshopMeta} from './protocol';
+import {WORKSHOP_REVISION,workshopMeta,type RigManifest} from './protocol';
 
 /* MotionSource coverage: the package shape gate on the golden artifact and on
  * broken copies, the reference decoder cross-proved against an independent

@@ -6,9 +6,9 @@ import {exportGlb,posePackageToClip} from './glb-export';
 import {solveWorkshop} from './pose-package';
 import {HumanRig} from './rig';
 import {motionFileById} from './motion-files';
-import {WORKSHOP_REVISION,workshopMeta} from './protocol';
+import {WORKSHOP_REVISION,workshopMeta,type RigManifest} from './protocol';
 import {blankDocument,type WorkshopDoc} from '../workshop/document';
-import {buildRigManifest,sha256,type RigManifest} from '../server/rig-manifest';
+import {buildRigManifest,sha256} from '../server/rig-manifest';
 import {installFileReaderShim} from '../../scripts/lib/filereader-shim.mts';
 import type {PosePackage} from './pose-package';
 

@@ -33,7 +33,7 @@ export class MotionLibrary{
     let parsed:Partial<LibraryFile>|undefined,rawText:string|null=null,corrupt=false;
     try{rawText=this.store?.getItem(LIBRARY_KEY)??null;if(rawText!=null)parsed=JSON.parse(rawText) as Partial<LibraryFile>;}catch{corrupt=true;}
     const version=(parsed as {schemaVersion?:number}|undefined)?.schemaVersion;
-    const file=(!corrupt&&(version===1||version===2)&&parsed&&Array.isArray(parsed.docs))?parsed:undefined;
+    const file=(!corrupt&&version===2&&parsed&&Array.isArray(parsed.docs))?parsed:undefined;
     if(file){
       this.docs=[];this.quarantine=Array.isArray(file.quarantine)?file.quarantine.filter(q=>q&&typeof q==='object'):[];
       for(const raw of file.docs!){
@@ -50,7 +50,7 @@ export class MotionLibrary{
       for(const d of this.docs)for(const k of d.keys)canonicalizeHands(k.pose);
       this.activeId=this.docs.some(d=>d.id===file.activeId)?file.activeId!:this.docs[0]?.id??'';
     }else if(rawText){
-      // The stored file isn't a readable v1/v2 library (corrupt JSON or an
+      // The stored file isn't a readable v2 library (corrupt JSON or an
       // unknown/future schemaVersion). Keep the raw string in quarantine and
       // skip the auto-save below — overwriting storage would destroy the only
       // copy of the user's data. It is rewritten only by an explicit save.

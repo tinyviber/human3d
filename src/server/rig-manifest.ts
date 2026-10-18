@@ -8,6 +8,3 @@ export function buildRigManifest(rig:RigJsonFile,sourceHash:string):RigManifest{
  const body=rigManifestBody(rig);
  return {...body,manifestSHA256:sha256(canonical(body)),sourceSHA256:sourceHash};
 }
-// Compatibility re-exports — the implementations moved to src/core/protocol.ts.
-export {canonical,RIG_ID,rigManifestBody} from '../core/protocol';
-export type {RigJsonBone,RigJsonFile,RigManifest} from '../core/protocol';

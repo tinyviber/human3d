@@ -80,7 +80,7 @@ export function solveEffectiveFrame(rig:HumanRig,f:EffectiveFrame){
 
 /** Ankle dorsiflexion (degrees) of the solved rig, from the shank direction
  * in the foot's own frame. Measured on the rig, not on the target geometry. */
-export function ankleDorsiflexion(rig:HumanRig,side:Side){
+function ankleDorsiflexion(rig:HumanRig,side:Side){
   const shank=rig.point(`foot_${side}`).sub(rig.point(`lowerleg01_${side}`));
   const q=rig.bone(`foot_${side}`).getWorldQuaternion(new Quaternion()).invert();
   const local=shank.applyQuaternion(q);
@@ -112,7 +112,7 @@ const SEGMENTS:[string,string,number][]=[
   ['upperleg01_L','lowerleg01_L',.1416],['upperleg01_R','lowerleg01_R',.1416],
   ['lowerleg01_L','foot_L',.0433],['lowerleg01_R','foot_R',.0433],
 ];
-export function estimateCoM(rig:HumanRig){
+function estimateCoM(rig:HumanRig){
   const com=new Vector3();let mass=0;
   for(const [a,b,m]of SEGMENTS){const mid=rig.point(a).add(rig.point(b)).multiplyScalar(.5);com.addScaledVector(mid,m);mass+=m;}
   for(const side of ['L','R']as const){const foot=rig.point(`foot_${side}`).add(new Vector3(0,-.03,.05));com.addScaledVector(foot,.0137);mass+=.0137;}
@@ -137,7 +137,7 @@ export function supportPolygon(p:PoseParams,c:KeyConstraints){
   lower.pop();upper.pop();return lower.concat(upper);
 }
 /** Distance from a ground-plane point to a convex polygon (0 inside). */
-export function distanceToPolygon(p:Vector3,poly:Vector3[]){
+function distanceToPolygon(p:Vector3,poly:Vector3[]){
   if(poly.length<3)return Infinity;
   let min=Infinity,inside=true;
   for(let i=0;i<poly.length;i++){
@@ -149,9 +149,6 @@ export function distanceToPolygon(p:Vector3,poly:Vector3[]){
   }
   return inside?0:min;
 }
-export function insidePolygon(p:Vector3,poly:Vector3[],margin=.02){
-  return poly.length>=3&&distanceToPolygon(p,poly)<=margin;
-}
 
 /** Tolerance on limit comparisons: solver residue, not a physical allowance. */
 const NUMERIC_EPS=1e-3;
@@ -159,7 +156,7 @@ const NUMERIC_EPS=1e-3;
  * ankle dorsiflexion and sole depth. Independent of which feet are planted,
  * so the package builder can run them on every sampled frame, whatever the
  * document's constraint mix. */
-export function limitItems(rig:HumanRig):CheckItem[]{
+function limitItems(rig:HumanRig):CheckItem[]{
   const items:CheckItem[]=[];
   const P=(n:string)=>rig.point(n);
   const deg=(code:string,label:string,value:number,limit:number,ok=value<=limit+NUMERIC_EPS):CheckItem=>

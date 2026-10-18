@@ -4,7 +4,7 @@ import {handFrame} from './hand-frame';
 import {frameRotation} from './kinematics';
 /** Racket coordinates: +Y runs through the handle to the head; grip origin is
  * the center of the contact cylinder. Attachment is wrist-local, never world-follow. */
-export function createRacket(){
+function createRacket(){
   const group=new Group();group.name='RacketGrip';
   const blue=new MeshStandardMaterial({color:0x294de1,metalness:.45,roughness:.3});
   const dark=new MeshStandardMaterial({color:0x172737,roughness:.85});

@@ -48,8 +48,8 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 工作台按**动作库**组织（`src/workshop/library.ts` 的 `MotionLibrary`）：
 
-- 每个动作是一份 `WorkshopDoc`（`schemaVersion:2`，v1 文档经 `upgradeDoc` 迁移）：`id`（按名称生成 slug + 随机后缀，冲突时重新生成）、`name`（自定义命名）、`english`、`duration`、`inbetweens`、`loop`（周期性接缝）、`handFrames`（手部目标按 world / pelvis 系插值）、可选 `clavicleLift`（抬肩辅助：握拍侧手部目标抬高时锁骨与肩带随动上抬，求解器逐帧推导幅度——内置 reach 动作使用，面板「抬肩辅助」开关）、可选 `gripSide`（握拍侧 `'R'|'L'`：缺省即右手且为规范形态——显式 `'R'` 在 `normalizeDoc` 归一化时折叠回缺省，因此同义写法共享指纹；`'L'` 把整套握拍阶段——`applyGrip` 指节包裹、腕弯曲限位、抬肩辅助、球拍挂载——镜像到左手，面板「握拍侧」下拉。侧别改变求解出的轨迹，所以它属于文档并进入请求指纹，不是展示元数据）、`keys[]`。
-- 动作库整体存 `localStorage['kinesis-workshop-library']`：`{schemaVersion:2, activeId, docs[], quarantine[]}`（v1 库文件仍可读取并迁移），编辑即写回（拖动期间 500ms 节流 + 拖动结束强制保存）。读取时逐条经 `validateDocShape` 严格校验（有限数值、严格递增时间、布尔约束、非退化方向框架），损坏或非法条目移入 `quarantine` 保留原文（可导出修复后再导入），全空时用示例动作重新播种；隐私模式 / 超限写失败时 `library.lastError` 置位且界面明示「仅存于内存」。
+- 每个动作是一份 `WorkshopDoc`（`schemaVersion:2`）：`id`（按名称生成 slug + 随机后缀，冲突时重新生成）、`name`（自定义命名）、`english`、`duration`、`inbetweens`、`loop`（周期性接缝）、`handFrames`（手部目标按 world / pelvis 系插值）、可选 `clavicleLift`（抬肩辅助：握拍侧手部目标抬高时锁骨与肩带随动上抬，求解器逐帧推导幅度——内置 reach 动作使用，面板「抬肩辅助」开关）、可选 `gripSide`（握拍侧 `'R'|'L'`：缺省即右手且为规范形态——显式 `'R'` 在 `normalizeDoc` 归一化时折叠回缺省，因此同义写法共享指纹；`'L'` 把整套握拍阶段——`applyGrip` 指节包裹、腕弯曲限位、抬肩辅助、球拍挂载——镜像到左手，面板「握拍侧」下拉。侧别改变求解出的轨迹，所以它属于文档并进入请求指纹，不是展示元数据）、`keys[]`。
+- 动作库整体存 `localStorage['kinesis-workshop-library']`：`{schemaVersion:2, activeId, docs[], quarantine[]}`（只接受 schemaVersion 2 的容器与 v2 文档；旧版 / 未来版 / 损坏内容整体进隔离区，**原文逐字节保留、禁止自动覆盖**，可在界面导出后手工修复再导入——运行时不再提供 v1 自动迁移，这是明确的兼容性取舍），编辑即写回（拖动期间 500ms 节流 + 拖动结束强制保存）。读取时逐条经 `validateDocShape` 严格校验（有限数值、严格递增时间、布尔约束、非退化方向框架），损坏或非法条目移入 `quarantine` 保留原文（可导出修复后再导入），全空时用示例动作重新播种；隐私模式 / 超限写失败时 `library.lastError` 置位且界面明示「仅存于内存」。
 - 新建动作用 `blankDocument` 模板：站立姿态、双足支撑锁定、起始/结束两个关键帧，时长 1s。
 - `导出 JSON` 输出**当前动作单文件**（`*.workshop.json`）；`导入` 接受裸文档或 motion-file 信封——`kind:'workshop-motion'` 的 `document` 经 `unwrapMotionFile` 解包取出（`clip-motion` 没有内嵌轨迹，明确报错），解析后加入动作库并选中，id 冲突自动重生成。
 

@@ -71,7 +71,7 @@ export function angleAt(a:Vector3,b:Vector3,c:Vector3){return 180-a.clone().sub(
  * support weight (1 = planted, 0 = free swing, fractional during a transition). */
 export interface DorsiLeg{hip:Vector3;target:Vector3;pole:Vector3;upper:number;lower:number;footQ:Quaternion;weight:number}
 /** Ankle dorsiflexion (degrees) of a solved leg when the hip is shifted posteriorly by `bias` metres. */
-export function legDorsiflexion(l:DorsiLeg,bias=0){
+function legDorsiflexion(l:DorsiLeg,bias=0){
   const s=solveTwoBone(l.hip.clone().add(new Vector3(0,0,-bias)),l.target,l.pole,l.upper,l.lower,135);
   const shank=s.end.clone().sub(s.mid).applyQuaternion(l.footQ.clone().invert());
   return Math.atan2(-shank.z,-shank.y)/DEG;
@@ -97,7 +97,7 @@ function refineEdge(ok:(s:number)=>boolean,lo:number,hi:number,iterations=10){
  * leg reach. When no shift in range does (posterior shift can also move the
  * target away from the hip), the shift that gets closest is returned instead of
  * jumping to the cap: a jump there moved the pelvis 15 cm for a 3 mm excess. */
-export function legShiftForReach(l:DorsiLeg,maxShift:number,step=.005){
+function legShiftForReach(l:DorsiLeg,maxShift:number,step=.005){
   const reach=l.upper+l.lower-1e-4;
   const dist=(s:number)=>l.hip.clone().add(new Vector3(0,0,-s)).distanceTo(l.target);
   if(dist(0)<=reach)return 0;
@@ -114,7 +114,7 @@ export function legShiftForReach(l:DorsiLeg,maxShift:number,step=.005){
  * the reach sphere, so the search stays continuous as a target crosses reach.
  * `ok` is false when the limit is not met in range, or the target is out of
  * reach at the chosen shift; the caller reports that as saturation. */
-export function legShiftForLimit(l:DorsiLeg,limit:number,maxShift:number,step=.005){
+function legShiftForLimit(l:DorsiLeg,limit:number,maxShift:number,step=.005){
   const reach=l.upper+l.lower-1e-4;
   const reachOk=(s:number)=>l.hip.clone().add(new Vector3(0,0,-s)).distanceTo(l.target)<=reach;
   const dorsi=(s:number)=>legDorsiflexion(l,s);

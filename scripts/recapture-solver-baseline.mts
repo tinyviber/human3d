@@ -1,14 +1,12 @@
-// Recapture spec/migration/*.golden.json from the CURRENT solver output.
+// Recapture spec/solver-baseline/*.golden.json from the CURRENT solver output.
 //
-// The goldens used to pin the retired authoring pipeline (frozen poseAt in
-// migrate-authored-motions.mts); since the tangent-clamp solver change the
-// pipeline's curves deliberately diverge from the authored ones, so the
-// files are re-captured through the production replay path — the same
-// frameAt → solveEffectiveFrame calls migration.test.ts makes. They are now
-// a change-detector baseline: any future solve-semantics drift shows up as
-// a golden diff instead of silently shipping.
+// The goldens pin the production replay path — the same frameAt →
+// solveEffectiveFrame calls solver-baseline.test.ts makes — so any future
+// solve-semantics drift shows up as a golden diff instead of silently
+// shipping. Keep the golden's own instant grid so pre/post files stay
+// comparable.
 //
-// Rerunnable: npx tsx scripts/recapture-migration-goldens.mts
+// Rerunnable: npx tsx scripts/recapture-solver-baseline.mts
 import fs from 'node:fs';
 import path from 'node:path';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -26,7 +24,7 @@ const gltf=await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset,glb
 const rig=new HumanRig(gltf.scene,JSON.parse(rigJson.toString('utf8')) as RigInfo);
 const bones=[...rig.bones.keys()];
 const origin=rig.rest.get('root')!;
-const goldenDir=path.resolve('spec/migration');
+const goldenDir=path.resolve('spec/solver-baseline');
 
 interface GoldenFile{schema:string;id:string;times:number[];root:number[][];bones:string[];quats:number[][][]}
 for(const id of IDS){

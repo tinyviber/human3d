@@ -9,6 +9,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {createService,handleRequest} from '../src/server/service';
 import {blankDocument,serializeDoc,type WorkshopDoc,type WorkshopKey} from '../src/workshop/document';
+import {mulberry32} from '../src/workshop/random-document';
 import type {PosePackage} from '../src/core/pose-package';
 
 const [seed0=1,count=8]=process.argv.slice(2,4).map(Number);
@@ -17,8 +18,7 @@ const ctx=await createService(path.resolve('public'));
 const rig=ctx.rig;
 const clone=<T,>(x:T):T=>JSON.parse(JSON.stringify(x));
 
-let seed=seed0;
-const rnd=()=>{seed|=0;seed=seed+0x6D2B79F5|0;let t=Math.imul(seed^seed>>>15,1|seed);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296;};
+const rnd=mulberry32(seed0);
 const r=(a:number,b:number)=>a+(b-a)*rnd();
 
 function docWith(times:number[],edit:(i:number,k:WorkshopKey)=>void,duration:number):WorkshopDoc{

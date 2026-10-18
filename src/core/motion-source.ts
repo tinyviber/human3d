@@ -39,8 +39,6 @@ export interface MotionSource{
   readonly propSide?:'L'|'R';
   /** Whole-model visual offset (walk accumulates one stride per loop wrap). */
   readonly modelOffset?:Vector3;
-  /** Extra scene object managed by the source (dynamics replay root). */
-  object3d?:Object3D;
   /** Loop-seam side effect, e.g. the walk clip accumulating its stride. */
   loopWrapAdvance?():void;
   setDebug?(o:DebugOptions):void;
@@ -395,7 +393,6 @@ export class DynamicsSource implements MotionSource{
   private constructor(private session:DynamicsSession){}
   static create(session:DynamicsSession){return new DynamicsSource(session);}
   get physics(){return this.session.replay;}
-  get object3d(){return this.session.replay?.root;}
   get duration(){return this.session.replay?.duration??0;}
   /** Load the record for `id`. 'applied' → the engine finishes activation;
    * 'superseded' → a newer load or a source switch owns the replay now;

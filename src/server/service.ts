@@ -6,17 +6,15 @@ import {MOTION_FILES} from '../core/motion-files';
 import {motionDefinitionPayload} from '../core/motion-file';
 import {parseDoc,type WorkshopDoc} from '../workshop/document';
 import {WORKSHOP_LIMITS} from '../workshop/limits';
-import {buildRigManifest,sha256,type RigManifest} from './rig-manifest';
-import {actionDefinitionHash,solveWorkshop,type PosePackage} from './pose-package';
-import {RIG_ID,SERVICE_VERSION,SOLVER_NAME,WORKSHOP_REVISION,artifactIdPayload,canonical,normalizedRequest,workshopMeta} from '../core/protocol';
+import {buildRigManifest,sha256} from './rig-manifest';
+import {solveWorkshop,type PosePackage} from '../core/pose-package';
+import {RIG_ID,SERVICE_VERSION,SOLVER_NAME,WORKSHOP_REVISION,artifactIdPayload,canonical,normalizedRequest,workshopMeta,type RigManifest} from '../core/protocol';
 import {createContract,describeErrors,type Contract} from './contract';
 import {validatePosePackage} from './validate';
 import type {ErrorCode} from './errors';
 
-// Re-exported for the service's public surface (tests/scripts import these
-// protocol primitives from './service'); the implementations live in
-// src/core/protocol.ts so the browser builder shares them.
-export {SERVICE_VERSION,normalizedRequest};
+/** Sorted-key canonical JSON hash of the fully resolved action definition. */
+export const actionDefinitionHash=(payload:unknown)=>sha256(canonical(payload));
 export const LIMITS_SVC={maxFps:60,defaultFps:40,
  /** Same caps the workshop UI and validator use (src/workshop/limits.ts). */
  maxWorkshopDuration:WORKSHOP_LIMITS.maxDuration,maxWorkshopKeys:WORKSHOP_LIMITS.maxKeys,
@@ -50,7 +48,7 @@ interface ActionDescriptor{
 const BUNDLED_PARAMS={type:'object',additionalProperties:false,properties:{}};
 const WORKSHOP_DOC_PARAMS={
  type:'object',additionalProperties:false,required:['document'],
- properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); optional document flags such as clavicleLift and gripSide ('R'|'L', default 'R' — which hand holds the racket and gets the grip solve). Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. Documents with schemaVersion 1 are upgraded on input.`}},
+ properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); optional document flags such as clavicleLift and gripSide ('R'|'L', default 'R' — which hand holds the racket and gets the grip solve). Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. schemaVersion must be 2 — older documents are refused (400 validation_failed), never silently upgraded.`}},
 };
 const IDEMPOTENCY_KEY=new RegExp(`^[!-~]{1,${LIMITS_SVC.idempotencyKeyMaxLength}}$`);
 

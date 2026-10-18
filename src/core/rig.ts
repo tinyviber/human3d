@@ -1,7 +1,7 @@
 import {Bone, Object3D, Quaternion, Vector3, Euler} from 'three';
 import {frameRotation,solveTwoBone,forearmTwist,DEG,WRIST_BEND_LIMIT_DEG} from './kinematics';
 import {handFrame} from './hand-frame';
-import type {RigInfo,Pose} from './types';
+import type {RigInfo} from './types';
 export interface FingerJointPose {mcp:number;pip:number;dip:number;abduction?:number}
 export interface ThumbJointPose {cmcFlexion:number;cmcOpposition:number;mcp:number;ip:number}
 export interface HandJointPose {thumb:ThumbJointPose;fingers:Record<2|3|4|5,FingerJointPose>}
@@ -116,5 +116,4 @@ export class HumanRig {
     }
     this.model.updateMatrixWorld(true);
   }
-  snapshot():Pose{return {root:this.bone('root').position.clone(),rotations:new Map([...this.bones].map(([n,b])=>[n,b.quaternion.clone()]))};}
 }
