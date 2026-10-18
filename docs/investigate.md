@@ -557,3 +557,10 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 - **P2-6 GLB 边界覆盖**(`glb-export.test.ts`):四个用例全走真链路 `solveWorkshop`(真 capture)→`posePackageToClip`→`exportGlb`→回导→独立 `fkWorldAt` 对比(worst<1e-3):a) fps=7、duration 0.8s 非整除网格,断言 `timestamps.at(-1)===duration` 精确、count=7(末尾补点存在)、clip.duration 贴合;b) forehand 信封文档 @30fps 大旋转;c) 根 x/z 位移+转身 60° 同帧变化,并断言根轨确实移动(roundtrip 非平凡);d) 0.4s 两键极短文档。测试内求解 rig 用独立 GLB 解析,不污染 bake() 的干净模型。
 
 **验证**:`npx tsc -b` ✓、`npm test`(249 项,235+14 新增)✓、`npm run spec:check` ✓、`npm run build` ✓;`npm run qa:dynamics` 全绿(29 项 checks,动力学真实加载路径回归)、`npm run qa` 全绿(posePackage/posePackageForehand 走真实 served 包经文件输入导入——rigMatches 与 trust 闭包在浏览器真实路径上被验证)。
+
+## 复核追加轮(必修 M1 + 顺手 nit)
+
+- **M1 `DynamicsSource.load` 失败段拆分**(`src/core/motion-source.ts`):原 catch 无条件 `s.promise=undefined`,把 replay 创建段与记录段混为一谈——`replay.load` 失败(记录 404/身份不符)时 `s.replay` 已收编而 promise 被清,重试 `s.promise??=` 新建第二个 DynamicsReplay,`if(!s.replay)` 为假 → 孤儿 replay 不入 `s.parent` 却 `root.visible=true` 返回 'applied',`session.replay`/`physics`/`duration` 永指无记录的旧对象(播放卡死);陈旧 load 的 catch 在闸判之前清 promise 也毒化当前属主。修法:两段 try——`await s.promise`(创建段)失败且 `s.promise===p` 身份吻合才清(已拒的创建承诺是所有后续 load 的毒药,但不得清掉新属主已替换的 promise);`replay.load`(记录段)失败保留 promise 与 `s.replay`,重试在同一 replay 上重放记录段。`gen!==g||s.retired` 闸保持在 status/error/replay 应用点之前。回归:记录段抛错→重试 'applied' 且 `session.replay` 同对象、`parent.children===[root]`;悬停中的陈旧 load 记录段抛错→'superseded' 且 `session.promise` 不变(旧实现下该断言失败)。顺手清掉死字段 `private motionId`(gen 闸已取代 `motionId!==id`,全文件再无读取点)。
+- **nits**:glb-export.test.ts 用例 a 补 `ts.at(-1)-ts.at(-2)≠1/fps` 显式钉死非均匀网格语义;`posePackageSpec` 把信封命中但未信任拆成两句——包带哈希且信封可核验(workshop-motion 且本地哈希可知)却说不过的→「definitionSHA256 与当前内置定义不符」,其余(包未带字段/非 workshop-motion 信封/本地哈希不可知即 envelopeDefHash 空)→「definitionSHA256 缺失/无法核验,按 ad-hoc 处理」;standalone spec 的 events filter 在 isObj 后追加 `typeof time==='number'`/`typeof label==='string'`,防 `{type:'phase'}` 半成品漏进 phases(新增回归断言)。
+
+**验证**:`npx tsc -b` ✓、`npm test`(253 项,249+4 新增)✓、`npm run spec:check` ✓。未跑 `npm run build`/`qa`/`dynamics:*`——改动限于 motion-source 运行时分支与测试断言,浏览器 E2E 与构建由 CI 覆盖。

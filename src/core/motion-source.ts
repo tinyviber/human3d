@@ -260,7 +260,11 @@ export const rigMatches=(p:PosePackage,manifestHash:string|undefined)=>
  * bundled envelope's definition hash at load and passes a closure that
  * accepts only when the package's `action.definitionSHA256` equals it — a
  * forged or stale action.id then plays through the ad-hoc parameters channel
- * instead of wearing foreign capabilities/name/phases. Callers with nothing
+ * instead of wearing foreign capabilities/name/phases. The description says
+ * which refusal it was: 'definitionSHA256 与当前内置定义不符' when the package
+ * carried a hash that failed the check, '缺失/无法核验' when no check could
+ * run (no hash in the package, a non-workshop-motion envelope, or no local
+ * hashing at all). Callers with nothing
  * to check against may omit `trust` (bare id-match, the pre-gate behaviour).
  * `rigVerified=false` marks the degraded path where no local manifest hash
  * exists to compare (recorded on the description, honestly). */
@@ -269,6 +273,14 @@ export function posePackageSpec(p:PosePackage,id:MotionId,trust?:(actionId:strin
  const hit=motionFileById(actionId);
  const trusted=hit!==undefined&&(trust===undefined||trust(actionId));
  const envelope=trusted?hit:undefined;
+ // A hit that stays untrusted splits honestly: the package proved the WRONG
+ // definition ('与当前内置定义不符') only when a check could actually run —
+ // the package carries a definitionSHA256, the matched envelope is a
+ // workshop-motion (the only kind with a definition hash), and local hashing
+ // existed (rigVerified=false ⇒ no WebCrypto ⇒ envelopeDefHash is empty).
+ // Everything else is '缺失/无法核验': nothing was verifiable, nothing forged.
+ const declaredHash=typeof p.action?.definitionSHA256==='string'&&p.action.definitionSHA256!=='';
+ const provenMismatch=declaredHash&&hit?.kind==='workshop-motion'&&rigVerified;
  const params=isObj(p.action?.parameters)?p.action.parameters:{};
  const pres=isObj(params.presentation)?params.presentation:{};
  // 'racket' is the only prop kind the lab can mount — the ad-hoc hint maps to
@@ -284,9 +296,11 @@ export function posePackageSpec(p:PosePackage,id:MotionId,trust?:(actionId:strin
  // Loop semantics are authored in the document, not the package: bundled
  // envelopes carry the document, ad-hoc packages carry presentation.loop.
  const authoredLoop=envelope?envelope.document?.loop:(typeof pres.loop==='boolean'?pres.loop:undefined);
- // isObj filter is belt-and-suspenders: the shape check already rejects
- // malformed events when it ran, but this function is also called standalone.
- const events=(Array.isArray(p.events)?p.events:[]).filter(e=>isObj(e));
+ // isObj + field types is belt-and-suspenders: the shape check already
+ // rejects malformed events when it ran, but this function is also called
+ // standalone — a half-baked `{type:'phase'}` must not leak undefined
+ // time/label into the spec's phases.
+ const events=(Array.isArray(p.events)?p.events:[]).filter(e=>isObj(e)&&typeof e.time==='number'&&typeof e.label==='string');
  const phases=events.filter(e=>e.type==='phase').map(({time,label})=>({time,label}));
  const keys=events.filter(e=>e.type==='keyframe').map(({time,label})=>({time,label}));
  const warnings=(Array.isArray(p.quality?.warnings)?p.quality.warnings:[]).filter((w):w is string=>typeof w==='string');
@@ -299,7 +313,9 @@ export function posePackageSpec(p:PosePackage,id:MotionId,trust?:(actionId:strin
   source,
   warnings.length?`质量警告 ${warnings.length} 条：${warnings.slice(0,3).join('；')}${warnings.length>3?' …':''}`:'质量警告 0 条',
   prop?`v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示${prop.side==='L'?'（左手持拍）':''}`:'',
-  hit&&!trusted?'action.id 命中本地信封但 definitionSHA256 不符，按外部包回放（信封能力未采用）':'',
+  hit&&!trusted?(provenMismatch
+   ?'action.id 命中本地信封但 definitionSHA256 与当前内置定义不符，按外部包回放（信封能力未采用）'
+   :'action.id 命中本地信封但 definitionSHA256 缺失/无法核验，按 ad-hoc 处理（信封能力未采用）'):'',
   rigVerified?'':'rig 未验证：本地 manifest 哈希不可知，降级为骨骼名匹配',
  ].filter(Boolean).join(' · ');
  const documentName=typeof params.documentName==='string'&&params.documentName?params.documentName:undefined;
@@ -325,7 +341,7 @@ export class DynamicsSource implements MotionSource{
   /** The last requested case; mirrors the old physicsCase (set at load start so
    * the panel reports the attempted profile even when the load fails). */
   profile:DynamicsCase='baseline';
-  private motionId='';private debug?:DebugOptions;
+  private debug?:DebugOptions;
   /** Load generation: load/deactivate/dispose each bump it, so a stale
    * in-flight load can recognize that somebody else (a newer load, a source
    * switch, engine teardown) owns the session now — and must not apply
@@ -343,29 +359,44 @@ export class DynamicsSource implements MotionSource{
    * to the per-action `/dynamics/<id>/<case>` path convention. */
   async load(id:string,profile:DynamicsCase,muscleAction?:MuscleActionFile,records?:DynamicsRecords):Promise<'applied'|'superseded'|'error'>{
     const g=++this.gen;
-    this.motionId=id;this.profile=profile;this.status='loading';this.error=undefined;
+    this.profile=profile;this.status='loading';this.error=undefined;
     const s=this.session;
-    try{
-      s.promise??=import('./dynamics').then(m=>m.DynamicsReplay.create(s.rig));
-      const replay=await s.promise;
-      if(this.gen!==g||s.retired){
-        // Only a RETIRED session disposes the fresh replay — it can never be
-        // adopted. A merely superseded one keeps it: the shared session
-        // promise hands the same object to whichever load owns it now.
-        if(s.retired&&s.replay!==replay)replay.dispose();
-        return 'superseded';
-      }
-      if(!s.replay){s.replay=replay;s.parent.add(replay.root);}
-      const accepted=await replay.load(id,profile,muscleAction,records);
-      if(!accepted||this.gen!==g||s.retired)return 'superseded';
-      this.status='ready';replay.root.visible=true;if(this.debug)replay.setOptions(this.debug);
-      return 'applied';
-    }catch(err){
-      s.promise=undefined;
+    // Segment 1 — obtain the shared replay. ONLY a failure here may clear
+    // s.promise, and only while it still names the dead one: a rejected
+    // creation promise is poison for every later load, but a stale load must
+    // not clear a promise a newer owner already replaced.
+    const p=s.promise??=import('./dynamics').then(m=>m.DynamicsReplay.create(s.rig));
+    let replay:DynamicsReplay;
+    try{replay=await p;}
+    catch(err){
+      if(s.promise===p)s.promise=undefined;
       if(this.gen!==g||s.retired)return 'superseded';
       this.status='error';this.error=err instanceof Error?err.message:String(err);
       return 'error';
     }
+    if(this.gen!==g||s.retired){
+      // Only a RETIRED session disposes the fresh replay — it can never be
+      // adopted. A merely superseded one keeps it: the shared session
+      // promise hands the same object to whichever load owns it now.
+      if(s.retired&&s.replay!==replay)replay.dispose();
+      return 'superseded';
+    }
+    if(!s.replay){s.replay=replay;s.parent.add(replay.root);}
+    // Segment 2 — the record load inside the already-adopted replay. A failure
+    // here keeps s.promise and s.replay so a retry re-runs the record fetch on
+    // the SAME replay; clearing them would orphan a second DynamicsReplay the
+    // session can never adopt (physics/duration/seek would keep pointing at
+    // the first, record-less one — playback stuck at duration 0).
+    let accepted:boolean;
+    try{accepted=await replay.load(id,profile,muscleAction,records);}
+    catch(err){
+      if(this.gen!==g||s.retired)return 'superseded';
+      this.status='error';this.error=err instanceof Error?err.message:String(err);
+      return 'error';
+    }
+    if(!accepted||this.gen!==g||s.retired)return 'superseded';
+    this.status='ready';replay.root.visible=true;if(this.debug)replay.setOptions(this.debug);
+    return 'applied';
   }
   seek(t:number){const r=this.session.replay;if(this.status!=='ready'||!r)return;r.seek(Math.max(0,Math.min(r.duration,t)));}
   rootPoint(){return this.point('Full Body')??this.session.rig.point('root');}

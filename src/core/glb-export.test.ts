@@ -204,9 +204,13 @@ describe('exportGlb — boundary coverage',()=>{
   const doc=blankDocument(rig.rest,'非整除','non-integer');
   doc.duration=.8;doc.keys[1].time=.8;        // 0.8 s × 7 fps = 5.6 — partial last interval
   const pkg=solveWorkshop(rig,doc,7,metaFor(doc,7,'noninteger'));
+  const ts=pkg.timeline.timestamps;
   expect(pkg.timeline.count).toBe(7);         // ceil(5.6)+1 — the appended endpoint proves it
-  expect(pkg.timeline.timestamps.at(-1)).toBe(pkg.timeline.duration);
-  expect(pkg.timeline.timestamps.at(-2)!).toBeLessThan(pkg.timeline.duration);
+  expect(ts.at(-1)).toBe(pkg.timeline.duration);
+  expect(ts.at(-2)!).toBeLessThan(pkg.timeline.duration);
+  // The appended endpoint makes the last interval a truncated remainder —
+  // the grid is deliberately non-uniform, pin that it is NOT a full 1/fps step.
+  expect(ts.at(-1)!-ts.at(-2)!).not.toBeCloseTo(1/7,6);
   const {clip,worst,bone}=await roundtrip(pkg,[0,.35,.71,.799,.8]);
   expect(clip.duration).toBeCloseTo(pkg.timeline.duration,4);
   expect(worst,`worst bone ${bone}`).toBeLessThan(1e-3);

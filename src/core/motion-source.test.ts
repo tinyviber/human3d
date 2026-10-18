@@ -78,6 +78,15 @@ describe('checkPosePackageShape',()=>{
   const spec=posePackageSpec(p,'pkg:test');
   expect(spec.phases).toEqual([]);
  });
+ it('drops half-baked event objects instead of emitting undefined fields into phases',()=>{
+  const p=clone(golden);
+  // `{type:'phase'}` without time/label passes a bare isObj check — the
+  // standalone spec filter must not leak it as {time:undefined,label:undefined}.
+  (p as unknown as {events:unknown}).events=[{type:'phase'},{type:'keyframe',time:.5,label:'ok'}];
+  expect(checkPosePackageShape(p,validBones()).length).toBeGreaterThan(0); // shape gate still refuses it
+  const spec=posePackageSpec(p,'pkg:test');       // standalone derivation stays total
+  expect(spec.phases).toEqual([{time:.5,label:'ok'}]);
+ });
  it('fails closed on a non-object package',()=>{
   expect(checkPosePackageShape('nope').length).toBeGreaterThan(0);
   expect(new PosePackageSource(rig,42).status).toBe('error');
@@ -323,6 +332,51 @@ describe('DynamicsSource — load supersession',()=>{
   expect(await pending).toBe('superseded');
   expect(disposed).toBe(true);
  });
+ /* The two failure segments of load() are different contracts: a failed
+  * replay CREATION poisons s.promise (must be released), but a failed RECORD
+  * fetch happens after the replay was adopted into the session — dropping
+  * s.promise then would make a retry build an unadoptable second replay
+  * while session.replay/physics keep pointing at the record-less first one. */
+ it('a failed record load keeps the adopted replay so the retry reuses it',async()=>{
+  const session=createDynamicsSession(rig,new Group());
+  const replay=fakeReplay();let loads=0;
+  (replay as {load:DynamicsReplay['load']}).load=async()=>{
+   loads++;if(loads===1)throw new Error('仿真记录未找到');return true;};
+  const p=Promise.resolve(replay);session.promise=p;
+  const src=DynamicsSource.create(session);
+  expect(await src.load('missing','baseline')).toBe('error');
+  expect(src.status).toBe('error');
+  // The record segment failed, not the replay creation — both survive.
+  expect(session.promise).toBe(p);
+  expect(session.replay).toBe(replay);
+  expect(await src.load('missing','baseline')).toBe('applied');
+  expect(session.replay).toBe(replay);             // same object — no orphan second replay
+  expect(session.parent.children).toEqual([replay.root]);
+  expect(replay.root.visible).toBe(true);
+  expect(loads).toBe(2);
+ });
+ it('a stale record-load failure must not clear the live session promise',async()=>{
+  const session=createDynamicsSession(rig,new Group());
+  const replay=fakeReplay();
+  const pending:{res:(v:boolean)=>void;rej:(e:Error)=>void}[]=[];
+  (replay as {load:DynamicsReplay['load']}).load=()=>new Promise<boolean>((res,rej)=>{pending.push({res,rej});});
+  const p=Promise.resolve(replay);session.promise=p;
+  const src=DynamicsSource.create(session);
+  const stale=src.load('a','baseline');
+  await Promise.resolve();await Promise.resolve(); // let stale reach the record-load await
+  expect(pending.length).toBe(1);                  // parked inside replay.load
+  const fresh=src.load('b','baseline');            // supersedes stale mid-record
+  await Promise.resolve();await Promise.resolve();
+  expect(pending.length).toBe(2);
+  pending[0].rej(new Error('stale record failure')); // the stale record fetch dies late
+  expect(await stale).toBe('superseded');
+  pending[1].res(true);
+  expect(await fresh).toBe('applied');
+  // The stale catch ran and still left the current owner's session alone.
+  expect(session.promise).toBe(p);
+  expect(session.replay).toBe(replay);
+  expect(replay.root.visible).toBe(true);
+ });
 });
 
 /* The envelope-restore trust gate (engine.openPosePackage): the package's
@@ -358,7 +412,9 @@ describe('posePackageSpec — envelope trust + rig identity',()=>{
   expect(spec.capabilities).toBeUndefined();
   expect(spec.name).toBe('forehand');          // the claimed id, not the envelope display name
   expect(spec.method).toBe('服务交付轨迹 · FK 采样重放');
-  expect(spec.description).toMatch(/definitionSHA256 不符/);
+  // Carried a hash that failed the check → the 'mismatch' wording, not the
+  // unverifiable one.
+  expect(spec.description).toMatch(/definitionSHA256 与当前内置定义不符/);
   // The trajectory still plays — phases keep coming from the package's own events.
   expect(spec.phases).toEqual(motionFileById('forehand')!.phases);
  });
@@ -367,6 +423,16 @@ describe('posePackageSpec — envelope trust + rig identity',()=>{
   (pkg.action as {definitionSHA256?:string}).definitionSHA256=undefined;
   const spec=posePackageSpec(pkg,'pkg:test',trustFor(pkg));
   expect(spec.capabilities).toBeUndefined();
+  // Nothing was verifiable — the wording must say so, not claim a mismatch.
+  expect(spec.description).toMatch(/definitionSHA256 缺失\/无法核验/);
+ });
+ it('a non-workshop-motion envelope hit is unverifiable, not a mismatch',()=>{
+  const pkg=clone(served('forehand'));
+  pkg.action.id='punch'; // dynamics-motion envelope — carries no definition hash at all
+  const spec=posePackageSpec(pkg,'pkg:test',trustFor(pkg));
+  expect(spec.capabilities).toBeUndefined();
+  expect(spec.name).toBe('punch');
+  expect(spec.description).toMatch(/definitionSHA256 缺失\/无法核验/);
  });
  it('rigMatches compares the declared manifest hash only when the local one is known',()=>{
   const pkg=served('idle');
