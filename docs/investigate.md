@@ -572,3 +572,9 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 - **捕获互斥 + 拼图全程持有**(`workshop/engine.ts`):a) 新增 `CaptureMutex` 导出类——`captureStill`/`captureSheet` 入口重入直接 reject(`'已有导出任务进行中'`);UI 按钮本就禁用,此闸给程序化并发/批处理兜底,防止两段捕获交错互踩状态快照。b) `capturing` 由布尔改**深度计数**(`captureDepth`),`captureSheet` 外层一对 begin/end 把标志从入口持有到拼图 toBlob——逐 tile 的 `renderStill` 仍各做 begin/end 重快照该 tile 的相机/传输态(LIFO 恢复),但 tile 间隙 flag 不再回落,间隙中的 pointerdown/drag 与叠加物重显全部压住;`getDoc` 冻结副本同样贯穿整段。QA `workshopStillExport` 断言点语义随之改变并同步适配:逐 tile 恢复点现在读到会话内暂停态(快照在外层暂停之后取得),仅最后一次外层恢复把播放态交回 true。
 - **文档裁决——golden 大体积是有意权衡**(回应"哈希化压缩 golden"的建议):`spec/examples/idle.pose.json`(~665KB)这类原始轨迹 golden 的价值在于**漂移可定位**——WP-C 正是靠逐位 diff 证伪了「轨迹逐位不变」的提交声明,并给出逐骨×逐帧的偏差位置表;压缩成哈希只能回答"变没变",回答不了"哪里变了"。**不接受哈希化压缩**;承认体积成本——若将来过大,可另加一份采样点摘要文件做速查,但 oracle 本体保持原始轨迹不缩水。
 - **文档级**:forehand-study.md 新增「验收边界」节——本 fixture 只证几何/平滑/接触约束达标,不证明符合真实网球正手运动学;峰领先触球门 `|Δt|≤0.25 s` 与链式验证仅「骨盆/躯干不晚于前臂(+0.05 s)」的口径写死(quality.test.ts 同注)。
+
+## 复核追加轮 2(密度上限 off-by-one + 顺手 nit)
+
+第二轮修复的独立复核抓到一处必修:密度上限公式 `count > duration×240+1+1e-6` 与生产者的真实采样网格不符——`pose-package.ts` `capture()` 的网格是「均匀 1/fps 步进 + 追加精确末端点」,最大合法计数是 `⌈duration·fps⌉+1`。反例:`duration=0.502s @240fps` 产出 `count=122`(网格顶到 0.5,补 0.502),而旧门限 `121.48` 会拒收本服务同款产线的合法包。修法:上限改 `⌈duration·fps−1e-6⌉+1`,且 `fps` 取包自己声明的 `timeline.fps`(顺带新增校验:声明值须在 (0,240] 内,缺省回退 240 外沿与 validate.ts 同容差)——声明 fps=60 却携带 240 密度的包是不一致数据,收紧到声明网格正好拒掉。回归:motion-source.test.ts 新增两例——真实 `solveWorkshop(rig,doc,240)` 在 0.502s 上产出 count=122 的包必须零问题通过;声明 fps=60+duration=.5 的黄金包篡改体按密度上限拒收。顺手 nit:`CaptureMutex.run` 改 `Promise.resolve().then(fn)` 把同步抛纳入 finally 链(busy 不再被同步异常楔死);四元数逐样本检查从「先 hypot 再查」换成逐分量 `Number.isFinite`(非强转,挡 `"0.5"` 这类字符串分量);mirror.test.ts 的 app-复演注释显式标注与 WorkshopApp.tsx 同步。
+
+**验证**:`npx tsc -b`(随 build)✓、`npm test`(259 项,257+2 新增)✓、`npm run spec:check`(19 项)✓、`npm run build` ✓。未跑浏览器 QA/dynamics:*——改动限导入校验门与互斥器同步路径,浏览器路径由前一轮 QA 覆盖,CI 全量兜底。

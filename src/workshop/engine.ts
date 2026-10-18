@@ -89,7 +89,9 @@ export class CaptureMutex{
  run<T>(fn:()=>Promise<T>):Promise<T>{
   if(this.busy)return Promise.reject(new Error('已有导出任务进行中'));
   this.busy=true;
-  return fn().finally(()=>{this.busy=false;});
+  // Defer fn into the promise chain: a synchronously throwing fn still lands
+  // in .finally instead of wedging busy forever.
+  return Promise.resolve().then(fn).finally(()=>{this.busy=false;});
  }
 }
 type DragKind='root'|'hand'|'foot'|'swing'|'poleArm'|'poleLeg'|'tip'|'contact';

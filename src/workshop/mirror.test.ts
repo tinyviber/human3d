@@ -283,7 +283,8 @@ describe('mirrorDoc — grip side and parse boundary',()=>{
 describe('mirrorDoc — cross-document undo is pointer semantics',()=>{
  /* Replays WorkshopApp's undo()/redo() call order verbatim against a REAL
   * MotionLibrary + HistoryBook (same paradigm as the book-level test above,
-  * extended to the app branch decisions). The pinned contract: a history
+  * extended to the app branch decisions — keep this replay in lockstep with
+  * WorkshopApp.tsx undo()/redo()). The pinned contract: a history
   * step restoring a DIFFERENT id only moves the selection — the snapshot's
   * content is never written back under a foreign id. The pre-fix applyDoc
   * overwrote the library doc wholesale, so a post-mirror edit on the source

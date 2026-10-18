@@ -13,7 +13,8 @@ import {actionDefinitionHash} from '../server/pose-package';
 import {createService,handleRequest,type ServiceContext} from '../server/service';
 import {blankDocument,defaultDocument,serializeDoc} from '../workshop/document';
 import type {DynamicsReplay} from './dynamics';
-import type {PosePackage} from './pose-package';
+import {solveWorkshop,type PosePackage} from './pose-package';
+import {WORKSHOP_REVISION,workshopMeta} from './protocol';
 
 /* MotionSource coverage: the package shape gate on the golden artifact and on
  * broken copies, the reference decoder cross-proved against an independent
@@ -63,7 +64,8 @@ describe('checkPosePackageShape',()=>{
    ['provenance.solver 非字符串',p=>{(p.provenance as {solver:unknown}).solver=7;},/provenance\.solver/],
    // Round-2 additions: duplicate bone tracks are last-write-wins ambiguity;
    // every sample's quaternion must be unit (validate.ts tolerance); the
-   // declared count is capped by duration×240 and an absolute bound.
+   // declared count is capped by ⌈duration·fps⌉+1 on the package's own
+   // declared fps (240 outer bound when absent) plus an absolute bound.
    ['重复 bone 轨道',p=>{p.tracks.rotations.push(clone(p.tracks.rotations[0]));},/重复旋转轨/],
    ['非单位四元数',p=>{const v=p.tracks.rotations[0].values;for(let i=0;i<4;i++)v[i]*=2;},/非单位/],
    ['全零四元数',p=>{p.tracks.rotations[0].values.splice(0,4,0,0,0,0);},/非单位/],
@@ -77,6 +79,28 @@ describe('checkPosePackageShape',()=>{
    expect(errs.length,`${name}: expected problems`).toBeGreaterThan(0);
    expect(errs.join('|'),`${name}: expected a matching message`).toMatch(pattern);
   }
+ });
+ it('admits the densest package the real sampling grid produces (⌈duration·fps⌉+1)',()=>{
+  // The density gate must not reject what a real builder emits: 0.502 s is
+  // not 1/240-aligned, so the uniform grid tops out at 0.5 and the appended
+  // exact endpoint brings count to ⌈0.502×240⌉+1 = 122 — the previous flat
+  // duration×240+1 bound off-by-oned this package (121.48 < 122).
+  const doc=blankDocument(rig.rest,'密度边界','density-edge');
+  doc.duration=.502;doc.keys[1].time=.502;
+  const pkg=solveWorkshop(rig,doc,240,workshopMeta({
+   motionId:'mot_test-density',manifestSHA256:manifest.manifestSHA256,bones:manifest.bones.length,
+   actionId:'workshop-doc',revision:WORKSHOP_REVISION,definitionSHA256:'test-definition',
+   documentName:doc.name,prop:false,loop:doc.loop,
+   source:'motion-source.test',license:'test',requestFingerprint:'test',
+   fps:240,duration:doc.duration,keys:doc.keys.length}));
+  expect(pkg.timeline.count).toBe(122);
+  expect(checkPosePackageShape(pkg,validBones())).toEqual([]);
+ });
+ it('the density cap follows the declared fps, not just the 240 ceiling',()=>{
+  // Declaring fps=60 while carrying a timeline only a denser grid could
+  // produce is inconsistent data — the cap binds the declared grid.
+  const p=clone(golden);p.timeline.fps=60;p.timeline.duration=.5;
+  expect(checkPosePackageShape(p).join('|')).toMatch(/密度上限/);
  });
  it('a package with null events is refused by the decoder while the spec derivation stays total',()=>{
   const p=clone(golden);(p as unknown as {events:unknown}).events=[null];

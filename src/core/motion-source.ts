@@ -137,15 +137,25 @@ export function checkPosePackageShape(pkg:unknown,validBones?:ReadonlySet<string
     for(let i=1;i<timestamps.length;i++)if(!(timestamps[i]>timestamps[i-1])){e.push(`timestamps 未严格递增（第 ${i} 项）`);break;}
     if(timestamps[timestamps.length-1]!==p.timeline.duration)e.push('末时间戳不等于 duration');
   }else e.push('timestamps 含非有限数');
-  /* Resource caps on the DECLARED count: the service refuses fps>240, so a
-   * consistent package can never need more than duration×240+1 samples — a
-   * denser declaration is corrupt or hostile. The absolute cap bounds the
-   * same work when duration itself is inflated (MAX_PACKAGE_SAMPLES ≈ 13.9
-   * min @240fps). A one-shot import check, so the cost is negligible. */
+  /* Declared fps is validated here because the density cap below consumes
+   * it: our builders always emit it, and the validator tolerates up to 240 —
+   * anything outside (0,240] is corrupt. */
+  const fpsDecl=p.timeline?.fps;
+  if(fpsDecl!==undefined&&!(typeof fpsDecl==='number'&&Number.isFinite(fpsDecl)&&fpsDecl>0&&fpsDecl<=240))
+    e.push('timeline.fps 必须在 (0,240] 内');
+  /* Resource caps on the DECLARED count. The producers' real grid is uniform
+   * 1/fps steps PLUS the appended exact endpoint (pose-package.ts capture()),
+   * so the largest honest count is ⌈duration·fps⌉+1 — a flat duration·fps+1
+   * bound off-by-ones whenever duration·fps is not a whole number (e.g.
+   * 0.502 s @240fps legitimately carries 122 samples). The package's own
+   * declared fps tightens the bound when present; absent, the 240 outer
+   * bound stands. The absolute cap bounds the same work when duration itself
+   * is inflated (MAX_PACKAGE_SAMPLES ≈ 13.9 min @240fps). */
   if(typeof count==='number'&&Number.isFinite(count)){
+    const fpsBound=typeof fpsDecl==='number'&&Number.isFinite(fpsDecl)&&fpsDecl>0?Math.min(fpsDecl,240):240;
     if(count>MAX_PACKAGE_SAMPLES)e.push(`timeline.count=${count} 超过绝对上限 ${MAX_PACKAGE_SAMPLES}`);
-    else if(Number.isFinite(p.timeline?.duration)&&count>(p.timeline!.duration)*240+1+1e-6)
-      e.push(`timeline.count=${count} 超出时长密度上限（${p.timeline!.duration} s × 240 fps + 1）`);
+    else if(Number.isFinite(p.timeline?.duration)&&count>Math.ceil(p.timeline!.duration*fpsBound-1e-6)+1)
+      e.push(`timeline.count=${count} 超出采样密度上限（⌈${p.timeline!.duration} s × ${fpsBound} fps⌉+1）`);
   }
   const T=p.tracks?.translation,c=typeof count==='number'?count:-1;
   if(!T||T.bone!=='root'||!isVec(T.values)||T.values.length!==c*3)e.push('root 位移轨缺失或长度不是 count×3');
@@ -165,8 +175,11 @@ export function checkPosePackageShape(pkg:unknown,validBones?:ReadonlySet<string
       // non-unit samples are reported with bone + frame and refuse the
       // package: decoding them would silently produce garbage poses.
       for(let i=0;i<c;i++){
-        const o=i*4,l=Math.hypot(tr.values[o],tr.values[o+1],tr.values[o+2],tr.values[o+3]);
-        if(!Number.isFinite(l)){e.push(`${tr.bone}: 第 ${i} 帧四元数含非有限分量`);break;}
+        const o=i*4,q=[tr.values[o],tr.values[o+1],tr.values[o+2],tr.values[o+3]];
+        // Per-component Number.isFinite (non-coercing) — Math.hypot alone
+        // would ToNumber strings like "0.5" into a passable quaternion.
+        if(!q.every(Number.isFinite)){e.push(`${tr.bone}: 第 ${i} 帧四元数含非有限分量`);break;}
+        const l=Math.hypot(q[0],q[1],q[2],q[3]);
         if(Math.abs(l-1)>1e-3){e.push(`${tr.bone}: 第 ${i} 帧四元数非单位（|q|=${l.toFixed(4)}）`);break;}
       }
     }
