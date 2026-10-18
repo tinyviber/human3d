@@ -6,13 +6,17 @@ import {MOTION_FILES} from '../core/motion-files';
 import {motionDefinitionPayload} from '../core/motion-file';
 import {parseDoc,type WorkshopDoc} from '../workshop/document';
 import {WORKSHOP_LIMITS} from '../workshop/limits';
-import {buildRigManifest,RIG_ID,canonical,sha256,type RigManifest} from './rig-manifest';
+import {buildRigManifest,sha256,type RigManifest} from './rig-manifest';
 import {actionDefinitionHash,solveWorkshop,type PosePackage} from './pose-package';
+import {RIG_ID,SERVICE_VERSION,SOLVER_NAME,WORKSHOP_REVISION,artifactIdPayload,canonical,normalizedRequest,workshopMeta} from '../core/protocol';
 import {createContract,describeErrors,type Contract} from './contract';
 import {validatePosePackage} from './validate';
 import type {ErrorCode} from './errors';
 
-export const SERVICE_VERSION='0.1.0';
+// Re-exported for the service's public surface (tests/scripts import these
+// protocol primitives from './service'); the implementations live in
+// src/core/protocol.ts so the browser builder shares them.
+export {SERVICE_VERSION,normalizedRequest};
 export const LIMITS_SVC={maxFps:60,defaultFps:40,
  /** Same caps the workshop UI and validator use (src/workshop/limits.ts). */
  maxWorkshopDuration:WORKSHOP_LIMITS.maxDuration,maxWorkshopKeys:WORKSHOP_LIMITS.maxKeys,
@@ -44,9 +48,6 @@ interface ActionDescriptor{
 }
 
 const BUNDLED_PARAMS={type:'object',additionalProperties:false,properties:{}};
-/** Format revision of the ad-hoc workshop document contract. Bumped with the
- * schema, not per document; bundled actions get a content-derived revision. */
-const WORKSHOP_REVISION='workshop-doc/v2';
 const WORKSHOP_DOC_PARAMS={
  type:'object',additionalProperties:false,required:['document'],
  properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); optional document flags such as clavicleLift. Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. Documents with schemaVersion 1 are upgraded on input.`}},
@@ -81,13 +82,11 @@ type Reply={status:number;body:unknown};
 function err(status:number,code:ErrorCode,message:string,extra:Record<string,unknown>={}):Reply{return {status,body:{error:{code,message,...extra}}};}
 const json=(body:unknown,status=200):Reply=>({status,body});
 
-/** What the artifact IS — binds the request to the exact action definition,
- * rig manifest and solver that produced it. A solver or rig upgrade yields a
- * new id for the same request, so caches never conflate two trajectories. */
+/** Artifact id for a request fingerprint + resolved definition under this
+ * service's rig manifest — the shared payload from core/protocol hashed with
+ * node:crypto. */
 export const artifactId=(request:string,definitionSHA256:string,ctx:ServiceContext,solver:string)=>
- 'mot_'+sha256(canonical({protocol:'v1',requestFingerprint:request,definitionSHA256,
-  rig:{id:RIG_ID,manifestSHA256:ctx.manifest.manifestSHA256},
-  solver:{name:solver,revision:SERVICE_VERSION}})).slice(0,16);
+ 'mot_'+sha256(canonical(artifactIdPayload(request,definitionSHA256,ctx.manifest.manifestSHA256,solver))).slice(0,16);
 
 export function handleRequest(ctx:ServiceContext,method:string,route:string,body?:unknown,headers:Record<string,string>={}):Reply{
  if(method==='GET'&&route==='/v1/capabilities')return json({
@@ -115,14 +114,6 @@ export function handleRequest(ctx:ServiceContext,method:string,route:string,body
 
 interface RequestBody{action:{id:string;revision?:string;definitionSHA256?:string;parameters?:Record<string,unknown>};rig?:string;
  outputs?:{kind:string;format:string}[];sample?:{fps?:number}}
-
-/** The request as the service understands it: defaults filled, the document
- * normalized (schemaVersion 2), and preconditions dropped because they do not
- * change the output. Two requests that mean the same motion share this form,
- * so their fingerprints and artifact ids agree. */
-export function normalizedRequest(actionId:string,doc:WorkshopDoc|undefined,fps:number){
- return {action:{id:actionId,parameters:doc?{document:doc}:{}},rig:RIG_ID,outputs:[{kind:'motion',format:'pose-json'}],sample:{fps}};
-}
 
 function forgetIdempotent(ctx:ServiceContext,key:string){
  const e=ctx.idempotent.get(key);
@@ -199,16 +190,12 @@ function solveMotion(ctx:ServiceContext,body:unknown,headers:Record<string,strin
   if(seen)forgetIdempotent(ctx,key);
  }
 
- const solver='workshop-hermite-fk-ik';
- const motionId=artifactId(fp,definitionSHA256,ctx,solver);
- const meta=(id:string)=>({motionId:id,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,
-  action:{id:actionId,revision,parameters:requestDoc?{documentName:requestDoc.name}:{},definitionSHA256},
-  provenance:{solver,solverRevision:SERVICE_VERSION,source:descriptor.provenance.source,requestFingerprint:fp,
-   license:{motion:descriptor.provenance.license,rig:'CC0'},
-   parametersResolved:{fps,duration:doc.duration,keys:doc.keys.length}},
-  // Descriptor notes become package warnings; the kinematic-only caveat applies
-  // to every served motion (documented defects like forehand's stay first).
-  warnings:[...(descriptor.notes??[]),'engineering-approximation: 运动学求解器输出，未做动力学验证']});
+ const motionId=artifactId(fp,definitionSHA256,ctx,SOLVER_NAME);
+ const meta=(id:string)=>workshopMeta({motionId:id,manifestSHA256:ctx.manifest.manifestSHA256,bones:ctx.manifest.bones.length,
+  actionId,revision,definitionSHA256,documentName:requestDoc?.name,
+  prop:doc.keys.some(k=>k.constraints?.grip),loop:doc.loop,
+  source:descriptor.provenance.source,license:descriptor.provenance.license,requestFingerprint:fp,
+  fps,duration:doc.duration,keys:doc.keys.length,notes:descriptor.notes});
  const pkg=solveWorkshop(ctx.rig,doc,fps,meta(motionId),descriptor.phases);
 
  // Two gates before anything leaves the service: the package must satisfy the

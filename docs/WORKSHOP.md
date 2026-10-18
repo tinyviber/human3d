@@ -50,9 +50,17 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 - 新建动作用 `blankDocument` 模板：站立姿态、双足支撑锁定、起始/结束两个关键帧，时长 1s。
 - `导出 JSON` 输出**当前动作单文件**（`*.workshop.json`）；`导入` 接受裸文档或 motion-file 信封——`kind:'workshop-motion'` 的 `document` 经 `unwrapMotionFile` 解包取出（`clip-motion` 没有内嵌轨迹，明确报错），解析后加入动作库并选中，id 冲突自动重生成。
 
-## 文件格式
+## 文件格式与导出
 
-`导出 JSON` 生成 `*.workshop.json`（`schemaVersion:2`）：米制世界坐标、角度为度、时间为秒。关键帧含 `pose` 全部任务空间字段、`constraints` 和可选 `videoTime`。`导入` 载入同类文件或 motion-file 信封。
+工作台有三个导出入口，前两个是源数据/交付契约，第三个是派生品：
+
+| 按钮 | 文件名 | 内容 | 备注 |
+|---|---|---|---|
+| `导出 JSON` | `<docId>.workshop.json` | WorkshopDoc v2：米制世界坐标、角度为度、时间为秒；关键帧含 `pose` 全部任务空间字段、`constraints` 和可选 `videoTime` | `导入` 载入同类文件或 motion-file 信封 |
+| `导出姿态包` | `<docId>.<artifactId>.pose.json` | 规范姿态包（`spec/pose-package.schema.json` v2）：`buildPosePackageLocal` 本地求解，与 `POST /v1/motions {workshop-doc}` 同一条 `parseDoc → solveWorkshop → validatePosePackage` 管线，产物与响应对等（对等测试逐字节钉死） | 语义校验 422 时**不下载**，问题明细留在卡片上；需 https/localhost（`crypto.subtle`）；采样率 fps 1–60 进入制品 id |
+| `导出 GLB` | `<docId>.<artifactId>.glb` | 同一求解结果烘焙成 glTF 动画（逐骨四元数轨 + root 位移轨，时间轴原样含非整数末段） | **派生品**：不承载身份契约——`animations[0].name` 与文件名借用 artifact id 便于对应（非内容寻址声明）；导出用干净重解析的 `human.glb`（编辑器里的球拍/材质不会烘进去），共享 `src/core/glb-export.ts`，Node 侧 `npm run package-to-glb` 走同一转换器 |
+
+三个导出共用同一份当前文档；姿态包与 GLB 由 `solvePackage()` 统一求解，fps 改动会得到不同 artifact id（不同文件名）。
 
 内置动作不放在浏览器动作库里，而是按 motion-file 信封（`schemaVersion:1`）存于 `assets/motions/*.json`，由 `assets/motions/motion.schema.json` 与 `normalizeMotionFile` 双侧校验：`kind:'workshop-motion'` 内嵌 `document`（与导出的 WorkshopDoc 同构），`kind:'clip-motion'` 指向外部动画片段（`clip.url`，如 walk），两种 kind 的轨迹字段互斥。工作台与服务共用同一条 `normalizeMotionFile → frameAt → solveEffectiveFrame` 求解管线，因此内置动作的姿态与服务交付的姿态包同源。
 

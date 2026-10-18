@@ -1,7 +1,7 @@
 import {Quaternion,Vector3} from 'three';
 import {POSE_PACKAGE_SCHEMA_VERSION} from '../core/package-const';
-import type {PosePackage} from './pose-package';
-import type {RigManifest} from './rig-manifest';
+import type {PosePackage} from '../core/pose-package';
+import type {RigManifest} from '../core/protocol';
 
 /** Semantic limits enforced by the validator. A package beyond one of them is
  * rejected, never warned about. Thresholds and the shipped-motion peaks they

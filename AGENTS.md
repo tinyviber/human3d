@@ -10,11 +10,12 @@
 ## 项目验证命令
 
 - `npx tsc -b` — 类型检查（CI 门禁）
-- `npm test` — vitest（138 项，CI 门禁）
+- `npm test` — vitest（165 项，CI 门禁）
 - `npm run spec:check` — 契约测试：Ajv 严格编译、OpenAPI 与服务一致、golden 样例（CI 门禁）
 - `npm run build` — 生产构建（CI 门禁）
 - `npm run qa` — 浏览器 E2E（需先 `npm run dev`；无本地 Playwright 浏览器时用 `QA_BROWSER_CHANNEL=chrome npm run qa` 走系统 Chrome；未进 CI）
 - `npm run protocol:example` — 重生成 `spec/examples/idle.pose.json`
+- `npm run package-to-glb -- <in.pose.json> [out.glb]` — 姿态包转二进制 glTF（与浏览器「导出 GLB」共用 `src/core/glb-export.ts`）
 - `npm run service` — 本地 Motion Protocol v1 服务（127.0.0.1:8788）
 - `npm run dynamics:validate`、`npm run dynamics:test` — 动力学资产与物理记录校验，需要 Python 3.13 与 `scripts/requirements-dynamics.txt`（CI 门禁）
 - `npx tsx scripts/measure-motions.mts` — 测量内置动作的语义峰值，用于阈值校准（见 `docs/validation.md`）
@@ -24,6 +25,8 @@
 - 支撑脚是**接触区间**：`plant=true` run 首帧的存储脚位定义接触点，后续锁定帧的存储脚位被忽略。
 - 离地帧（`plant=false` 紧跟支撑）时刻脚仍在接触点，其存储脚位是**后续区间的摆动中点**；贴地存储 = 有意拖步。
 - 姿态包 `timestamps.at(-1) === duration` 恒成立；包 `id` 是制品身份（请求指纹 + 定义 + rig + solver 哈希），`provenance.requestFingerprint` 是请求身份。
+- 工作台「导出姿态包」≡ 同文档 `POST /v1/motions` 响应：共享 `buildPosePackageLocal`/`solveWorkshop`/`validatePosePackage` 路径，对等测试逐字节钉死；GLB 为派生品不承载身份契约——`animations[0].name` 与文件名都借用制品 id 便于对应，非内容寻址声明。
+- 实验室打开姿态包经 `posePackageSpec` 派生 spec：bundled 包按 `action.id` 取信封（capabilities/name/phases），adhoc 包读 `action.parameters.presentation`（`documentName`/`prop`/`loop`）；v2 包不携带逐帧握拍量，道具按包级 hint 常量显示（`wantsProp` 上限）。
 
 ## 测试与验证策略
 

@@ -6,8 +6,10 @@ info:
     Kinematic human-motion service (protocol v1). Accepts an action id plus
     bounded parameters and returns a canonical pose package: per-bone local
     rotations + root translation on a shared timestamp grid, events, and a
-    quality block. GLB/images/video are derived products planned as separate
-    render requests — not yet implemented.
+    quality block. glTF/GLB export exists only as a derived product outside
+    the service: the workshop UI and `npm run package-to-glb` bake a package
+    into a GLB via src/core/glb-export.ts. Images/video/render requests and a
+    server-side `glb` output format are not implemented.
 
     Design doc: docs/ANIMATION-PROTOCOL-PLAN.md
     Schemas: spec/motion-request.schema.json, spec/pose-package.schema.json,
@@ -191,7 +193,7 @@ components:
             properties:
               kind: {const: motion}
               format: {const: pose-json}
-          description: Only pose-json is implemented; other formats return 400 unsupported_output.
+          description: Only pose-json is implemented; other formats return 400 unsupported_output. GLB exists solely as a client-side derived export (workshop button, scripts/package-to-glb.mts) — it is never a served format.
         sample:
           type: object
           additionalProperties: false

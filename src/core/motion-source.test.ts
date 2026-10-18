@@ -1,29 +1,34 @@
 import {describe,it,expect,beforeAll} from 'vitest';
 import fs from 'node:fs';
-import {AnimationClip,AnimationMixer,Quaternion,Vector3} from 'three';
+import {AnimationClip,AnimationMixer,Quaternion,Vector3,type Group} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
 import {attachRacket} from './racket';
-import {checkPosePackageShape,ClipSource,DocumentSource,PosePackageSource} from './motion-source';
+import {checkPosePackageShape,ClipSource,DocumentSource,PosePackageSource,posePackageSpec} from './motion-source';
 import {normalizeMotionFile} from './motion-file';
+import {motionFileById} from './motion-files';
+import {buildPosePackageLocal,subtleDigest} from './package-export';
 import {buildRigManifest,sha256,type RigManifest} from '../server/rig-manifest';
-import type {PosePackage} from '../server/pose-package';
+import {createService,handleRequest,type ServiceContext} from '../server/service';
+import {blankDocument,defaultDocument,serializeDoc} from '../workshop/document';
+import type {PosePackage} from './pose-package';
 
 /* MotionSource coverage: the package shape gate on the golden artifact and on
  * broken copies, the reference decoder cross-proved against an independent
  * manifest FK walk (the same math measurePackage uses, extended to arbitrary
  * times — no shared decode code), and smoke coverage for the document and
  * clip sources through their real seek paths. */
-let rig:HumanRig,manifest:RigManifest,golden:PosePackage;
+let rig:HumanRig,manifest:RigManifest,golden:PosePackage,racket:Group,ctx:ServiceContext;
 beforeAll(async()=>{
  const bytes=fs.readFileSync('public/models/human.glb');
  const gltf=await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');
  const rigJson=JSON.parse(fs.readFileSync('public/models/rig.json','utf8'));
  rig=new HumanRig(gltf.scene,rigJson);
- attachRacket(rig);
+ racket=attachRacket(rig);
  manifest=buildRigManifest(rigJson,sha256(fs.readFileSync('public/models/rig.json')));
  golden=JSON.parse(fs.readFileSync('spec/examples/idle.pose.json','utf8'));
-},30000);
+ ctx=await createService('public');
+},60000);
 
 const validBones=()=>new Set(rig.bones.keys());
 const clone=<T,>(x:T):T=>JSON.parse(JSON.stringify(x));
@@ -106,13 +111,116 @@ describe('PosePackageSource — reference decoder',()=>{
    expect(rd,`t=${t} root`).toBeLessThan(1e-6);
   }
  });
- it('exposes diagnostics and never wants the prop',()=>{
+ it('exposes diagnostics and never wants the prop without a hint',()=>{
   const src=new PosePackageSource(rig,golden);
   src.seek(.5);
   const d=src.diagnostics();
   expect(d).not.toBeNull();
   expect(Number.isFinite(d!.knee)).toBe(true);
   expect(d!.bones).toBe(rig.bones.size);
+  expect(src.wantsProp()).toBe(false);
+ });
+});
+
+/* openPosePackage's spec derivation (engine.ts): the package alone must
+ * reconstruct the lab entry — bundled envelopes by action.id, the ad-hoc
+ * action.parameters presentation channel, phase/keyframe events as timeline
+ * markers, and the authored loop flag as oneShot. Both construction paths
+ * are real: bundled packages come from the service's own handleRequest,
+ * ad-hoc packages from buildPosePackageLocal (peer-parity-pinned against the
+ * service). No fabricated package shapes. */
+describe('posePackageSpec — bundled envelope restore',()=>{
+ const served=(id:string)=>handleRequest(ctx,'POST','/v1/motions',{action:{id}}).body as PosePackage;
+ it('a served forehand package restores capabilities, name, phases and oneShot',()=>{
+  const file=motionFileById('forehand')!;
+  const pkg=served('forehand');
+  const spec=posePackageSpec(pkg,'pkg:test');
+  expect(spec.name).toBe(file.name);            // 正手挥拍 — not the bare 'forehand' id
+  expect(spec.english).toBe(file.english);
+  expect(spec.method).toBe(file.method);
+  expect(spec.focus).toEqual(file.focus);
+  // The prop capability is what remounts the racket in the lab.
+  expect(spec.capabilities?.prop).toEqual({kind:'racket',trail:true,handView:true});
+  // Envelope phases are delivered as 'phase' events and map back verbatim.
+  expect(spec.phases).toEqual(file.phases);
+  // forehand's document is authored loop:false → one-shot replay.
+  expect(spec.oneShot).toBe(true);
+  // The honesty surface: solver provenance and the warnings the package
+  // carries are visible in the description, not dropped on the floor.
+  expect(pkg.quality.warnings.length).toBeGreaterThan(0);
+  expect(spec.description).toContain(pkg.provenance.solver);
+  expect(spec.description).toContain(`质量警告 ${pkg.quality.warnings.length} 条`);
+  expect(spec.description).toContain('穿插');
+  expect(spec.description).toContain('常量显示');
+ });
+ it('the derived prop hint drives wantsProp and the grip readout',()=>{
+  const pkg=served('forehand');
+  const spec=posePackageSpec(pkg,'pkg:test');
+  const src=new PosePackageSource(rig,pkg,spec.capabilities?.prop,racket);
+  expect(src.status).toBe('ready');
+  src.seek(2.55);
+  expect(src.wantsProp()).toBe(true);
+  // The mount is rigid, so the measured grip offset is a real ~0, not a stub.
+  const d=src.diagnostics()!;
+  expect(Number.isFinite(d.gripError)).toBe(true);
+  expect(d.gripError).toBeLessThan(1e-6);
+  // No hint → constant false, diagnostics report no grip error.
+  const bare=new PosePackageSource(rig,pkg);
+  bare.seek(2.55);
+  expect(bare.wantsProp()).toBe(false);
+  expect(bare.diagnostics()!.gripError).toBe(0);
+ });
+ it('envelope fields win over a forged ad-hoc parameters channel',()=>{
+  const pkg=clone(served('idle'));
+  pkg.action.parameters={documentName:'伪造名',presentation:{loop:true,prop:'racket'}};
+  const spec=posePackageSpec(pkg,'pkg:test');
+  expect(spec.name).toBe('自然站立');            // envelope > parameters
+  expect(spec.oneShot).toBe(true);              // envelope document.loop wins over presentation.loop
+  expect(spec.capabilities?.prop).toBeUndefined(); // idle's envelope declares no prop
+ });
+ it('an unknown action id falls back to the id itself and stays loopable',()=>{
+  const pkg=clone(golden);
+  pkg.action.id='teleport';
+  const spec=posePackageSpec(pkg,'pkg:test');
+  expect(spec.name).toBe('teleport');
+  expect(spec.english).toBe('POSE PACKAGE');
+  expect(spec.capabilities).toBeUndefined();
+  expect(spec.oneShot).toBeUndefined();
+  expect(spec.phases).toEqual(motionFileById('idle')!.phases); // phase events carry through
+ });
+});
+
+describe('posePackageSpec — ad-hoc presentation channel',()=>{
+ const local=async(d:Parameters<typeof serializeDoc>[0]):Promise<PosePackage>=>{
+  const res=await buildPosePackageLocal(JSON.parse(serializeDoc(d)),40,{rig,manifest,digest:subtleDigest});
+  if(res.status!==200)throw new Error(`expected 200, got ${res.status}: ${JSON.stringify(res.body)}`);
+  return res.body;
+ };
+ it('derives name, prop capability and oneShot from parameters.presentation',async()=>{
+  const doc=defaultDocument(rig.rest); // grip keys → presentation.prop:'racket'
+  const pkg=await local(doc);
+  expect(pkg.action.parameters).toEqual({documentName:doc.name,presentation:{prop:'racket',loop:false}});
+  const spec=posePackageSpec(pkg,'pkg:test');
+  expect(spec.name).toBe(doc.name);
+  expect(spec.english).toBe('POSE PACKAGE');
+  expect(spec.capabilities?.prop).toEqual({kind:'racket',trail:true,handView:true});
+  expect(spec.oneShot).toBe(true);
+  // No phase events in an ad-hoc package → keyframe events mark the timeline.
+  expect(pkg.events.some(e=>e.type==='phase')).toBe(false);
+  expect(spec.phases).toEqual(pkg.events.filter(e=>e.type==='keyframe').map(({time,label})=>({time,label})));
+  expect(spec.phases.length).toBe(doc.keys.length);
+  expect(spec.description).toContain('常量显示');
+ });
+ it('presentation.loop:true yields a loopable spec; no grip leaves the prop absent',async()=>{
+  const doc=blankDocument(rig.rest,'循环','loop-doc');
+  doc.loop=true;doc.duration=1.2;
+  const pkg=await local(doc);
+  expect(pkg.action.parameters).toEqual({documentName:'循环',presentation:{loop:true}});
+  const spec=posePackageSpec(pkg,'pkg:test');
+  expect(spec.oneShot).toBe(false);
+  expect(spec.capabilities).toBeUndefined();
+  const src=new PosePackageSource(rig,pkg,spec.capabilities?.prop,racket);
+  src.seek(.6);
   expect(src.wantsProp()).toBe(false);
  });
 });

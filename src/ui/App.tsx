@@ -51,7 +51,10 @@ export function App(){
    const rig=engine.current?.rig,problems=checkPosePackageShape(pkg,rig?new Set(rig.bones.keys()):undefined);
    if(problems.length){setError(`姿态包不可用：${problems[0]}${problems.length>1?`（共 ${problems.length} 处问题）`:''}`);return;}
    const spec=engine.current?.openPosePackage(pkg);
-   if(spec){setExtras(x=>x.some(m=>m.id===spec.id)?x:[...x,spec]);setId(spec.id);setError('');}
+   // Same artifact id → the fresh spec REPLACES the stored entry: a tampered
+   // package can reuse an id with different name/capabilities, and keeping
+   // the old object would display the stale envelope.
+   if(spec){setExtras(x=>x.some(m=>m.id===spec.id)?x.map(m=>m.id===spec.id?spec:m):[...x,spec]);setId(spec.id);setError('');}
   }catch(err){setError(err instanceof Error?err.message:String(err));}
  };
  useEffect(()=>{

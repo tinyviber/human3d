@@ -10,7 +10,10 @@ await page.goto('http://127.0.0.1:5173/');await page.waitForFunction(()=>window.
 assert.match(await page.title(),/KINESIS/);assert.equal(await page.locator('.motion-row').count(),8);assert.equal(await page.locator('vite-error-overlay').count(),0);
 const names={idle:'自然站立',walk:'行走',reach:'抬手与转身',squat:'下蹲',ready:'持拍准备',forehand:'正手挥拍'};
 async function choose(id,t=0,view='front'){
- await page.locator('.motion-row').filter({hasText:names[id]}).click();
+ // .first(): an opened bundled package reuses the envelope name, so the
+ // motion list can hold two identically labelled rows — the bundled one
+ // always precedes the appended package entries.
+ await page.locator('.motion-row').filter({hasText:names[id]}).first().click();
  await page.evaluate(t=>{window.__LAB__.setPlaying(false);window.__LAB__.seek(t);},t);
  const views={front:'正面',side:'侧面',back:'背面',threeQuarter:'45°',hand:'手部特写'};
  if(view==='hand')await page.getByRole('button',{name:views[view],exact:true}).click();else await page.locator('.camera-toolbar').getByRole('button',{name:views[view],exact:true}).click();
@@ -67,12 +70,32 @@ await page.locator('input[type=file]').setInputFiles({name:'idle.pose.json',mime
 await page.waitForTimeout(300);
 // The temp entry joins the list: 8 bundled motions + the opened package.
 assert.equal(await page.locator('.motion-row').count(),9);
-assert.equal(await page.locator('.viewport-heading h2').textContent(),'idle');
+// Envelope derivation: a bundled idle package restores the envelope display
+// name, not the bare action id.
+assert.equal(await page.locator('.viewport-heading h2').textContent(),'自然站立');
 const pkgDiag=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(1.2);return {diagnostics:e.diagnostics(),status:e.source.status,error:e.source.error};});
 assert.equal(pkgDiag.status,'ready');assert.equal(pkgDiag.diagnostics.bones,163);assert(pkgDiag.diagnostics.root.every(Number.isFinite),'pose-package root must be finite');
 await page.screenshot({path:'evidence/pose-package.png'});result.checks.posePackage=true;
+// Envelope derivation for a prop action: a bundled forehand package must
+// remount the racket (constant display — v2 carries no per-frame grip) and
+// resurface the hand-view/trail affordances; document.loop:false → one-shot.
+const fhResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'forehand'}})});
+assert.equal(fhResponse.status,200,'POST /v1/motions {forehand} failed');
+const fhPkg=await fhResponse.json();
+await page.locator('input[type=file]').setInputFiles({name:'forehand.pose.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fhPkg))});
+await page.waitForTimeout(300);
+assert.equal(await page.locator('.motion-row').count(),10);
+assert.equal(await page.locator('.viewport-heading h2').textContent(),'正手挥拍');
+const fhState=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(2.55);return {racket:e.racket?.visible===true,prop:e.source?.kind==='pose-package'&&e.source.wantsProp()};});
+assert.equal(fhState.prop,true,'forehand package source does not want the prop');
+assert.equal(fhState.racket,true,'forehand package did not remount the racket');
+assert(await page.getByRole('button',{name:'手部特写',exact:true}).isVisible(),'hand-view affordance missing for a prop package');
+assert(await page.getByRole('switch',{name:'球拍运动轨迹',exact:true}).isVisible(),'trail affordance missing for a prop package');
+assert(await page.getByRole('switch',{name:'循环播放',exact:true}).isDisabled(),'a non-loop document should replay one-shot');
+result.checks.posePackageForehand=true;
 await choose('idle',0,'front'); // restore a bundled motion before the workshop section
-svc?.kill();svc=undefined; // package delivered; the service is no longer needed
+// NOTE: svc stays up — the workshop export assertions below POST the same
+// document to the real service for the byte-parity check.
 // --- Workshop E2E: real pointer drag → save → reload keeps the edited pose.
 await page.goto('http://127.0.0.1:5173/workshop.html');
 await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
@@ -107,6 +130,101 @@ const live=await page.evaluate(()=>{const e=window.__WS__;e.setPlaying(false);e.
 assert.deepEqual(live.target,moved,'live doc handR.target differs from the persisted edit');
 assert(live.wrist.every((v,i)=>Math.abs(v-wristBefore[i])<.01),'solved wrist position changed across reload');
 result.checks.workshopDragPersist=true;
+// --- Workshop pose-package export: the in-browser builder must download a
+// package that matches what POST /v1/motions {workshop-doc} serves — field
+// by field (strings/structure exact, solved floats to ~1e-12; see below) —
+// so the real service stays alive through this block for the peer comparison.
+// This runs BEFORE the foot/swing edits below on purpose: those edits leave
+// the document in a state the semantic validator rejects (the pelvis
+// correction releasing mid-swing overshoots the root-acceleration limit —
+// verified: 45.7 m/s² > 40), and a 422 artifact rightly has no download.
+// The QA document id is random — the artifact id is compared to the service
+// response, never asserted against a constant.
+const wsExportFps=Number(await page.getByLabel(/采样率/).inputValue());
+const [download]=await Promise.all([
+ page.waitForEvent('download'),
+ page.getByRole('button',{name:'导出姿态包',exact:true}).click(),
+]);
+const exportedText=fs.readFileSync(await download.path(),'utf8');
+const exported=JSON.parse(exportedText);
+const wireConsts=await page.evaluate(async()=>{const m=await import('/src/core/package-const.ts');return {kind:m.POSE_PACKAGE_KIND,schemaVersion:m.POSE_PACKAGE_SCHEMA_VERSION};});
+assert.equal(exported.kind,wireConsts.kind);
+assert.equal(exported.schemaVersion,wireConsts.schemaVersion);
+assert.equal(exported.timeline.timestamps.at(-1),exported.timeline.duration,'last timestamp is not exactly duration');
+// The download name is content-addressed: <docId>.<artifactId>.pose.json.
+const wsDoc=await page.evaluate(()=>window.__WS__.getDoc());
+assert.equal(download.suggestedFilename(),`${wsDoc.id}.${exported.id}.pose.json`,'download filename is not the content-addressed name');
+// The lab decoder's own structural check must accept the exported package.
+const shapeProblems=await page.evaluate(async pkg=>{
+ const {checkPosePackageShape}=await import('/src/core/motion-source.ts');
+ return checkPosePackageShape(pkg,new Set(window.__WS__.rig.bones.keys()));
+},exported);
+assert.deepEqual(shapeProblems,[],`shape check rejected the exported package: ${shapeProblems[0]??''}`);
+// Peer parity: the same document through the real service must produce the
+// same body — id, fingerprint, tracks, events and quality included.
+// Structure, array lengths and every string field (artifact id, hashes,
+// codes, labels) compare EXACTLY. Finite numbers get a small relative
+// tolerance: the two solves run on two V8 builds (the page's Chrome vs this
+// Node's), and ECMAScript does not pin transcendental functions to identical
+// last ulps — observed drift is ~1e-17 on quaternion components. The
+// same-engine byte-identity half of this contract is pinned separately by
+// src/core/package-export.test.ts (buildPosePackageLocal vs handleRequest
+// under one Node process, toEqual on the full body).
+const peerResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'workshop-doc',parameters:{document:wsDoc}},sample:{fps:wsExportFps}})});
+assert.equal(peerResponse.status,200,'service POST /v1/motions rejected the workshop document');
+const peerPkg=await peerResponse.json();
+const nearEqual=(a,b,path='$')=>{
+ if(typeof a==='number'||typeof b==='number')return (typeof a==='number'&&typeof b==='number'&&Math.abs(a-b)<=1e-12*Math.max(1,Math.abs(a),Math.abs(b)))?null:`${path}: ${a} != ${b}`;
+ if(typeof a!==typeof b)return `${path}: ${typeof a} != ${typeof b}`;
+ if(Array.isArray(a)||Array.isArray(b)){if(!Array.isArray(a)||!Array.isArray(b)||a.length!==b.length)return `${path}: array shape differs`;for(let i=0;i<a.length;i++){const r=nearEqual(a[i],b[i],`${path}[${i}]`);if(r)return r;}return null;}
+ if(a&&b&&typeof a==='object'){const ka=Object.keys(a),kb=Object.keys(b);if(ka.length!==kb.length||ka.some(k=>!(k in b)))return `${path}: object keys differ`;for(const k of ka){const r=nearEqual(a[k],b[k],`${path}.${k}`);if(r)return r;}return null;}
+ return Object.is(a,b)?null:`${path}: ${JSON.stringify(a)} != ${JSON.stringify(b)}`;
+};
+const drift=nearEqual(exported,peerPkg);
+assert.equal(drift,null,`browser-built package differs from the service response: ${drift}`);
+// Everything except computed floats is bit-exact: strip numbers and require
+// a literal deep-equal on the remaining skeleton (ids, hashes, enums).
+const nonNumeric=v=>JSON.parse(JSON.stringify(v,(_k,x)=>typeof x==='number'?0:x));
+assert.deepEqual(nonNumeric(exported),nonNumeric(peerPkg),'package skeleton (ids/hashes/labels) differs from the service response');
+// Round-trip closure: the downloaded .pose.json must decode through the lab's
+// real file input — the same path the service-built package used above.
+await page.goto('http://127.0.0.1:5173/');
+await page.waitForFunction(()=>window.__LAB__?.ready,{timeout:60000});
+await page.locator('.loading-state').waitFor({state:'hidden'});
+await page.locator('input[type=file]').setInputFiles({name:download.suggestedFilename(),mimeType:'application/json',buffer:Buffer.from(exportedText)});
+await page.waitForTimeout(300);
+const roundtrip=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);return {status:e.source.status,error:e.source.error,kind:e.source.kind};});
+assert.equal(roundtrip.kind,'pose-package','exported package did not open as a pose-package source');
+assert.equal(roundtrip.status,'ready',`exported package failed to load in the lab: ${roundtrip.error??''}`);
+// The ad-hoc presentation channel surfaced: documentName becomes the entry name.
+assert.equal(await page.locator('.viewport-heading h2').textContent(),'QA 测试动作','parameters.documentName did not reach the lab entry');
+result.checks.workshopPackageExport=true;
+svc?.kill();svc=undefined; // every service-dependent assertion is done
+// Back to the workshop for the remaining pinned edits — the library
+// persists the QA doc's active selection across the navigation.
+await page.goto('http://127.0.0.1:5173/workshop.html');
+await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
+assert((await page.evaluate(()=>window.__WS__.getDoc().name)).includes('QA 测试动作'),'QA doc lost the active selection across navigation');
+// --- Workshop GLB export: the derived binary download. Assert the container
+// (magic, version, one animation, channel count matching the package's
+// tracks) and a size floor — no in-browser decode, that path is covered by
+// src/core/glb-export.test.ts's mixer↔FK roundtrip on the real GLB.
+const [glbDownload]=await Promise.all([
+ page.waitForEvent('download'),
+ page.getByRole('button',{name:'导出 GLB',exact:true}).click(),
+]);
+assert.equal(glbDownload.suggestedFilename(),`${wsDoc.id}.${exported.id}.glb`,'GLB filename is not <docId>.<artifactId>.glb');
+const glbBuf=fs.readFileSync(await glbDownload.path());
+assert.equal(glbBuf.readUInt32LE(0),0x46546C67,'GLB magic mismatch'); // 'glTF'
+assert.equal(glbBuf.readUInt32LE(4),2,'GLB version is not 2');
+assert(glbBuf.length>3_000_000,`GLB suspiciously small for a skinned model + clip: ${glbBuf.length}B`);
+const glbJsonLen=glbBuf.readUInt32LE(12);
+assert.equal(glbBuf.readUInt32LE(16),0x4E4F534A,'GLB first chunk is not JSON');
+const glbJson=JSON.parse(glbBuf.subarray(20,20+glbJsonLen).toString('utf8'));
+assert.equal(glbJson.animations.length,1,'exported GLB should carry exactly one animation');
+const glbRotCh=glbJson.animations[0].channels.filter(c=>c.target.path==='rotation').length;
+assert.equal(glbRotCh,exported.tracks.rotations.length,'GLB rotation channels differ from the package tracks');
+result.checks.workshopGlbExport=true;
 // Foot-height editing through the real UI: add a mid key, unplant the left
 // foot on it — the key then starts a swing interval and its stored target is
 // the mid-swing waypoint — then set the lift slider and confirm the solved

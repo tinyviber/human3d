@@ -207,3 +207,37 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 
 - 正确性视角：PASS（迁移/golden/指纹/MotionSource 竞态/持久化逐项核对，仅 main 既有竞态与 nit）。
 - 测试/契约/文档视角：REWORK → PASS（文档同步欠债一批 + 属性测试位移界补出处注释 + 编号统一）。
+
+---
+
+# WP-B — 姿态包闭环：浏览器导出 + GLB + 实验室回放
+
+> 分支 `feat/pose-pipeline`。历程：`6de7f1e`（共享抽离地基：solver 与 protocol 原语抬入 `src/core`，浏览器侧复用的前提）→ `7b9fcfa`（浏览器侧构建器）→ `2297f6a`（工作台导出 + QA 对等）→ `a477244`（GLB 导出）→ 本工单（实验室回放补齐 + 文档收尾）。
+
+## 决策裁决
+
+- **构建器放 `src/core` 而非 server**：浏览器无 `node:crypto`——`Digest` 注入（WebCrypto ↔ node:crypto），`canonical`/指纹/manifest/artifact id 全部走 `core/protocol.ts` 共享原语；对等测试证明两侧逐字节一致，而不是约定一致。
+- **`presentation` 走 `action.parameters` 开放通道，不进 v2 schema 顶层**：`parameters` 在包里本来就是 per-action 开放对象且不入制品哈希；为它升 `schemaVersion=3` 会强制所有消费者重校验，只为一个显示 hint 不值。v3 若引入逐帧握拍量等真实通道时再顶层化——届时 hint 语义由数据字段取代。
+- **GLB 是派生品，不作为服务端 `outputs.format`**：GLB 不承载身份契约——`animations[0].name`（`posePackageToClip` 默认 `name=pkg.id`，刻意自描述）与文件名都借用 artifact id 便于对应，非内容寻址声明；服务端 format 有意推迟（渲染分层属后置阶段，plan 文档状态表已改注）。
+- **信封是 bundled 包的权威显示元数据**：`posePackageSpec` 按 `action.id` 命中 `motionFileById` 即整体取信封字段（capabilities/name/english/method/focus/oneShot=`!document.loop`），伪造的 `parameters.presentation` 不能给 bundled id 叠加 prop。adhoc 包（`workshop-doc`）才读 `parameters.presentation`（`prop:'racket'`→球拍能力常量、`loop`→`oneShot=!loop`）与 `documentName`→`name`。
+- **phases 永远来自包内事件**：`phase` 事件优先，无则 `keyframe` 事件做时间轴标记——按交付数据派生，不按 action.id 声称的内容派生。
+- **`wantsProp` 常量上限是诚实的**：v2 包不携带逐帧握拍量，`PosePackageSource` 接受包级 prop hint 常量返回；spec.description 明示「v2 姿态包不携带逐帧握拍量，道具按包级 hint 全程常量显示」。同理 `spec.description` 拼接 `provenance.solver`/`quality.warnings`（计数+前 3 条原文）——warnings 此前在实验室完全不可见。
+
+## 三件套 + 回放
+
+1. `src/core/package-export.ts`：`buildPosePackageLocal`（快照 → `parseDoc` → 上限 → 指纹/id → `solveWorkshop` → `validatePosePackage`），`workshopMeta` 在 `core/protocol.ts` 把 `documentName`/`presentation` 写进 ad-hoc `action.parameters`，服务端 ad-hoc 分支同一工厂。
+2. 工作台导出：「导出姿态包」`<docId>.<artifactId>.pose.json`；「导出 GLB」`<docId>.<artifactId>.glb`（干净重解析模型 + `posePackageToClip`，422 不下载且问题留卡）；`scripts/package-to-glb.mts` CLI 同转换器。
+3. 实验室回放：`openPosePackage` → `posePackageSpec` 派生 + `PosePackageSource` prop hint；`checkPosePackageShape` 继续前置拒绝。
+
+## 对等测试与回归
+
+- `package-export.test.ts`：`buildPosePackageLocal` vs `handleRequest` 同进程全 body `toEqual`（文档形态/fps 网格/422 details 逐字/超限 400/双错输入次序），`subtleDigest` 对 `sha256` 逐字节；随机文档两 seed 共 16 篇**全量**跑对等（status+body，422 另显式钉 `error.details` 逐字；实测 15×422+1×200，再补 200 锚定文档保证成功侧必有覆盖）。
+- `glb-export.test.ts`：golden 包 → GLB → GLTFLoader 读回，mixer 采样对独立 FK ~5e-8m。
+- `motion-source.test.ts` 新增 6 项：服务真 `handleRequest` 产 forehand 包 → 信封恢复（capabilities/name/phases/oneShot/description 含 solver+warnings+常量道具注记）；伪造 `parameters` 不越信封权；未知 id 兜底；`buildPosePackageLocal` adhoc 包 → presentation 推导 + keyframe 回退 + loop/oneShot；prop hint 驱动 `wantsProp` 与 grip 读数。
+- `browser-qa.mjs`：`posePackage`（idle 包）、新增 `posePackageForehand`（球拍重挂载、手部特写/轨迹控件、oneShot 禁循环）、`workshopPackageExport`（下载 vs 服务逐字段对等 + 回环解码 + `documentName` 进标题）、`workshopGlbExport`。
+
+## 遗留
+
+- v3 `presentation` 顶层字段（逐帧握拍量/真逐键事件类型）推迟：见上裁决——通道在 `parameters` 里够用，schema 升级成本高于收益。
+- `wantsProp` 常量上限：v2 无逐帧 grip，道具全程常量显示已属诚实上限；逐帧化随 v3 一并考虑。
+- 422 拒绝不产文件是既定语义（制品不存在）；GLB 文件名借用 artifact id 仅为对应关系，不做内容寻址声明。

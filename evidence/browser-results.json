@@ -416,7 +416,10 @@
     "mobileOverflow": false,
     "liveVideo": true,
     "posePackage": true,
+    "posePackageForehand": true,
     "workshopDragPersist": true,
+    "workshopPackageExport": true,
+    "workshopGlbExport": true,
     "workshopFootHeight": true,
     "workshopWaypointDrag": true
   },

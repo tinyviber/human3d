@@ -8,7 +8,7 @@ import {load as loadYaml} from 'js-yaml';
 import {createService,handleRequest,LIMITS_SVC,type ServiceContext} from './service';
 import {ERROR_CODES} from './errors';
 import {validatePosePackage} from './validate';
-import type {PosePackage} from './pose-package';
+import type {PosePackage} from '../core/pose-package';
 
 const SPEC=path.resolve('spec');
 let contract:Contract;

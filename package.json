@@ -11,6 +11,7 @@
     "spec:check": "vitest run src/server/contract.test.ts",
     "service": "tsx src/server/serve.ts",
     "protocol:example": "tsx scripts/export-pose-package.mts",
+    "package-to-glb": "tsx scripts/package-to-glb.mts",
     "qa": "node scripts/browser-qa.mjs",
     "assets": "python3 scripts/build-human.py && tsx scripts/retarget-walk.mjs",
     "dynamics:validate": "python3 scripts/validate-action-spec.py",
