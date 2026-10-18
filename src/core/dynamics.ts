@@ -80,9 +80,15 @@ export class DynamicsReplay {
   const revision=++this.loadRevision;const key=`${id}-${profile}`;let record=this.cache.get(key);
   if(!record){
    // Envelope record URLs are authoritative when the spec carries them; a
-   // bare spec falls back to the legacy flat `/dynamics/<id>-<case>` files.
-   const ref=records?.[profile],metaUrl=ref?.meta??`/dynamics/${key}.json`,dataUrl=ref?.data??`/dynamics/${key}.bin`;
-   const [meta,response]=await Promise.all([json<RecordData>(metaUrl),fetch(dataUrl)]);if(!response.ok)throw new Error('仿真记录未找到');const values=new Float32Array(await response.arrayBuffer());const end=meta.frames.at(-1)!;if(end.offset+meta.headLength+end.segments*7!==values.length)throw new Error('仿真记录长度校验失败');record={meta,values};this.cache.set(key,record);}
+   // bare spec falls back to the per-action layout `/dynamics/<id>/<case>`.
+   const ref=records?.[profile],metaUrl=ref?.meta??`/dynamics/${id}/${profile}.json`,dataUrl=ref?.data??`/dynamics/${id}/${profile}.bin`;
+   const [meta,response]=await Promise.all([json<RecordData>(metaUrl),fetch(dataUrl)]);if(!response.ok)throw new Error('仿真记录未找到');
+   // Same identity gate scripts/test-dynamics-records.py applies: whichever
+   // URL served the record, its payload must be the requested id+case — a
+   // records table pointing at the wrong action's files is a hard error,
+   // not a silent replay of somebody else's trajectory.
+   if(meta.id!==id||meta.case!==profile)throw new Error(`仿真记录身份不匹配：请求 ${id}/${profile}，记录为 ${meta.id}/${meta.case}`);
+   const values=new Float32Array(await response.arrayBuffer());const end=meta.frames.at(-1)!;if(end.offset+meta.headLength+end.segments*7!==values.length)throw new Error('仿真记录长度校验失败');record={meta,values};this.cache.set(key,record);}
   if(revision!==this.loadRevision)return false;
   this.model=await json<ModelData>(record.meta.modelMeta??'/dynamics/model.json');this.byName.clear();this.jointByName.clear();for(const b of this.model.bodies)this.byName.set(b.name,b.id);for(const j of this.model.joints)this.jointByName.set(j.name,j);
   this.referencePose.clear();const first=record.meta.frames[0],base=first.offset+record.meta.layout.qpos+record.meta.layout.qvel;

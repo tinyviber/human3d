@@ -5,7 +5,7 @@ import {HumanRig,skeletonSegments} from '../core/rig';
 import {attachRacket,mountRacket} from '../core/racket';
 import type {RigInfo,ViewId} from '../core/types';
 import type {EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from './document';
-import {contactStartKey,frameAt,isReleaseKey,sortedKeys,toV} from './document';
+import {contactStartKey,frameAt,isReleaseKey,parseDoc,serializeDoc,sortedKeys,toV} from './document';
 import {analyzePose,solveEffectiveFrame,type Analysis} from './solver';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from './foot';
 
@@ -16,8 +16,10 @@ export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:bo
 export const ONION_MAX=3;
 /** Ghost instants for one playhead position. `keys` brackets the playhead with
  * the nearest real key times on each side (strict — the key under the playhead
- * is the live pose, not a ghost); `step` takes t±k·Δt, dropping instants that
- * fall outside [0,duration]. Returned dist is 1 = nearest. */
+ * is the live pose, not a ghost); on a loop document the bracket continues
+ * across the seam — the previous-cycle tail keys ghost the head of the strip
+ * and vice versa. `step` takes t±k·Δt, dropping instants that fall outside
+ * [0,duration]. Returned dist is 1 = nearest. */
 export function onionTimes(doc:WorkshopDoc,time:number,o:Pick<WorkshopOptions,'onionCount'|'onionMode'|'onionStep'>){
   const out:{time:number;dir:-1|1;dist:number}[]=[];
   const n=Math.max(1,Math.min(ONION_MAX,Math.round(o.onionCount)||1));
@@ -30,10 +32,24 @@ export function onionTimes(doc:WorkshopDoc,time:number,o:Pick<WorkshopOptions,'o
     return out;
   }
   const keys=sortedKeys(doc);
-  const before=keys.filter(k=>k.time<time-1e-9).slice(-n);
-  const after=keys.filter(k=>k.time>time+1e-9).slice(0,n);
+  // Walk order: descending away from the playhead on each side. For a loop
+  // document the bracket continues across the seam — the "previous" poses of
+  // a playhead near 0 are the tail keys' own instants (the sampler wraps the
+  // chain the same way), and vice versa. A key already bracketing one side is
+  // never duplicated onto the other (degenerate tiny docs).
+  const beforeDesc=keys.filter(k=>k.time<time-1e-9).reverse();
+  const after=keys.filter(k=>k.time>time+1e-9);
+  if(doc.loop){
+    // Only the SELECTED keys are taken: wrapping draws from the unused pool —
+    // and the key sitting on the playhead stays the live pose, never a ghost.
+    const used=new Set([...beforeDesc.slice(0,n),...after.slice(0,n)].map(k=>k.id));
+    const free=(k:WorkshopKey)=>Math.abs(k.time-time)>1e-9&&!used.has(k.id);
+    for(let i=keys.length-1;i>=0&&beforeDesc.length<n;i--){const k=keys[i];if(free(k)){used.add(k.id);beforeDesc.push(k);}}
+    for(let i=0;i<keys.length&&after.length<n;i++){const k=keys[i];if(free(k)){used.add(k.id);after.push(k);}}
+  }
+  const before=beforeDesc.slice(0,n).reverse(),afterN=after.slice(0,n);
   before.forEach((k,i)=>out.push({time:k.time,dir:-1,dist:before.length-i}));
-  after.forEach((k,i)=>out.push({time:k.time,dir:1,dist:i+1}));
+  afterN.forEach((k,i)=>out.push({time:k.time,dir:1,dist:i+1}));
   return out;
 }
 /* ---------- fixed-camera render export (WP-D) ---------- */
@@ -423,22 +439,33 @@ export class WorkshopEngine{
    * shares captureStill's fixed camera preset, output size and overlay
    * policy, so a sheet cell is exactly what a single still would be. */
   async captureSheet(times?:number[],opts:CaptureOptions={}):Promise<Blob>{
-    const ts=sheetTimes(times??sortedKeys(this.getDoc()).map(k=>k.time));
+    /* Pin the document for the whole sheet: getDoc() reads the live library
+     * slot, and a doc switch or in-place edit landing between the per-tile
+     * awaits (toBlob/createImageBitmap yield to the event loop, where React
+     * can still run) would silently mix two document versions into one image.
+     * A serialized→parsed copy freezes content and identity; swapping the
+     * provider makes every tile's captureStill solve through it. Restored in
+     * finally so a mid-sheet failure can't leave the engine on the stale doc. */
+    const frozen=parseDoc(serializeDoc(this.getDoc()));
+    const ts=sheetTimes(times??sortedKeys(frozen).map(k=>k.time));
     if(!ts.length)throw new Error('文档没有关键时刻，无法生成拼图');
     const cols=Math.min(SHEET_COLS,ts.length),rows=Math.ceil(ts.length/cols);
     const sheet=document.createElement('canvas');
     sheet.width=cols*STILL_WIDTH;sheet.height=rows*(STILL_HEIGHT+SHEET_LABEL_H);
     const ctx=sheet.getContext('2d');if(!ctx)throw new Error('无法创建 2D 拼图画布');
     ctx.fillStyle='#f5f7fa';ctx.fillRect(0,0,sheet.width,sheet.height);
-    for(let i=0;i<ts.length;i++){
-      const x=(i%cols)*STILL_WIDTH,y=Math.floor(i/cols)*(STILL_HEIGHT+SHEET_LABEL_H);
-      const bmp=await createImageBitmap(await this.captureStill(ts[i],opts));
-      ctx.drawImage(bmp,x,y);bmp.close();
-      ctx.fillStyle='#eef1f6';ctx.fillRect(x,y+STILL_HEIGHT,STILL_WIDTH,SHEET_LABEL_H);
-      ctx.fillStyle='#33415c';ctx.font='600 13px "DM Sans",system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
-      ctx.fillText(`t = ${ts[i].toFixed(2)} s`,x+STILL_WIDTH/2,y+STILL_HEIGHT+SHEET_LABEL_H/2);
-      ctx.strokeStyle='#d6dce4';ctx.strokeRect(x+.5,y+.5,STILL_WIDTH-1,STILL_HEIGHT+SHEET_LABEL_H-1);
-    }
+    const restoreDoc=this.getDoc;this.getDoc=()=>frozen;
+    try{
+      for(let i=0;i<ts.length;i++){
+        const x=(i%cols)*STILL_WIDTH,y=Math.floor(i/cols)*(STILL_HEIGHT+SHEET_LABEL_H);
+        const bmp=await createImageBitmap(await this.captureStill(ts[i],opts));
+        ctx.drawImage(bmp,x,y);bmp.close();
+        ctx.fillStyle='#eef1f6';ctx.fillRect(x,y+STILL_HEIGHT,STILL_WIDTH,SHEET_LABEL_H);
+        ctx.fillStyle='#33415c';ctx.font='600 13px "DM Sans",system-ui,sans-serif';ctx.textAlign='center';ctx.textBaseline='middle';
+        ctx.fillText(`t = ${ts[i].toFixed(2)} s`,x+STILL_WIDTH/2,y+STILL_HEIGHT+SHEET_LABEL_H/2);
+        ctx.strokeStyle='#d6dce4';ctx.strokeRect(x+.5,y+.5,STILL_WIDTH-1,STILL_HEIGHT+SHEET_LABEL_H-1);
+      }
+    }finally{this.getDoc=restoreDoc;}
     const blob=await new Promise<Blob|null>(res=>sheet.toBlob(res,'image/png'));
     if(!blob)throw new Error('拼图编码失败：canvas.toBlob 返回空');
     return blob;

@@ -31,7 +31,7 @@
 
 ## 3. 语义阈值与校准
 
-阈值定义在 `VALIDATION_LIMITS`。下表由 `npx tsx scripts/measure-motions.mts`（默认 40 fps，当前代码）得到，取整个包的最坏值。WP-C 求解语义变更（Catmull-Rom 切线限界 + 手部朝向 SO(3) 三次，`SERVICE_VERSION` 0.3.0）后重测。
+阈值定义在 `VALIDATION_LIMITS`。下表由 `npx tsx scripts/measure-motions.mts`（默认 40 fps，当前代码）得到，取整个包的最坏值。WP-C 求解语义变更（Catmull-Rom 切线限界 + 手部朝向 SO(3) 三次，`SERVICE_VERSION` 0.3.0）后重测；WP-D `gripSide` 升版（0.4.0）只镜像缺省 `'R'` 之外的求解路径，全部内置动作的轨迹逐位不变，阈值沿用。
 
 | 动作（40 fps） | 骨骼角速率 rad/s | 根速率 m/s | 根加速度 m/s² | 膝屈曲 ° | 肘屈曲 ° | 支撑脚滑移 |
 |---|---|---|---|---|---|---|

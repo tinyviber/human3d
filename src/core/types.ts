@@ -11,7 +11,7 @@ export interface RigInfo{height:number;bones:BoneInfo[];vertices:number;triangle
  * workshop document, a dynamics replay, or a delivered pose package. A
  * dynamics source carries the envelope's action parameters and record URLs;
  * a bare `{kind:'dynamics'}` spec is still legal — the replay then falls back
- * to the legacy flat `/dynamics/<id>-<case>.{json,bin}` convention. */
+ * to the per-action `/dynamics/<id>/<case>.{json,bin}` convention. */
 export type MotionSourceSpec=
  |{kind:'clip';clip:string;meta?:string}
  |{kind:'document';document:WorkshopDoc}

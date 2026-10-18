@@ -395,6 +395,23 @@ describe('motion library',()=>{
   l.remove(b.id);l.remove('forehand-workshop');
   expect(l.docs.length).toBe(1);expect(l.docs[0].keys.length).toBe(2);
  });
+ it('drops the deleted doc\'s undo book so a same-id re-import cannot revive stale snapshots',()=>{
+  // The WorkshopApp wiring: removal drops the document's history book. A doc
+  // re-imported with the same id must start with an empty undo stack — an
+  // undeleted book would let undo restore the deleted doc's content onto the
+  // new document, a zombie write no edit ever produced.
+  const l=lib(memStorage()),books=new HistoryBook();
+  l.onRemoved=id=>books.drop(id);
+  const src=l.active();
+  books.of(src.id).record(src);
+  expect(books.of(src.id).canUndo()).toBe(true);
+  l.remove(src.id);
+  // Re-import the same serialized document: no id clash now, so it keeps the id.
+  const added=l.add(parseDoc(serializeDoc(src)));
+  expect(added.id).toBe(src.id);
+  expect(books.of(added.id).canUndo()).toBe(false);
+  expect(books.of(added.id).undo(added)).toBeUndefined();
+ });
  it('persists and restores the whole library through storage',()=>{
   const store=memStorage(),l=lib(store);
   const made=l.create('正手截击');made.keys[0].label='引拍';made.name='改名后的截击';l.save();
@@ -626,6 +643,19 @@ describe('onion skin ghost instants',()=>{
   const t=onionTimes(doc(),.05,{onionCount:3,onionMode:'step',onionStep:.1});
   expect(t.every(g=>g.dir===1)).toBe(true);
   expect(t.map(g=>+g.time.toFixed(6))).toEqual([.15,.25,.35]);
+ });
+ it('wraps the keys bracket across the seam on a loop document',()=>{
+  // Keys at 0/.3/.6/.9 in a 1.2 s loop. Parked at .05 the real past holds only
+  // k@0 — the next-nearest previous ghosts are the previous cycle's tail keys
+  // at their own instants (the sampler wraps the same way), so k@0 keeps
+  // dist 1 and k@.9 follows behind it, never duplicated onto the after side.
+  const d=blankDocument(rig.rest,'loop','loop');d.loop=true;d.duration=1.2;d.keys[1].time=.9;
+  for(const [id,t]of [['k-a',.3],['k-b',.6]]as const){const k:WorkshopKey=JSON.parse(JSON.stringify(d.keys[0]));k.id=id;k.time=t;d.keys.push(k);}
+  const ts=onionTimes(d,.05,{onionCount:2,onionMode:'keys',onionStep:.1}).map(g=>[g.dir,g.dist,g.time]);
+  expect(ts).toEqual([[-1,2,.9],[-1,1,0],[1,1,.3],[1,2,.6]]);
+  // The key under the playhead stays the live pose even across the wrap.
+  const on=onionTimes(d,.6,{onionCount:2,onionMode:'keys',onionStep:.1});
+  expect(on.every(g=>g.time!==.6)).toBe(true);
  });
 });
 

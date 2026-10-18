@@ -665,6 +665,16 @@ export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
   const hand=(h:HandTarget):HandTarget=>({target:mv(h.target),pole:mv(h.pole),forward:mv(h.forward),normal:mv(h.normal)});
   const foot=(f:FootTarget):FootTarget=>({target:mv(f.target),pole:mv(f.pole),yaw:-f.yaw,pitch:f.pitch});
   const toggle=(s:string,suffix:string)=>s.endsWith(suffix)?s.slice(0,s.length-suffix.length):s+suffix;
+  /* Field coverage — every WorkshopDoc/WorkshopKey/PoseParams member has an
+   * explicit rule here; when a field is added to any of those interfaces it
+   * must get a line below (swap, mirror or keep — silent omission means the
+   * mirrored document quietly keeps the source's value):
+   *   WorkshopDoc: schemaVersion · id · name · english · duration ·
+   *     inbetweens · loop · handFrames · clavicleLift · gripSide · keys
+   *   WorkshopKey: id · time · label · pose · constraints · videoTime
+   *   PoseParams:  root · yaw · lean · chest · side · handL · handR ·
+   *     footL · footR   (hand: target/pole/forward/normal; foot: +yaw/pitch)
+   *   KeyConstraints: plantL · plantR · grip · contact                       */
   const keys=doc.keys.map(k=>{
     const c=k.constraints,p=k.pose;
     const key:WorkshopKey={id:k.id,time:k.time,label:k.label,

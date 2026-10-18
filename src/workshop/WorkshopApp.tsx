@@ -126,19 +126,27 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   else if(Math.abs(el.currentTime-target)>.05)el.currentTime=target;
  },[frame,sync]);
  const L=lib.current!;
+ // Deleting a document drops its undo book with it — a doc that later reuses
+ // the id (re-import of the same file) must not inherit the deleted doc's
+ // snapshots and have undo resurrect stale content under the new doc.
+ L.onRemoved=id=>books.current.drop(id);
  /** Snapshot before an edit. Edits within 600 ms on the SAME document (a slider
   * drag) share one undo step; another document or a gap always starts a new one. */
  const recordBefore=(doc:WorkshopDoc)=>{if(gate.current.should(doc.id,performance.now()))books.current.of(doc.id).record(doc);};
  const edit=(fn:(d:WorkshopDoc)=>void)=>{recordBefore(L.active());fn(L.active());L.save();engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
- const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return;L.docs[i]=next;L.save();gate.current.reset();wristEpoch.current++;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);};
+ /** Write a history-restored document back under its own id. Returns false
+  * when that id no longer exists in the library (deleted meanwhile). */
+ const applyDoc=(next:WorkshopDoc)=>{const i=L.docs.findIndex(x=>x.id===next.id);if(i<0)return false;L.docs[i]=next;L.save();gate.current.reset();wristEpoch.current++;const e=engine.current;e?.setPlaying(false);e?.markDirty();e?.seek(Math.min(frame.time,next.duration));if(!keyAt(next,selected))setSelected(sortedKeys(next)[0]?.id??'');bump(v=>v+1);return true;};
  /* A history step can restore a DIFFERENT library document: the mirrored
   * document's first undo step is the source document it was made from.
   * applyDoc only writes content back under the restored doc's own id, so the
   * selection must follow it — and the direction's counterpart snapshot is
   * deposited on the restored doc's book, keeping undo/redo symmetric across
-  * the switch (the departing doc also keeps its own copy of the step). */
- const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(!prev)return;applyDoc(prev);if(prev.id!==cur.id){books.current.of(prev.id).pushFuture(cur);selectDoc(prev.id);}};
- const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(!next)return;applyDoc(next);if(next.id!==cur.id){books.current.of(next.id).pushPast(cur);selectDoc(next.id);}};
+  * the switch (the departing doc also keeps its own copy of the step). When
+  * the restored id no longer names a library document the step is skipped
+  * WITH a hint — silently consuming it would look like undo doing nothing. */
+ const undo=()=>{const cur=L.active();const prev=books.current.of(cur.id).undo(cur);if(!prev)return;if(!applyDoc(prev)){setHint(`撤销的目标文档「${prev.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}if(prev.id!==cur.id){books.current.of(prev.id).pushFuture(cur);selectDoc(prev.id);}};
+ const redo=()=>{const cur=L.active();const next=books.current.of(cur.id).redo(cur);if(!next)return;if(!applyDoc(next)){setHint(`重做的目标文档「${next.name}」已不在动作库中（可能已被删除），该历史步已跳过。`);return;}if(next.id!==cur.id){books.current.of(next.id).pushPast(cur);selectDoc(next.id);}};
  shortcuts.current={undo,redo};
  useEffect(()=>{
   // Ctrl/Cmd+Z undoes, Ctrl/Cmd+Shift+Z or Ctrl/Cmd+Y redoes. Text fields keep their native undo.

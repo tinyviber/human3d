@@ -264,7 +264,7 @@ export class DynamicsSource implements MotionSource{
    * 'superseded' → a newer load or a source switch owns the replay now;
    * 'error' → status/error already carry the message. The envelope's
    * `records` URLs take precedence inside the replay; a bare spec falls back
-   * to the legacy flat path convention. */
+   * to the per-action `/dynamics/<id>/<case>` path convention. */
   async load(id:string,profile:DynamicsCase,muscleAction?:MuscleActionFile,records?:DynamicsRecords):Promise<'applied'|'superseded'|'error'>{
     this.motionId=id;this.profile=profile;this.status='loading';this.error=undefined;
     const s=this.session;

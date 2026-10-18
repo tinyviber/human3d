@@ -471,11 +471,21 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 - **范围**:把两条肌肉驱动动作(`baseball-throw`/`punch`)从 `motions.ts` 的 Vite-only `import.meta.glob` 注册迁入 `assets/motions/*.json` 信封注册表,与 authored/clip 动作共用同一条 `MOTION_FILES` 静态注册链路。
 - **信封形态**:`kind:'dynamics-motion'`;`dynamics.action` 承载原 action JSON 全部字段(schemaVersion/title/model/simulation/controller/reference/display/notes),`dynamics.records` 按 case 给出 `{meta,data}` URL;原始信封不写任何显示字段(name/english/duration/description/method/focus/phases 及 oneShot/capabilities/notes/license),全部由 `normalizeMotionFile` 从 `dynamics.action` 用旧 `actionMotions` 同一套公式派生(duration 保留仿真网格取整、phases 默认取关键帧时刻并经 lead/scale 换算、clamp 到 duration)。
 - **不引入 `dynamics.model`**:记录 meta 已携带 `modelMeta`/`modelXml` 与哈希,信封再加模型字段只会产生第二份可漂移的模型身份。
-- **记录文件迁入 per-action 目录**:`public/dynamics/<id>/<case>.{json,bin}`;信封 `dynamics.records` URL 是运行期抓取契约,`DynamicsReplay.load` 优先用信封 URL,裸 `{kind:'dynamics'}` spec 回退旧扁平 `/dynamics/<id>-<case>` 约定。中间产物(原始逐帧 run JSON、激励 bin、参考 npz)同样按动作分目录到 `assets/dynamics/<id>/`——它们是 export 管线的输入而非 web 资产,不进 public/。
+- **记录文件迁入 per-action 目录**:`public/dynamics/<id>/<case>.{json,bin}`;信封 `dynamics.records` URL 是运行期抓取契约,`DynamicsReplay.load` 优先用信封 URL,裸 `{kind:'dynamics'}` spec 回退同一 per-action `/dynamics/<id>/<case>` 约定(本轮 review 修复前曾写死旧扁平 `<id>-<case>` 路径——迁移后磁盘上根本不存在,是必 404 的死路径,已更正,见文末修复轮)。中间产物(原始逐帧 run JSON、激励 bin、参考 npz)同样按动作分目录到 `assets/dynamics/<id>/`——它们是 export 管线的输入而非 web 资产,不进 public/。
 - **互斥与派生边界**(schema `allOf` + `validateMotionFileShape` 双轨):dynamics-motion 必须有 `dynamics`、不得有 `document`/`clip`、不得写显示字段;`unwrapMotionFile`/`motionDefinitionPayload` 对 dynamics-motion 显式抛错(不进姿态管线哈希)。
 - **服务目录不变**:`service.ts` 仍按 `f.kind==='workshop-motion'` 过滤,dynamics-motion 进文件注册表/网页动作库但不进 `/v1/actions`;`service.test.ts` 的「不预告不可服务动作」断言原样覆盖 `punch`/`baseball-throw`。
 - **类型解环**:`MuscleActionFile`/`DynamicsRecords` 抽到 `src/core/muscle-action.ts`,`dynamics.ts`/`motion-source.ts`/`motion-file.ts`/`types.ts` 都从这里取型,不再经 `motions.ts`。
 - **副产物**:`assets/actions/` 目录整体删除;`assets/source/dynamics/full-activation-model.xml` 是早期实验中间产物,随本次迁移删除(完整模型快照仍由 `myofullbody-complete.xml` + `myofullbody-parameters.json` 承载)。
+
+## WP-D(补)— 工作台洋葱皮:播放头相邻姿态幽灵叠加
+
+eval 裁决语义:编辑视图叠加播放头前后姿态的幽灵骨架线框——审阅「这一帧从哪里来到哪里去」,不是全轨迹拖尾。
+
+- **幽灵 = 逐骨世界位置的 `LineSegments`**(非克隆 SkinnedMesh):每方向×距离一个槽位(2×`ONION_MAX`=6),段表与实验室调试骨架共用 `rig.skeletonSegments`(从 `core/engine.ts` 抽出的同一份表,骨列表不会分叉)。每幽灵时刻走 `frameAt + solveEffectiveFrame` 真实求解路径——与 `rebuildAux` 60 次轨迹采样同路——逐骨记录世界位置后恢复播放头姿态。
+- **时刻选择**:`onionTimes` 纯函数。`keys` 模式 `sortedKeys` 括号取播放头前后各 N 个真实键时刻(严格不等式——压在播放头下的键是正在编辑的实姿态,不幽灵化);`step` 模式 `t±k·Δt` 随播放头每帧跟随,越界时刻丢弃。`ONION_MAX=3` 每向上限,maxKeys 文档永不全键幽灵化。
+- **重算节奏(签名缓存)**:`docDirty→rebuildAux` 置 `onionStale` 强制重解算;幽灵时刻签名(mode/count/step + 各时刻 dir/dist/time)不变则跳过——播放头在同两键间移动不触发重解;step 模式随 animate 每帧走同一签名门。拖动中 `!this.drag` 守卫冻结(与其他 aux 层同节奏)。
+- **视觉**:前帧冷色 0x367cff / 后帧暖色 0xe2543a,opacity .40→.20 按距离衰减,`depthTest:false`、renderOrder 8(低于手柄 20),挂场景根不进拾取集。开关与参数(count/mode/step)会话态不持久化,「显示」卡片控件。
+- **QA**:`workshopOnion`——幽灵池存在、keys/step 数量断言、真实拖动期间缓冲逐字节冻结、关闭全隐。
 
 ## WP-D(补)— 固定相机渲染导出:静帧 + 关键帧拼图
 
@@ -487,6 +497,16 @@ eval 裁决语义:**确定性出图参数的静帧导出 + 关键帧 contact-she
 - **UI**:动作文档卡姿态包区旁新增「静帧渲染」子区——「渲染静帧」按 `e.time` 导 `<docId>.t<秒>.png`、「关键帧拼图」导 `<docId>.sheet.png`,复用既有 `download`/`safeName`;注释与 hint 写明固定相机预设+固定出图尺寸、不含编辑器手柄、播放/视角导出后恢复。
 - **测试/QA**:`workshop.test.ts` 补 `sheetTimes` 纯函数断言(键数 ≤ 上限全保留、30 键均匀抽 12 且端点钉死+无重复、自定义上限与调用序保持);`browser-qa.mjs` 新增 `workshopStillExport`——真实点击 → `waitForEvent('download')` → PNG magic(\x89PNG)+ IHDR 钉 640×720 与文件名约定,拼图断言 3 格宽度(1920×748)与体积大于单帧,并分别验证暂停态导出后 time/playing 原样恢复、播放中导出后 playing 恢复为 true。
 - **文档**:WORKSHOP.md 导出矩阵三行→五行(静帧/拼图归入「渲染品」,不携带 artifact 身份);QA.md 检查表补 `workshopStillExport` 行。
+
+## WP-D(补)— 握拍侧参数化:gripSide 镜像求解与左手球拍装载
+
+eval 裁决语义(方案A):`WorkshopDoc.gripSide?:'L'|'R'` 文档级字段选择握拍侧——整套握拍阶段(指节包裹、腕锥限位、抬肩辅助、球拍挂载)镜像到左手;侧别改变求解轨迹,所以它属于文档并进入请求指纹,不是展示元数据。
+
+- **规范形态**:缺省 = 右手;`normalizeDoc` 把显式 `'R'` 折叠回缺省——同义写法共享指纹与制品 id(`normalizedRequest` 内嵌整个文档,'R' 拼写在哈希前就归一掉);显式 `'L'` 保留并改变制品 id。
+- **镜像约定**:左挂载 = 右挂载的精确 x 镜像(M·q·M,x 反射 M——位置 x→−x、四元数 (x,−y,−z,w) 分量规则),`grip-side.test.ts` 在真实 `frameAt→solveEffectiveFrame` 路径上逐骨断言(163 骨位置 + 世界朝向,实测 ≤5e-16 m / ≤5e-8 rad)——含腕锥截幅、clavicle 辅助、指节缠绕各阶段,非对称输入全镜像后求解必须共轭到另一侧。
+- **求解路由**:`EffectiveFrame.gripSide` 由 `frameAt` 从文档拍平(与 clavicleLift 同一交付模式,调用方签名不变),`solveEffectiveFrame`/`solvePose` 按侧路由 `blendGrip`/手指/腕锥/锁骨(镜像符号)/放松;非握拍手保持松弛。
+- **球拍与 UI**:`gripFrame`/`applyGrip`/`blendGrip`/`attachRacket`/`mountRacket` 均收 `side` 参数(缺省 'R' 保持旧语义);工作台引擎在 `solveFrame` 一处统一检测挂载侧变化并重挂(文档编辑/切换触发,每帧至多一次);「握拍侧」下拉写文档(左握时约束行动态标「左手握拍」);实验室 `capabilities.prop.side`/`posePackageSpec` 的 `presentation.gripSide` hint 驱动 `propSide` 与手部相机;`analyzeProbeFrames` 仪表握拍臂而非右臂。
+- **QA**:`workshopGripSide`——真实下拉选左手 → 文档字段+重标+球拍重挂 `wrist_L` → 真实拖拍头写 `handL.target`,`handR.target` 逐字节不变。
 
 ## WP-D(补)— 文档镜像(mirrorDoc):同一动作换边
 
@@ -515,3 +535,12 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 - **两侧等价**:非对称 handFrames({L:'world',R:'pelvis'})、左握文档、loop 随机文档(seed 11/222)同口径通过——handFrames 换侧是该断言成立的必要条件。
 - **UI 事务**:「镜像动作」把镜像文档作为新库条目入库并选中(原文档保留);新文档的撤销书预存源文档快照——一步撤销回到源文档(undo/redo 在恢复 id ≠ 当前 id 时由 applyDoc + selectDoc 跟随,反向步经 `DocHistory.pushPast`/`pushFuture` 存到恢复文档的书上,双向对称)。
 - **QA**:`workshopMirror`——真实点击 → 新文档、`gripSide` 翻转、t=.5 腕位左右互换(容差 1e-5)、球拍重挂 `wrist_R`、撤销一步回源文档。
+
+## WP-D · 双审修复轮(review-D1 minors + review-D2 medium/lows)
+
+- **SERVICE_VERSION `0.3.0`→`0.4.0`**:`gripSide` 进 `solvePose`(指节包裹/腕锥/锁骨辅助/球拍挂载整段按侧镜像)是求解语义变化,`protocol.ts` 明令无条件 bump——WP-D 落地时漏升,本轮补上。`spec/examples/idle.pose.json` 经 `npm run protocol:example` 重生成:artifact id `mot_a9edd1d24e21d202`→`mot_c67dda30d91962fd`,顶层仅 `id` 与 `provenance.solverRevision` 变化——轨迹逐位不变(gripSide 缺省='R',idle 文档无 'L',既有轨迹不受影响)。`evidence/migration-report.txt` 经 `npx tsx scripts/migrate-authored-motions.mts` 重生成(仅首行 solver 版本号变化,残差逐字相同);顺带修复该脚本内嵌 `motionSchema` 漂移——WP-D 直接在磁盘信封 schema 上加 dynamics-motion/prop.side,脚本内嵌副本已旧,若重跑会把 schema 写回旧版,故移除其对 `motion.schema.json` 的写路径(schema 改为磁盘文件独立持有)。
+- **动力学 flat-fallback 死契约**:`DynamicsReplay.load` 裸 spec 回退路径 `/dynamics/<id>-<case>` 自迁移起即永 404,更正为真实布局 `/dynamics/<id>/<case>`(types.ts/motion-source.ts 注释同步);`load` 新增 `meta.id`/`meta.case` 与请求 id/profile 一致性校验,不匹配显式抛错——与 `scripts/test-dynamics-records.py` 同一闸门,信封 URL 指错动作的记录不再静默回放。
+- **HistoryBook.drop 死代码 + 复活路径**:`MotionLibrary.remove` 新增 `onRemoved` 钩子,`WorkshopApp` 接 `books.drop(id)`——删文档连同其撤销书;否则同 id 文档再导入(导入只在冲突时重编 id)会继承已删文档的整栈快照,undo 把旧内容写回新文档(僵尸写)。`applyDoc` 返回成败,undo/redo 恢复目标 id 不在库中(镜像源文档被删)时给出 hint 而非静默吞步。回归:删源文档→同 id 再导入→`books.of(id).canUndo()===false`。
+- **captureSheet 文档版本混排**:拼图逐 tile await(toBlob/createImageBitmap 让出事件循环)之间 `getDoc()` 每格重读活动文档,中途切文档/编辑会把两版文档拼进同一张图;入口即 `serializeDoc→parseDoc` 冻结副本并交换 getDoc,全部 tile 对同一文档版本求解。
+- **nits**:onionTimes keys 模式 loop 缝 wrap(loop 文档播放头近 0 时「上一姿态」跨缝取尾键自身时刻,去重且播放头下键不幽灵化,workshop.test.ts 断言);mirrorDoc 函数体补全字段枚举注释(新字段必须在此显式裁决,防静默保留源值)。
+- **文档同步**:WORKSHOP.md 三 kind 互斥补 dynamics-motion;README 工作台行补 grip-side/onion/静帧/镜像,「右手手指」改不假定侧别;AGENTS.md 测试计数按实测更新。

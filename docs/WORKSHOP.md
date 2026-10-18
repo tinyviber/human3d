@@ -67,7 +67,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 
 五个导出共用同一份当前文档；姿态包与 GLB 由 `solvePackage()` 统一求解，fps 改动会得到不同 artifact id（不同文件名）；静帧与拼图不携带 artifact 身份，只是姿态审阅图。
 
-内置动作不放在浏览器动作库里，而是按 motion-file 信封（`schemaVersion:1`）存于 `assets/motions/*.json`，由 `assets/motions/motion.schema.json` 与 `normalizeMotionFile` 双侧校验：`kind:'workshop-motion'` 内嵌 `document`（与导出的 WorkshopDoc 同构），`kind:'clip-motion'` 指向外部动画片段（`clip.url`，如 walk），两种 kind 的轨迹字段互斥。工作台与服务共用同一条 `normalizeMotionFile → frameAt → solveEffectiveFrame` 求解管线，因此内置动作的姿态与服务交付的姿态包同源。
+内置动作不放在浏览器动作库里，而是按 motion-file 信封（`schemaVersion:1`）存于 `assets/motions/*.json`，由 `assets/motions/motion.schema.json` 与 `normalizeMotionFile` 双侧校验：三种 kind 的轨迹载体互斥——`kind:'workshop-motion'` 内嵌 `document`（与导出的 WorkshopDoc 同构），`kind:'clip-motion'` 指向外部动画片段（`clip.url`，如 walk），`kind:'dynamics-motion'` 携带 `dynamics.action` 肌肉动作参数与 `dynamics.records` 记录 URL（如 punch、baseball-throw）；dynamics-motion 还禁写 `document`/`clip` 与一切显示字段（name/duration/phases/capabilities 等由 `dynamics.action` 派生，`unwrapMotionFile` 与姿态包管线对它显式拒绝）。工作台与服务共用同一条 `normalizeMotionFile → frameAt → solveEffectiveFrame` 求解管线，因此内置动作的姿态与服务交付的姿态包同源。
 
 ## 边界
 
