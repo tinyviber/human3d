@@ -1,6 +1,6 @@
 # 新增肌肉驱动动作：参数模板
 
-本工作流面向已经有模型的动作：沿用现有 MyoSim 降阶骨架、支撑约束、右臂目标和肌肉控制器时，只需复制 / 修改 JSON 信封，动作目录随即将它显示为一个动作。动力学动作与普通动作共用 `assets/motions/` 的 motion-file 信封注册表：`kind:'dynamics-motion'`，肌肉参数在 `dynamics.action`，记录 URL 在 `dynamics.records`。无需为每个动作添加 TypeScript 注册分支以外的逻辑——只需在 `src/core/motion-files.ts` 的静态导入清单中加一行。
+本工作流面向已经有模型的动作：沿用现有 MyoSim 降阶骨架、支撑约束、右臂目标和肌肉控制器时，只需复制 / 修改 JSON 信封，动作目录随即将它显示为一个动作。动力学动作与普通动作共用 `assets/motions/` 的 motion-file 信封注册表：`kind:'dynamics-motion'`，肌肉参数在 `dynamics.action`，记录 URL 在 `dynamics.records`。无需为每个动作添加 TypeScript 注册分支以外的逻辑——只需在 `packages/motion-core/src/motion-files.ts` 的静态导入清单中加一行。
 
 ## 创建与运行
 
@@ -30,7 +30,7 @@ npm run build
 npm run dev
 ```
 
-动作库由 `src/core/motion-files.ts` 的静态导入清单注册 `assets/motions/*.json` 信封。新信封要加进该清单，显示名、说明、阶段标记等则由信封规范化从 `dynamics.action` 派生，不需要在磁盘信封上手写。动作记录、源模型路径、运行版本和审核指标存放在 `assets/dynamics/<id>/` 与 `public/dynamics/<id>/`；公共记录 URL 写在信封的 `dynamics.records` 里。只编辑关键帧和 metadata 不需要更改 `motions.ts`、`App.tsx` 或 `engine.ts`。
+动作库由 `packages/motion-core/src/motion-files.ts` 的静态导入清单注册 `assets/motions/*.json` 信封。新信封要加进该清单，显示名、说明、阶段标记等则由信封规范化从 `dynamics.action` 派生，不需要在磁盘信封上手写。动作记录、源模型路径、运行版本和审核指标存放在 `assets/dynamics/<id>/` 与 `public/dynamics/<id>/`；公共记录 URL 写在信封的 `dynamics.records` 里。只编辑关键帧和 metadata 不需要更改 `motions.ts`、`App.tsx` 或 `engine.ts`。
 
 项目中的可复制例子是 `assets/motions/baseball-throw.json` 与 `assets/motions/punch.json`；字段解释和来源见 [DYNAMICS.md](DYNAMICS.md)。动作参数（`dynamics.action`）的 JSON Schema 在 `assets/motions/dynamics-action.schema.json`，信封本身遵守 `assets/motions/motion.schema.json`。
 

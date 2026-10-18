@@ -10,11 +10,11 @@
 import fs from 'node:fs';
 import path from 'node:path';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {HumanRig} from '../src/core/rig';
-import {motionFileById} from '../src/core/motion-files';
-import {frameAt} from '../src/workshop/document';
-import {solveEffectiveFrame} from '../src/workshop/solver';
-import type {RigInfo} from '../src/core/types';
+import {HumanRig} from '@human3d/motion-core';
+import {motionFileById} from '@human3d/motion-core';
+import {frameAt} from '@human3d/motion-core';
+import {solveEffectiveFrame} from '@human3d/motion-core';
+import type {RigInfo} from '@human3d/motion-core';
 
 const IDS=['idle','reach','squat','ready','forehand'];
 const assetDir=path.resolve('public');

@@ -5,10 +5,10 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import type {Bone} from 'three';
-import {posePackageToClip,exportGlb} from '../src/core/glb-export';
-import {checkPosePackageShape} from '../src/core/motion-source';
+import {posePackageToClip,exportGlb} from '@human3d/motion-core/glb';
+import {checkPosePackageShape} from '@human3d/motion-core';
 import {installFileReaderShim} from './lib/filereader-shim.mts';
-import type {PosePackage} from '../src/core/pose-package';
+import type {PosePackage} from '@human3d/motion-core';
 
 // Default output name: strip a trailing '.pose.json' — or a bare '.json' for
 // inputs named without the convention — so 'foo.json' yields 'foo.glb', not

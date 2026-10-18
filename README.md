@@ -23,7 +23,7 @@ npm run preview
 
 ## 肌肉驱动动作
 
-动力学动作定义放在 `assets/motions/*.json` 的 `dynamics-motion` 信封（肌肉参数在 `dynamics.action`，记录 URL 在 `dynamics.records`）。同一降阶模型支持的新增动作，除在 `src/core/motion-files.ts` 加一行静态导入外无需改 TypeScript：
+动力学动作定义放在 `assets/motions/*.json` 的 `dynamics-motion` 信封（肌肉参数在 `dynamics.action`，记录 URL 在 `dynamics.records`）。同一降阶模型支持的新增动作，除在 `packages/motion-core/src/motion-files.ts` 加一行静态导入外无需改 TypeScript：
 
 ```sh
 python3 -m venv .venv-dynamics
@@ -71,14 +71,17 @@ npm run qa:dynamics       # 肌骨投掷阶段截图、握拳特写与实时投�
 
 ## 项目结构
 
-| 路径 | 职责 |
+npm workspaces 三个包，依赖方向单向（web / server → motion-core）：
+
+| 包 | 职责 |
 |---|---|
-| `src/core/rig.ts` / `kinematics.ts` | 连续人体骨架、解析 IK、关节活动范围 |
-| `src/core/dynamics.ts` / `engine.ts` | 物理记录解析、蒙皮重定向、相机与播放状态 |
-| `src/core/motions.ts` / `motion-files.ts` / `motion-file.ts` | 动作目录与 motion-file 信封（`assets/motions/*.json`）的校验 / 规范化：`workshop-motion` 内嵌文档，`clip-motion` 指向外部片段，`dynamics-motion` 携带肌肉动作参数与记录 URL |
-| `src/core/motion-source.ts` | 统一播放源：clip / 文档 / 动力学记录 / 姿态包共用一个 playhead |
-| `src/workshop/` | 动作工作台与求解管线：任务空间姿态编辑、带约束关键帧、补间与合理性检查（`random-document.ts` 为种子化随机文档生成器，供属性测试） |
-| `assets/motions/` | 动作信封注册表（含 `dynamics-motion` 肌肉动作参数）与 JSON Schema |
+| `packages/motion-core`（`@human3d/motion-core`） | 纯运动域：`document.ts`（WorkshopDoc 采样器）、`solver.ts`（FK/IK 求解与合理性检查）、`kinematics.ts` / `rig.ts` / `racket.ts`（骨架、解析 IK、握拍）、`protocol.ts` / `pose-package.ts` / `package-inspect.ts`（姿态包协议、校验与派生）、`motion-file(s).ts`（信封注册表）、`validate.ts`（交付包语义校验）、`quality-probe.ts` / `random-document.ts`（度量与随机文档生成器）、`package-export.ts` / `glb-export.ts`（导出，后者走 `@human3d/motion-core/glb` 子路径）。无 DOM / node 依赖，three 只作数学库 |
+| `apps/web`（`@human3d/web`） | 两个页面入口（`index.html` 实验室 / `workshop.html` 工作台）：`src/lab/`（实验室引擎与动力学回放渲染）、`src/playback/`（统一播放源：clip / 文档 / 动力学记录 / 姿态包共用一个 playhead）、`src/workshop/`（工作台场景、动作库、撤销书与 React 面板）。Vite 的 `publicDir` 仍指向仓库 `public/`，构建产物仍在仓库 `dist/` |
+| `apps/server`（`@human3d/server`） | `serve.ts`（loopback HTTP 传输，`node:http` 零新增依赖）、`service.ts`（目录 / 求解编排 / 幂等）、`contract.ts`（Ajv 严格编译 `spec/`）、`rig-manifest.ts`（node:crypto 身份哈希） |
+
+| 资产 / 工具路径 | 职责 |
+|---|---|
+| `assets/motions/` | 动作信封注册表（含 `dynamics-motion` 肌肉动作参数）与 JSON Schema；由 motion-core 的 `motion-files.ts` 静态导入，Python 工具链也写这里 |
 | `assets/source/dynamics/` | 完整 MyoSim XML、416 执行器 / 424 路径 / 惯性清单与许可 |
 | `assets/dynamics/` | 可复现肌肉激励、参考轨迹与正向仿真源记录 |
 | `public/dynamics/` | 网页用模型、解剖资源、刚体状态和肌腱记录 |

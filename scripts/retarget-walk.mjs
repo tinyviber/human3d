@@ -5,8 +5,8 @@ import fs from 'node:fs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {BVHLoader} from 'three/addons/loaders/BVHLoader.js';
 import {AnimationMixer,Group,Vector3,Quaternion,AnimationClip,QuaternionKeyframeTrack,VectorKeyframeTrack} from 'three';
-import {HumanRig} from '../src/core/rig.ts';
-import {frameRotation,hingedArmRotations,DEG} from '../src/core/kinematics.ts';
+import {HumanRig} from '@human3d/motion-core';
+import {frameRotation,hingedArmRotations,DEG} from '@human3d/motion-core';
 
 const sourceId='35_01',start=1.28,duration=1.12,fps=60,frames=Math.round(duration*fps);
 const rig=JSON.parse(fs.readFileSync('public/models/rig.json','utf8'));

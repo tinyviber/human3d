@@ -216,7 +216,7 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 
 ## 决策裁决
 
-- **构建器放 `src/core` 而非 server**：浏览器无 `node:crypto`——`Digest` 注入（WebCrypto ↔ node:crypto），`canonical`/指纹/manifest/artifact id 全部走 `core/protocol.ts` 共享原语；对等测试证明两侧逐字节一致，而不是约定一致。
+- **构建器放 motion-core（`@human3d/motion-core`）而非 server**：浏览器无 `node:crypto`——`Digest` 注入（WebCrypto ↔ node:crypto），`canonical`/指纹/manifest/artifact id 全部走 `core/protocol.ts` 共享原语；对等测试证明两侧逐字节一致，而不是约定一致。
 - **`presentation` 走 `action.parameters` 开放通道，不进 v2 schema 顶层**：`parameters` 在包里本来就是 per-action 开放对象且不入制品哈希；为它升 `schemaVersion=3` 会强制所有消费者重校验，只为一个显示 hint 不值。v3 若引入逐帧握拍量等真实通道时再顶层化——届时 hint 语义由数据字段取代。
 - **GLB 是派生品，不作为服务端 `outputs.format`**：GLB 不承载身份契约——`animations[0].name`（`posePackageToClip` 默认 `name=pkg.id`，刻意自描述）与文件名都借用 artifact id 便于对应，非内容寻址声明；服务端 format 有意推迟（渲染分层属后置阶段，plan 文档状态表已改注）。
 - **信封是 bundled 包的权威显示元数据**：`posePackageSpec` 按 `action.id` 命中 `motionFileById` 即整体取信封字段（capabilities/name/english/method/focus/oneShot=`!document.loop`），伪造的 `parameters.presentation` 不能给 bundled id 叠加 prop。adhoc 包（`workshop-doc`）才读 `parameters.presentation`（`prop:'racket'`→球拍能力常量、`loop`→`oneShot=!loop`）与 `documentName`→`name`。
@@ -225,7 +225,7 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 
 ## 三件套 + 回放
 
-1. `src/core/package-export.ts`：`buildPosePackageLocal`（快照 → `parseDoc` → 上限 → 指纹/id → `solveWorkshop` → `validatePosePackage`），`workshopMeta` 在 `core/protocol.ts` 把 `documentName`/`presentation` 写进 ad-hoc `action.parameters`，服务端 ad-hoc 分支同一工厂。
+1. `packages/motion-core/src/package-export.ts`：`buildPosePackageLocal`（快照 → `parseDoc` → 上限 → 指纹/id → `solveWorkshop` → `validatePosePackage`），`workshopMeta` 在 `core/protocol.ts` 把 `documentName`/`presentation` 写进 ad-hoc `action.parameters`，服务端 ad-hoc 分支同一工厂。
 2. 工作台导出：「导出姿态包」`<docId>.<artifactId>.pose.json`；「导出 GLB」`<docId>.<artifactId>.glb`（干净重解析模型 + `posePackageToClip`，422 不下载且问题留卡）；`scripts/package-to-glb.mts` CLI 同转换器。
 3. 实验室回放：`openPosePackage` → `posePackageSpec` 派生 + `PosePackageSource` prop hint；`checkPosePackageShape` 继续前置拒绝。
 
@@ -246,7 +246,7 @@ QA `workshopWaypointDrag`：摆动区间内断言脚柄 `passive===true` 且路�
 
 # WP-C — Catmull-Rom 切线限界：稀疏键鞭打过冲修复
 
-> 分支 `feat/pose-pipeline`，前置 `5cc74e8`（质量探针模块——本次校准与回归的度量基础）。落点：`src/workshop/document.ts` `tan()` + `TANGENT_SECANT_CAP`。
+> 分支 `feat/pose-pipeline`，前置 `5cc74e8`（质量探针模块——本次校准与回归的度量基础）。落点：`packages/motion-core/src/document.ts` `tan()` + `TANGENT_SECANT_CAP`。
 
 ## 缺陷与定界
 
@@ -474,7 +474,7 @@ p95=0.000°:改动只落在手帧驱动的骨上,绝大多数采样逐位相同�
 - **记录文件迁入 per-action 目录**:`public/dynamics/<id>/<case>.{json,bin}`;信封 `dynamics.records` URL 是运行期抓取契约,`DynamicsReplay.load` 优先用信封 URL,裸 `{kind:'dynamics'}` spec 回退同一 per-action `/dynamics/<id>/<case>` 约定(本轮 review 修复前曾写死旧扁平 `<id>-<case>` 路径——迁移后磁盘上根本不存在,是必 404 的死路径,已更正,见文末修复轮)。中间产物(原始逐帧 run JSON、激励 bin、参考 npz)同样按动作分目录到 `assets/dynamics/<id>/`——它们是 export 管线的输入而非 web 资产,不进 public/。
 - **互斥与派生边界**(schema `allOf` + `validateMotionFileShape` 双轨):dynamics-motion 必须有 `dynamics`、不得有 `document`/`clip`、不得写显示字段;`unwrapMotionFile`/`motionDefinitionPayload` 对 dynamics-motion 显式抛错(不进姿态管线哈希)。
 - **服务目录不变**:`service.ts` 仍按 `f.kind==='workshop-motion'` 过滤,dynamics-motion 进文件注册表/网页动作库但不进 `/v1/actions`;`service.test.ts` 的「不预告不可服务动作」断言原样覆盖 `punch`/`baseball-throw`。
-- **类型解环**:`MuscleActionFile`/`DynamicsRecords` 抽到 `src/core/muscle-action.ts`,`dynamics.ts`/`motion-source.ts`/`motion-file.ts`/`types.ts` 都从这里取型,不再经 `motions.ts`。
+- **类型解环**:`MuscleActionFile`/`DynamicsRecords` 抽到 `packages/motion-core/src/muscle-action.ts`,`dynamics.ts`/`motion-source.ts`/`motion-file.ts`/`types.ts` 都从这里取型,不再经 `motions.ts`。
 - **副产物**:`assets/actions/` 目录整体删除;`assets/source/dynamics/full-activation-model.xml` 是早期实验中间产物,随本次迁移删除(完整模型快照仍由 `myofullbody-complete.xml` + `myofullbody-parameters.json` 承载)。
 
 ## WP-D(补)— 工作台洋葱皮:播放头相邻姿态幽灵叠加
@@ -549,7 +549,7 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 
 外部 review 在 PR #4(动力学动作目录化)/#5(姿态包导入)上发现的问题;编号沿用工单。
 
-- **P1-1 动力学异步加载竞态**(`src/core/motion-source.ts` `DynamicsSource`):`load()` 的两个 await 点之间引擎可切走 source,旧路径仅靠 `s.retired`(dispose 才置位)与 `this.motionId!==id` 挡应用——`deactivate()` 不留标记,旧加载完成后 `status='ready'`+`replay.root.visible=true` 会复活 replay 盖住新 source。修法:`private gen` 代际计数,`load` 入口 `++this.gen` 记 `g`,`deactivate()`/`dispose()` 均 bump;两处 await 应用点与 catch 统一判 `this.gen!==g||s.retired` → `'superseded'`(不动 replay 状态)。dispose 分叉保持原语义:仅 retired 会话丢弃未被收编的 replay——被取代的会话不能丢,共享 `s.promise` 的当前属主还会收养它。回归测试:motion-source.test.ts「DynamicsSource — load supersession」四个用例(注入 `session.promise` 的假 replay,走真 `load`/`deactivate`/`dispose` 路径)。
+- **P1-1 动力学异步加载竞态**(`apps/web/src/playback/motion-source.ts` `DynamicsSource`):`load()` 的两个 await 点之间引擎可切走 source,旧路径仅靠 `s.retired`(dispose 才置位)与 `this.motionId!==id` 挡应用——`deactivate()` 不留标记,旧加载完成后 `status='ready'`+`replay.root.visible=true` 会复活 replay 盖住新 source。修法:`private gen` 代际计数,`load` 入口 `++this.gen` 记 `g`,`deactivate()`/`dispose()` 均 bump;两处 await 应用点与 catch 统一判 `this.gen!==g||s.retired` → `'superseded'`(不动 replay 状态)。dispose 分叉保持原语义:仅 retired 会话丢弃未被收编的 replay——被取代的会话不能丢,共享 `s.promise` 的当前属主还会收养它。回归测试:motion-source.test.ts「DynamicsSource — load supersession」四个用例(注入 `session.promise` 的假 replay,走真 `load`/`deactivate`/`dispose` 路径)。
 - **P1-2 events 元素结构校验**(`checkPosePackageShape`):`events` 存在时必须是数组,逐元素 isObj、`type` 限 spec 枚举五值(phase/keyframe/contact/support-start/support-end,与 schema 同步)、`time` 为 ≥0 有限数、`label` 字符串;support-start/end 另要 `side∈'L'|'R'`(与 validate.ts:169 同闸门)。顺带补上 spec 消费字段的最小形状:rig 块(`id===RIG_ID`、`manifestSHA256` 字符串、`bones` ≥1 整数)、action 对象 + `action.id` 字符串、quality 对象 + `warnings` 字符串数组、provenance 对象 + solver/solverRevision/source 字符串。`posePackageSpec` 的 events.filter 前加 isObj 守卫作纵深防御(单独调用不依赖前置 shape 检查)。
 - **P1-3 rig/definition 身份核验**:`engine.load()` 把 rig.json 改为 text 取回再 `JSON.parse`,经 `canonical(rigManifestBody(info))` + WebCrypto sha256 算本地 `manifestHash`;同时预算 `envelopeDefHash`(workshop-motion 信封逐一 `sha256(canonical(motionDefinitionPayload(f)))`,与服务端 `actionDefinitionHash` 同式)。无 `crypto.subtle`(非 secure context)两者记 undefined/空并 warn。`openPosePackage`:`rigMatches(p,manifestHash)` 不符→onError 拒收(声明哈希前缀写入错误信息);哈希不可知降级为既有骨骼名检查,spec description 注明「rig 未验证」。`posePackageSpec(p,id,trust?,rigVerified=true)`:信封恢复前过 `trust(actionId)`——包内 `action.definitionSHA256` 与信封预算哈希一致才信任,缺失/不符走 ad-hoc parameters 通道并在 description 注明「definitionSHA256 不符」;不传 trust 保持旧行为(无可核对方的调用方)。纯函数面 `rigMatches`/`trust` 闭包在 vitest 层测(篡改 definitionSHA256→capabilities 退回、manifestSHA256→rigMatches=false)。
 - **P2-4 多周期 wrap**(`engine.tick`):单 tick 跳过多个周期时长帧×高速时,`this.time%=duration` 只归位播放头而 `loopWrapAdvance` 只发一次——walk 步幅累积丢步。改为 `wraps=Math.floor(this.time/duration)` 取模后按 wraps 逐次发 `loopWrapAdvance`。
@@ -560,7 +560,7 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 
 ## 复核追加轮(必修 M1 + 顺手 nit)
 
-- **M1 `DynamicsSource.load` 失败段拆分**(`src/core/motion-source.ts`):原 catch 无条件 `s.promise=undefined`,把 replay 创建段与记录段混为一谈——`replay.load` 失败(记录 404/身份不符)时 `s.replay` 已收编而 promise 被清,重试 `s.promise??=` 新建第二个 DynamicsReplay,`if(!s.replay)` 为假 → 孤儿 replay 不入 `s.parent` 却 `root.visible=true` 返回 'applied',`session.replay`/`physics`/`duration` 永指无记录的旧对象(播放卡死);陈旧 load 的 catch 在闸判之前清 promise 也毒化当前属主。修法:两段 try——`await s.promise`(创建段)失败且 `s.promise===p` 身份吻合才清(已拒的创建承诺是所有后续 load 的毒药,但不得清掉新属主已替换的 promise);`replay.load`(记录段)失败保留 promise 与 `s.replay`,重试在同一 replay 上重放记录段。`gen!==g||s.retired` 闸保持在 status/error/replay 应用点之前。回归:记录段抛错→重试 'applied' 且 `session.replay` 同对象、`parent.children===[root]`;悬停中的陈旧 load 记录段抛错→'superseded' 且 `session.promise` 不变(旧实现下该断言失败)。顺手清掉死字段 `private motionId`(gen 闸已取代 `motionId!==id`,全文件再无读取点)。
+- **M1 `DynamicsSource.load` 失败段拆分**(`apps/web/src/playback/motion-source.ts`):原 catch 无条件 `s.promise=undefined`,把 replay 创建段与记录段混为一谈——`replay.load` 失败(记录 404/身份不符)时 `s.replay` 已收编而 promise 被清,重试 `s.promise??=` 新建第二个 DynamicsReplay,`if(!s.replay)` 为假 → 孤儿 replay 不入 `s.parent` 却 `root.visible=true` 返回 'applied',`session.replay`/`physics`/`duration` 永指无记录的旧对象(播放卡死);陈旧 load 的 catch 在闸判之前清 promise 也毒化当前属主。修法:两段 try——`await s.promise`(创建段)失败且 `s.promise===p` 身份吻合才清(已拒的创建承诺是所有后续 load 的毒药,但不得清掉新属主已替换的 promise);`replay.load`(记录段)失败保留 promise 与 `s.replay`,重试在同一 replay 上重放记录段。`gen!==g||s.retired` 闸保持在 status/error/replay 应用点之前。回归:记录段抛错→重试 'applied' 且 `session.replay` 同对象、`parent.children===[root]`;悬停中的陈旧 load 记录段抛错→'superseded' 且 `session.promise` 不变(旧实现下该断言失败)。顺手清掉死字段 `private motionId`(gen 闸已取代 `motionId!==id`,全文件再无读取点)。
 - **nits**:glb-export.test.ts 用例 a 补 `ts.at(-1)-ts.at(-2)≠1/fps` 显式钉死非均匀网格语义;`posePackageSpec` 把信封命中但未信任拆成两句——包带哈希且信封可核验(workshop-motion 且本地哈希可知)却说不过的→「definitionSHA256 与当前内置定义不符」,其余(包未带字段/非 workshop-motion 信封/本地哈希不可知即 envelopeDefHash 空)→「definitionSHA256 缺失/无法核验,按 ad-hoc 处理」;standalone spec 的 events filter 在 isObj 后追加 `typeof time==='number'`/`typeof label==='string'`,防 `{type:'phase'}` 半成品漏进 phases(新增回归断言)。
 
 **验证**:`npx tsc -b` ✓、`npm test`(253 项,249+4 新增)✓、`npm run spec:check` ✓。未跑 `npm run build`/`qa`/`dynamics:*`——改动限于 motion-source 运行时分支与测试断言,浏览器 E2E 与构建由 CI 覆盖。

@@ -41,7 +41,7 @@ flex−11 dev+1 twist+1；触球 twist−46 dev+30 flex+24 twist−8 dev+3；
 
 ## 设计 → 实测迭代（共 ~35 轮探针迭代）
 
-离线 `probeDocument`（`src/workshop/quality-probe.ts`，与 vitest/CLI 同源）
+离线 `probeDocument`（`packages/motion-core/src/quality-probe.ts`，与 vitest/CLI 同源）
 先扫 ~30 个姿态/时序候选确定形态，再把胜出版本回放进 UI（`ops.json`），
 最终指标即上方 UI 文档的实测值。
 
@@ -100,10 +100,10 @@ flex−11 dev+1 twist+1；触球 twist−46 dev+30 flex+24 twist−8 dev+3；
 
 ## 验证命令输出
 
-- `src/server/contract.test.ts` 的 forehand-study 用例（CI 门禁）：
+- `apps/server/src/contract.test.ts` 的 forehand-study 用例（CI 门禁）：
   `contract.request → true`、`handleRequest → 200`（定稿包 81 帧 @40fps · 13 项质量检查
   全 OK · 8 事件含 1.15 s contact）、`validatePosePackage → []`（0 错误）。
-- `npx vitest run src/workshop/quality.test.ts src/server/contract.test.ts`
+- `npx vitest run packages/motion-core/src/quality.test.ts apps/server/src/contract.test.ts`
   → 22 项全过（含本 fixture 的 5 项新断言）。
 - 全量 `npm run spec:check`、`npx tsc -b`、`npm test` 见提交信息/CI。
 

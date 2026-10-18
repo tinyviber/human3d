@@ -1,6 +1,11 @@
 import {chromium} from 'playwright';
 import fs from 'node:fs';
+import path from 'node:path';
 import assert from 'node:assert/strict';
+// Dev-server URL for a motion-core source module: the Vite root is apps/web,
+// so workspace sources outside it are served through /@fs/ (the config's
+// server.fs.allow covers the repo root).
+const coreModule=p=>`/@fs/${path.resolve('packages/motion-core/src',p)}`;
 const browser=await chromium.launch({headless:true,...(process.env.QA_BROWSER_CHANNEL?{channel:process.env.QA_BROWSER_CHANNEL}:{})});
 let svc; // spawned pose service (if not already running); killed in finally
 try {
@@ -59,7 +64,7 @@ fs.writeFileSync('evidence/forehand.webm',Buffer.from(recorded));result.checks.l
 try{await fetch('http://127.0.0.1:8788/v1/capabilities');}
 catch{
  const {spawn}=await import('node:child_process');
- svc=spawn('npx',['tsx','src/server/serve.ts'],{stdio:'ignore'});
+ svc=spawn('npx',['tsx','apps/server/src/serve.ts'],{stdio:'ignore'});
  for(let i=0;i<100;i++){try{await fetch('http://127.0.0.1:8788/v1/capabilities');break;}catch{await new Promise(r=>setTimeout(r,300));if(i===99){svc.kill();throw new Error('motion service did not start on 127.0.0.1:8788');}}}
 }
 const pkgResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'idle'}})});
@@ -147,7 +152,7 @@ const [download]=await Promise.all([
 ]);
 const exportedText=fs.readFileSync(await download.path(),'utf8');
 const exported=JSON.parse(exportedText);
-const wireConsts=await page.evaluate(async()=>{const m=await import('/src/core/package-const.ts');return {kind:m.POSE_PACKAGE_KIND,schemaVersion:m.POSE_PACKAGE_SCHEMA_VERSION};});
+const wireConsts=await page.evaluate(async url=>{const m=await import(url);return {kind:m.POSE_PACKAGE_KIND,schemaVersion:m.POSE_PACKAGE_SCHEMA_VERSION};},coreModule('package-const.ts'));
 assert.equal(exported.kind,wireConsts.kind);
 assert.equal(exported.schemaVersion,wireConsts.schemaVersion);
 assert.equal(exported.timeline.timestamps.at(-1),exported.timeline.duration,'last timestamp is not exactly duration');
@@ -155,10 +160,10 @@ assert.equal(exported.timeline.timestamps.at(-1),exported.timeline.duration,'las
 const wsDoc=await page.evaluate(()=>window.__WS__.getDoc());
 assert.equal(download.suggestedFilename(),`${wsDoc.id}.${exported.id}.pose.json`,'download filename is not the content-addressed name');
 // The lab decoder's own structural check must accept the exported package.
-const shapeProblems=await page.evaluate(async pkg=>{
- const {checkPosePackageShape}=await import('/src/core/motion-source.ts');
+const shapeProblems=await page.evaluate(async({pkg,url})=>{
+ const {checkPosePackageShape}=await import(url);
  return checkPosePackageShape(pkg,new Set(window.__WS__.rig.bones.keys()));
-},exported);
+},{pkg:exported,url:coreModule('package-inspect.ts')});
 assert.deepEqual(shapeProblems,[],`shape check rejected the exported package: ${shapeProblems[0]??''}`);
 // Peer parity: the same document through the real service must produce the
 // same body — id, fingerprint, tracks, events and quality included.
@@ -168,7 +173,7 @@ assert.deepEqual(shapeProblems,[],`shape check rejected the exported package: ${
 // Node's), and ECMAScript does not pin transcendental functions to identical
 // last ulps — observed drift is ~1e-17 on quaternion components. The
 // same-engine byte-identity half of this contract is pinned separately by
-// src/core/package-export.test.ts (buildPosePackageLocal vs handleRequest
+// apps/server/src/package-export.test.ts (buildPosePackageLocal vs handleRequest
 // under one Node process, toEqual on the full body).
 const peerResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'workshop-doc',parameters:{document:wsDoc}},sample:{fps:wsExportFps}})});
 assert.equal(peerResponse.status,200,'service POST /v1/motions rejected the workshop document');
@@ -208,7 +213,7 @@ assert((await page.evaluate(()=>window.__WS__.getDoc().name)).includes('QA 测�
 // --- Workshop GLB export: the derived binary download. Assert the container
 // (magic, version, one animation, channel count matching the package's
 // tracks) and a size floor — no in-browser decode, that path is covered by
-// src/core/glb-export.test.ts's mixer↔FK roundtrip on the real GLB.
+// apps/server/src/glb-export.test.ts's mixer↔FK roundtrip on the real GLB.
 const [glbDownload]=await Promise.all([
  page.waitForEvent('download'),
  page.getByRole('button',{name:'导出 GLB',exact:true}).click(),
@@ -244,7 +249,7 @@ const lift=await page.evaluate(()=>{const e=window.__WS__;const ks=[...e.getDoc(
 assert.equal(lift.planted,false,'plantL did not toggle off via the UI');
 // The slider sets sole lift; the stored value is ankle height — convert back
 // with the same footLift() the UI uses instead of comparing raw target.y.
-const soleLift=await page.evaluate(async l=>{const {footLift}=await import('/src/workshop/foot.ts');return footLift(window.__WS__.footGeometry('L'),l.target,l.yaw,l.pitch);},lift);
+const soleLift=await page.evaluate(async({l,url})=>{const {footLift}=await import(url);return footLift(window.__WS__.footGeometry('L'),l.target,l.yaw,l.pitch);},{l:lift,url:coreModule('foot.ts')});
 assert(Math.abs(soleLift-.35)<1e-3,`UI slider did not write sole lift .35 (got ${soleLift})`);
 assert(lift.footY>.15,`solved foot did not leave the ground mid-swing (y=${lift.footY})`);
 result.checks.workshopFootHeight=true;

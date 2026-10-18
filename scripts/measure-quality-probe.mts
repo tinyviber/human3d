@@ -1,4 +1,4 @@
-// Quality probe CLI — a thin shell over src/workshop/quality-probe.ts, which
+// Quality probe CLI — a thin shell over packages/motion-core/src/quality-probe.ts, which
 // holds the single implementation of every metric (shared with vitest, so the
 // measurements cannot drift; learning[4]). The probe samples a document at
 // high fps through the REAL solve path (frameAt → solveEffectiveFrame →
@@ -15,11 +15,11 @@
 // next to the console report.
 import fs from 'node:fs';
 import path from 'node:path';
-import {createService} from '../src/server/service';
-import {motionFileById} from '../src/core/motion-files';
-import {attachRacket} from '../src/core/racket';
-import {defaultDocument} from '../src/workshop/document';
-import {formatProbeReport,probeDocument,probeFrames,stepAngles,type ProbeFrame} from '../src/workshop/quality-probe';
+import {createService} from '@human3d/server';
+import {motionFileById} from '@human3d/motion-core';
+import {attachRacket} from '@human3d/motion-core';
+import {defaultDocument} from '@human3d/motion-core';
+import {formatProbeReport,probeDocument,probeFrames,stepAngles,type ProbeFrame} from '@human3d/motion-core';
 
 const fps=Number(process.argv[2]??240);
 const which=process.argv[3]??'forehand';

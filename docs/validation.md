@@ -10,7 +10,7 @@
 |---|---|---|
 | 请求 schema（`spec/motion-request.schema.json`）与动作参数 schema（由动作描述生成，Ajv 2020 strict 编译） | 调用方输入错误 | 400 `invalid_request`，`details` 给出错误路径与原因 |
 | 姿态包 schema（`spec/pose-package.schema.json`） | 服务生成了不合规的包，属于服务缺陷 | 500 `internal` |
-| 结构与语义校验（`validatePosePackage`，`src/server/validate.ts`） | 动作不合规或运动学上不连续 | 422 `motion_rejected`，`details` 列出全部失败项 |
+| 结构与语义校验（`validatePosePackage`，`packages/motion-core/src/validate.ts`） | 动作不合规或运动学上不连续 | 422 `motion_rejected`，`details` 列出全部失败项 |
 
 - 422 与 200 一样写入 `Idempotency-Key` 缓存：同键同体重放同一结果，同键不同体返回 409。
 - 求解器质量检查（`quality.checks`，如 `foot-depth-*`、`ankle-dorsiflexion-*`、`com-support`）**不改变状态码**：失败项以 `ok: false` 随 200 返回，属于信息性结果。语义校验只检查这些条目的格式，以及"通过但数值超过自身上限"的自相矛盾记录。
@@ -78,19 +78,19 @@
 2. 增加第二个修正自由度，例如骨盆的侧向或俯仰；
 3. 文档级可行性检查，在编辑时指出具体的关键帧。
 
-`src/server/validate.test.ts` 固定了该样例必须以根加速度失败。求解器修复后该测试会失败，届时应同时更新样例与本节。
+`apps/server/src/validate.test.ts` 固定了该样例必须以根加速度失败。求解器修复后该测试会失败，届时应同时更新样例与本节。
 
 ## 6. 输入上限
 
 | 位置 | 上限 |
 |---|---|
-| 工坊 `WORKSHOP_LIMITS`（`src/workshop/limits.ts`） | 时长 0.2–10 s，关键帧 ≤ 120，循环接缝间隔 0.01 s。UI 钳制输入；越界文档被隔离（quarantine）而不是静默丢弃 |
-| 服务 `LIMITS_SVC`（`src/server/service.ts`） | fps ≤ 60（默认 40）；工坊文档时长 ≤ 10 s，关键帧 ≤ 120；请求体 ≤ 1 MiB（gzip 解压后计算） |
+| 工坊 `WORKSHOP_LIMITS`（`packages/motion-core/src/limits.ts`） | 时长 0.2–10 s，关键帧 ≤ 120，循环接缝间隔 0.01 s。UI 钳制输入；越界文档被隔离（quarantine）而不是静默丢弃 |
+| 服务 `LIMITS_SVC`（`apps/server/src/service.ts`） | fps ≤ 60（默认 40）；工坊文档时长 ≤ 10 s，关键帧 ≤ 120；请求体 ≤ 1 MiB（gzip 解压后计算） |
 | 幂等缓存 | 最多 256 个键，32 MiB，保留 900 s |
 
 ## 7. 修改阈值的流程
 
-1. 修改 `VALIDATION_LIMITS`（`src/server/validate.ts`）。
+1. 修改 `VALIDATION_LIMITS`（`packages/motion-core/src/validate.ts`）。
 2. 运行 `npx tsx scripts/measure-motions.mts`，更新第 3 节的表格和依据。
 3. 运行 `npm test`。`validate.test.ts` 要求内置动作通过、负对照与一帧采样包被拒绝。
 4. 若改变了内置动作或契约，再运行 `npm run spec:check`，并视情况运行 `npm run protocol:example`。

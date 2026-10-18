@@ -35,7 +35,7 @@ def main():
     destination.write_text(json.dumps(envelope, ensure_ascii=False, indent=2) + '\n')
     print(f'Created {destination.relative_to(ROOT)}')
     print('Edit dynamics.action display/reference.keyframes and source attribution; '
-          'add the envelope to src/core/motion-files.ts; then run `npm run dynamics:build -- <id>`.')
+          'add the envelope to packages/motion-core/src/motion-files.ts; then run `npm run dynamics:build -- <id>`.')
 
 
 if __name__ == '__main__':
