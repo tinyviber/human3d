@@ -1,5 +1,9 @@
 # AGENTS
 
+## 任务切片与审查交接
+
+跨 harness 通用的 task brief、Fast Review / Final Review 与交接协议见 [`docs/engineering/review-protocol.md`](docs/engineering/review-protocol.md)。本文件仍是仓库架构、领域不变量与验证要求的权威来源；协议文档不得替代或放宽这里的规则。
+
 ## 调查与经验记录
 
 - **PR #1 完整调查记录**：[`docs/investigate.md`](docs/investigate.md) —— Motion protocol v1 + 工作台的四轮 review 历程、每个问题的提案、被否方案的证据、最终确认的实现与测试；文末另含**消融（简化）**与 **PR #8 workspaces 拆分**两节。
