@@ -18,4 +18,4 @@ export declare function assertTrackedWriteAllowed(
   options: { root: string; updateEvidence?: boolean },
 ): string;
 
-export declare function ensureOutputDir(dir: string, options: { root: string }): string;
+export declare function ensureOutputDir(dir: string, options: { root: string; updateEvidence?: boolean }): string;

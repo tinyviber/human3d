@@ -34,7 +34,7 @@ gltf.scene.traverse(o=>{if((o as Bone).isBone)validBones.add(o.name);});
 const problems=checkPosePackageShape(pkg,validBones);
 if(problems.length){console.error(`INVALID PACKAGE ${input}:`);for(const p of problems)console.error(' ·',p);process.exit(1);}
 const glb=await exportGlb(gltf.scene,posePackageToClip(pkg));
-ensureOutputDir(path.dirname(target),{root});
+ensureOutputDir(path.dirname(target),{root,updateEvidence:output.updateEvidence});
 const out=assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
 fs.writeFileSync(out,Buffer.from(glb));
 const kb=(glb.byteLength/1024).toFixed(0);

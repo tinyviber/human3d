@@ -32,7 +32,7 @@ const bones=[...rig.bones.keys()];
 const origin=rig.rest.get('root')!;
 const goldenDir=path.resolve('spec/solver-baseline');
 const destinationDir=updateTrackedDefaults?goldenDir:output.dir;
-ensureOutputDir(destinationDir,{root});
+ensureOutputDir(destinationDir,{root,updateEvidence:output.updateEvidence});
 
 interface GoldenFile{schema:string;id:string;times:number[];root:number[][];bones:string[];quats:number[][][]}
 for(const id of IDS){

@@ -41,6 +41,51 @@ describe('worktree path isolation',()=>{
   expect(result.issues).toEqual([]);
  });
 
+ it('rejects a missing child beneath an alias to the source repository deterministically',()=>{
+   const base=tempDir();
+   const repoRoot=path.join(base,'source');
+   const sourceAlias=path.join(base,'source-alias');
+   const worktreeRoot=path.join(sourceAlias,'missing-worktree');
+   fs.mkdirSync(repoRoot,{recursive:true});
+   fs.symlinkSync(repoRoot,sourceAlias,'dir');
+
+   const first=validateWorktreePath(repoRoot,worktreeRoot);
+   const second=validateWorktreePath(repoRoot,worktreeRoot);
+   expect(first.ok).toBe(false);
+   expect(first.issues.length).toBeGreaterThan(0);
+   expect(second).toEqual(first);
+   expect(fs.existsSync(worktreeRoot)).toBe(false);
+   expect(fs.existsSync(path.join(repoRoot,'missing-worktree'))).toBe(false);
+  });
+
+  it('fails closed when a missing worktree child follows a symlink to a regular file',()=>{
+   const base=tempDir();
+   const repoRoot=path.join(base,'source');
+   const sourceFile=path.join(base,'source-file');
+   const fileAlias=path.join(base,'file-alias');
+   const worktreeRoot=path.join(fileAlias,'missing-worktree');
+   fs.mkdirSync(repoRoot,{recursive:true});
+   fs.writeFileSync(sourceFile,'not a directory');
+   fs.symlinkSync(sourceFile,fileAlias);
+
+   expect(()=>validateWorktreePath(repoRoot,worktreeRoot)).toThrow(/resolved path ancestor is not a directory/);
+   expect(fs.existsSync(worktreeRoot)).toBe(false);
+  });
+
+  it('throws when a worktree path has a dangling symlink ancestor',()=>{
+   const base=tempDir();
+   const repoRoot=path.join(base,'source');
+   const missingTarget=path.join(base,'missing-target');
+   const danglingAncestor=path.join(base,'dangling-alias');
+   const worktreeRoot=path.join(danglingAncestor,'issue-branch');
+   fs.mkdirSync(repoRoot,{recursive:true});
+   fs.symlinkSync(missingTarget,danglingAncestor,'dir');
+
+   expect(()=>validateWorktreePath(repoRoot,worktreeRoot)).toThrow(/could not resolve existing path ancestor/);
+   expect(fs.existsSync(missingTarget)).toBe(false);
+   expect(fs.existsSync(worktreeRoot)).toBe(false);
+  });
+
  it.each(['same root','nested under source'])('rejects a worktree path that is %s',kind=>{
   const base=tempDir();
   const repoRoot=path.join(base,'source');

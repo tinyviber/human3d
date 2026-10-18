@@ -195,6 +195,19 @@ const realPathForEntryPreservingSymlink=(entry,rootDir,canonicalRoot)=>{
  return actualEntry;
 };
 
+const assertTrackedPathsAllowed=(trace,rootDir,canonicalRoot,updateEvidence)=>{
+ for(const relativeTarget of trackedRelativePaths(trace,rootDir,canonicalRoot)){
+  try{
+   execFileSync('git',['ls-files','--error-unmatch','--',`:(literal)${relativeTarget}`],{cwd:rootDir,stdio:'ignore'});
+  }catch(error){
+   const status=error&&typeof error==='object'&&'status'in error?error.status:undefined;
+   if(status===1)continue;
+   throw new Error(`could not verify whether ${relativeTarget} is tracked: ${error instanceof Error?error.message:String(error)}`);
+  }
+  if(!updateEvidence)throw new Error(`refusing to overwrite tracked file ${relativeTarget}; pass --update-evidence to allow this write`);
+ }
+};
+
 export function canonicalOutputTarget(target){
  const trace=tracePathAliases(target);
  return realPathForDestination(trace.canonicalTarget);
@@ -245,24 +258,17 @@ export function assertTrackedWriteAllowed(target,{root,updateEvidence=false}){
   if(code!=='ENOENT')throw error;
  }
  validateScratchTarget(trace,rootDir,canonicalRoot);
- for(const relativeTarget of trackedRelativePaths(trace,rootDir,canonicalRoot)){
-  try{
-   execFileSync('git',['ls-files','--error-unmatch','--',`:(literal)${relativeTarget}`],{cwd:rootDir,stdio:'ignore'});
-  }catch(error){
-   const status=error&&typeof error==='object'&&'status'in error?error.status:undefined;
-   if(status===1)continue;
-   throw new Error(`could not verify whether ${relativeTarget} is tracked: ${error instanceof Error?error.message:String(error)}`);
-  }
-  if(!updateEvidence)throw new Error(`refusing to overwrite tracked file ${relativeTarget}; pass --update-evidence to allow this write`);
- }
+ assertTrackedPathsAllowed(trace,rootDir,canonicalRoot,updateEvidence);
  return absoluteTarget;
 }
 
-export function ensureOutputDir(dir,{root}){
+export function ensureOutputDir(dir,{root,updateEvidence=false}){
  const absoluteDir=path.resolve(dir);
  const rootDir=path.resolve(root);
  const canonicalRoot=fs.realpathSync(rootDir);
- validateScratchTarget(tracePathAliases(absoluteDir),rootDir,canonicalRoot,{allowRoot:true});
+ const trace=tracePathAliases(absoluteDir);
+ validateScratchTarget(trace,rootDir,canonicalRoot,{allowRoot:true});
+ assertTrackedPathsAllowed(trace,rootDir,canonicalRoot,updateEvidence);
  fs.mkdirSync(absoluteDir,{recursive:true});
  const canonicalRootAfter=fs.realpathSync(rootDir);
  const outputTrace=tracePathAliases(absoluteDir);

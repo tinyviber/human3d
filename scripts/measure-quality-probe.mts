@@ -31,7 +31,7 @@ const which=whichArg??'forehand';
 const ctx=await createService(path.resolve('public'));
 const racket=attachRacket(ctx.rig);
 const ids=which==='all'?['default','forehand','squat','reach','ready','idle']:[which];
-ensureOutputDir(output.dir,{root});
+ensureOutputDir(output.dir,{root,updateEvidence:output.updateEvidence});
 const summary:Record<string,unknown>={};
 for(const id of ids){
  const doc=id==='default'?defaultDocument(ctx.rig.rest):motionFileById(id)?.document;

@@ -28,7 +28,7 @@ const output=resolveOutputDir('generate-motion',process.argv.slice(2),root,proce
 const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root,updateEvidence:output.updateEvidence});
 const which=output.args[0]??'all';
 const ctx=await createService(path.resolve('public'));
-ensureOutputDir(output.dir,{root});
+ensureOutputDir(output.dir,{root,updateEvidence:output.updateEvidence});
 
 const forehandSrc=()=>(JSON.parse(fs.readFileSync('spec/examples/forehand-study.request.json','utf8'))
  .action.parameters.document)as WorkshopDoc;

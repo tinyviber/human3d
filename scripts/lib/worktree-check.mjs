@@ -7,8 +7,38 @@ const inside=(root,target)=>{
  return relative===''||(!relative.startsWith(`..${path.sep}`)&&relative!=='..'&&!path.isAbsolute(relative));
 };
 const realOrResolved=value=>{
- const absolute=path.resolve(value);
- try{return fs.realpathSync(absolute);}catch{return absolute;}
+ let current=path.resolve(value);
+ const suffix=[];
+ while(true){
+  try{
+   fs.lstatSync(current);
+  }catch(error){
+   const code=error&&typeof error==='object'&&'code'in error?error.code:undefined;
+   if(code!=='ENOENT'&&code!=='ENOTDIR')
+    throw new Error(`could not inspect path ${current}: ${error instanceof Error?error.message:String(error)}`);
+   const parent=path.dirname(current);
+   if(parent===current)throw new Error(`could not resolve path ${value}`);
+   suffix.unshift(path.basename(current));
+   current=parent;
+   continue;
+  }
+  let resolvedAncestor;
+  try{
+   resolvedAncestor=fs.realpathSync(current);
+  }catch(error){
+   throw new Error(`could not resolve existing path ancestor ${current}: ${error instanceof Error?error.message:String(error)}`);
+  }
+  if(suffix.length){
+   let stat;
+   try{
+    stat=fs.statSync(resolvedAncestor);
+   }catch(error){
+    throw new Error(`could not inspect resolved path ancestor ${resolvedAncestor}: ${error instanceof Error?error.message:String(error)}`);
+   }
+   if(!stat.isDirectory())throw new Error(`resolved path ancestor is not a directory: ${resolvedAncestor}`);
+  }
+  return path.join(resolvedAncestor,...suffix);
+ }
 };
 
 export function validateWorktreePath(repoRoot,worktreeRoot){

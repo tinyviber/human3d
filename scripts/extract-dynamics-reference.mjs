@@ -32,7 +32,7 @@ for(const spec of captures){
  }
  result.captures[id]={source:spec.file.split('/').at(-1).replace('.bvh',''),start:spec.start,end:spec.end,fps:120,sourceUrl:spec.url,samples};
 }
-ensureOutputDir(path.dirname(target),{root});
+ensureOutputDir(path.dirname(target),{root,updateEvidence:output.updateEvidence});
 const outputFile=assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
 fs.writeFileSync(outputFile,JSON.stringify(result));
 console.log(`Extracted controller references to ${outputFile}:`,Object.fromEntries(Object.entries(result.captures).map(([id,v])=>[id,v.samples.length])));

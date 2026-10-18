@@ -131,7 +131,7 @@ if(profile){
   }
  }
  const file:SolveProfileFile={bench:'solve-profile',version:1,run,disclosures:[...SOLVE_PROFILE_DISCLOSURES],scenarios:cells};
- ensureOutputDir(path.dirname(outTarget),{root});
+ ensureOutputDir(path.dirname(outTarget),{root,updateEvidence:output.updateEvidence});
   const profileOut=assertTrackedWriteAllowed(outTarget,{root,updateEvidence:output.updateEvidence});
  fs.writeFileSync(profileOut,JSON.stringify(file,null,1)+'\n');
  console.log('\n'+formatProfileReport(file));
@@ -167,20 +167,20 @@ const baseline:BaselineFile={
 
 let report=formatReport(baseline);
 if(compareBaseline)report+=`\n\n${diffBaselines(compareBaseline,baseline)}`;
-ensureOutputDir(path.dirname(outTarget),{root});
+ensureOutputDir(path.dirname(outTarget),{root,updateEvidence:output.updateEvidence});
 const preflightOut=assertTrackedWriteAllowed(outTarget,{root,updateEvidence:output.updateEvidence});
-ensureOutputDir(path.dirname(reportTarget),{root});
+ensureOutputDir(path.dirname(reportTarget),{root,updateEvidence:output.updateEvidence});
 const preflightReportPath=assertTrackedWriteAllowed(reportTarget,{root,updateEvidence:output.updateEvidence});
 if(canonicalDestinationIdentity(preflightOut)===canonicalDestinationIdentity(preflightReportPath))
  throw new Error('--out and --report resolve to the same destination');
-ensureOutputDir(path.dirname(outTarget),{root});
+ensureOutputDir(path.dirname(outTarget),{root,updateEvidence:output.updateEvidence});
 const baselineOut=assertTrackedWriteAllowed(outTarget,{root,updateEvidence:output.updateEvidence});
 if(canonicalDestinationIdentity(baselineOut)===canonicalDestinationIdentity(preflightReportPath))
  throw new Error('--out and --report resolve to the same destination');
 fs.writeFileSync(baselineOut,JSON.stringify(baseline,null,1)+'\n');
 
 
-ensureOutputDir(path.dirname(reportTarget),{root});
+ensureOutputDir(path.dirname(reportTarget),{root,updateEvidence:output.updateEvidence});
 const finalReportPath=assertTrackedWriteAllowed(reportTarget,{root,updateEvidence:output.updateEvidence});
 if(canonicalDestinationIdentity(baselineOut)===canonicalDestinationIdentity(finalReportPath))
  throw new Error('--out and --report resolve to the same destination');

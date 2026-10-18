@@ -25,7 +25,10 @@ const ifConditions=(source:string)=>
  [...source.matchAll(/if\s*\(([^{}]*?)\)\s*\{/gs)].map(match=>({
   condition:match[1]??'',position:match.index??-1,body:source.slice(match.index??0,(match.index??0)+500),
  }));
-const ensureWithRoot=/ensureOutputDir\s*\([^;]*,\s*\{\s*root\s*\}\s*\)\s*;/;
+const ensureCallWithRootOption=(rootOption:string)=>new RegExp(
+ `\\bensureOutputDir\\s*\\([^;]*,\\s*\\{\\s*${rootOption}\\s*,\\s*updateEvidence\\s*:\\s*output\\.updateEvidence\\s*\\}\\s*\\)\\s*;`,
+);
+const ensureWithRoot=ensureCallWithRootOption('root');
 const expectFreshWriteOrder=(source:string,writeMarker:RegExp)=>{
  const write=source.search(writeMarker);
  const preparation=lastPositionBefore(sourceMatchPositions(source,ensureWithRoot),write);
@@ -154,6 +157,7 @@ describe('Vite build output resolution',()=>{
 describe('default scratch output symlink containment',()=>{
  it('rejects a default output when the .out root symlinks outside the temp repository',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const sentinel=path.join(outside,'sentinel.txt');
   const sentinelBytes=Buffer.from('keep outside sentinel');
@@ -174,6 +178,7 @@ describe('default scratch output symlink containment',()=>{
 
  it('rejects a default output when a nested .out component symlinks outside the temp repository',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const worktreeId='fixture-worktree';
   const runId='fixture-run';
@@ -197,6 +202,7 @@ describe('default scratch output symlink containment',()=>{
 
  it('rejects a default scratch leaf symlink before a caller can overwrite its outside target',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const sentinel=path.join(outside,'sentinel.txt');
   const sentinelBytes=Buffer.from('keep leaf sentinel');
@@ -214,6 +220,7 @@ describe('default scratch output symlink containment',()=>{
 
  it('rechecks the default path if .out becomes an outside symlink after resolution',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const worktreeId='fixture-worktree';
   const runId='fixture-run';
@@ -238,6 +245,7 @@ describe('default scratch output symlink containment',()=>{
 describe('ensureOutputDir scratch containment',()=>{
  it('rejects a pre-existing .out root symlink before creating an outside directory',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const outputDir=path.join(root,'.out','fixture-worktree','fixture-run','qa-output');
   const outsideOutputDir=path.join(outside,'fixture-worktree','fixture-run','qa-output');
@@ -250,6 +258,7 @@ describe('ensureOutputDir scratch containment',()=>{
 
  it('rejects a nested .out symlink before creating an outside directory',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const outputDir=path.join(root,'.out','fixture-worktree','fixture-run','qa-output');
   const outsideOutputDir=path.join(outside,'fixture-run','qa-output');
@@ -263,6 +272,7 @@ describe('ensureOutputDir scratch containment',()=>{
 
  it('rechecks a resolved default path before creating directories after a root alias race',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const aliasParent=tempDir();
   const rootAlias=path.join(aliasParent,'repo-alias');
@@ -277,6 +287,7 @@ describe('ensureOutputDir scratch containment',()=>{
 
  it('rechecks a resolved default target after a root alias race before allowing a write',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const aliasParent=tempDir();
   const rootAlias=path.join(aliasParent,'repo-alias');
@@ -293,6 +304,7 @@ describe('ensureOutputDir scratch containment',()=>{
 
  it('creates an explicit .out root and allows repeated creation of the same valid scratch directory',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const explicitScratch=resolveOutputDir('qa-output',['--out-dir','.out'],root,{
    HUMAN3D_WORKTREE_ID:'fixture-worktree',HUMAN3D_RUN_ID:'fixture-run',
   }).dir;
@@ -319,21 +331,32 @@ describe('ensureOutputDir scratch containment',()=>{
 
  it('creates a non-scratch spec/solver-baseline helper path',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const baselineDir=path.join(root,'spec','solver-baseline');
 
   expect(ensureOutputDir(baselineDir,{root})).toBe(baselineDir);
   expect(fs.statSync(baselineDir).isDirectory()).toBe(true);
  });
 
- it('routes solver baseline destination directory creation through the output helper',()=>{
+   it('fails closed before creating an in-repo output path when Git lookup is unavailable',()=>{
+   const root=tempDir();
+   const outputDir=path.join(root,'spec','ensure-output');
+
+   expect(()=>ensureOutputDir(outputDir,{root})).toThrow(/could not verify whether .* is tracked: .*git ls-files/i);
+   expect(fs.existsSync(path.join(root,'spec'))).toBe(false);
+   expect(fs.existsSync(outputDir)).toBe(false);
+  });
+
+  it('routes solver baseline destination directory creation through the output helper',()=>{
   const source=fs.readFileSync(path.join(ROOT,'scripts','recapture-solver-baseline.mts'),'utf8');
-  expect(source).toMatch(/ensureOutputDir\s*\(\s*destinationDir\s*,\s*\{\s*root\s*\}\s*\)/);
+  expect(source).toMatch(/ensureOutputDir\s*\(\s*destinationDir\s*,\s*\{\s*root\s*,\s*updateEvidence\s*:\s*output\.updateEvidence\s*\}\s*\)/);
  });
 });
 
 describe('scratch output alias containment',()=>{
  it('rejects an explicit absolute --out-dir through a repository-root alias when .out escapes',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const aliasParent=tempDir();
   const rootAlias=path.join(aliasParent,'repo-alias');
@@ -464,6 +487,7 @@ describe('scratch output alias containment',()=>{
 
   it('rejects an in-repo alias symlink to .out when .out resolves outside',()=>{
   const root=tempDir();
+  execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
   const outside=tempDir();
   const aliasPath=path.join(root,'scratch-alias');
   fs.symlinkSync(outside,path.join(root,'.out'),'dir');
@@ -479,6 +503,30 @@ describe('scratch output alias containment',()=>{
 });
 
 describe('output preparation source order',()=>{
+ it('asserts every production output-directory helper call and its root option',()=>{
+  const callSites=[
+   {file:'scripts/bench-workshop.mts',count:5,rootOption:'root'},
+   {file:'scripts/dynamics-browser-qa.mjs',count:1,rootOption:'root\\s*:\\s*repoRoot'},
+   {file:'scripts/extract-dynamics-reference.mjs',count:1,rootOption:'root'},
+   {file:'scripts/export-pose-package.mts',count:1,rootOption:'root'},
+   {file:'scripts/measure-quality-probe.mts',count:1,rootOption:'root'},
+   {file:'scripts/browser-qa.mjs',count:1,rootOption:'root\\s*:\\s*repoRoot'},
+   {file:'scripts/package-to-glb.mts',count:1,rootOption:'root'},
+   {file:'scripts/generate-motion.mts',count:1,rootOption:'root'},
+   {file:'scripts/recapture-solver-baseline.mts',count:1,rootOption:'root'},
+  ];
+  expect(callSites.reduce((total,{count})=>total+count,0)).toBe(13);
+  for(const {file,count,rootOption} of callSites){
+   const source=readRepoFile(file);
+   expect(sourceCallPositions(source,'ensureOutputDir')).toHaveLength(count);
+   expect(sourceMatchPositions(source,ensureCallWithRootOption(rootOption))).toHaveLength(count);
+  }
+
+  const declarations=readRepoFile('scripts/lib/qa-output.d.mts');
+  const ensureDeclaration=declarations.match(/export declare function ensureOutputDir\([\s\S]*?\): string;/)?.[0]??'';
+  expect(ensureDeclaration).toMatch(/options:\s*\{\s*root:\s*string\s*[;,]\s*updateEvidence\?:\s*boolean/);
+ });
+
  it('prepares the dynamics reference output before a fresh write guard and write',()=>{
   const source=readRepoFile('scripts/extract-dynamics-reference.mjs');
   expectFreshWriteOrder(source,/fs\.writeFileSync\s*\(\s*outputFile\s*,/);
@@ -696,5 +744,40 @@ describe('tracked evidence write protection',()=>{
    expect(attempt.error).toBeInstanceOf(Error);
    expect(attempt.writeReached).toBe(false);
    expect(fs.readFileSync(sentinelPath)).toEqual(originalBytes);
+  });
+
+  it('preflights a tracked directory symlink with evidence update opt-in',()=>{
+   const root=tempDir();
+   const outside=tempDir();
+   const trackedRelative='assets/external-link';
+   const trackedPath=path.join(root,trackedRelative);
+   const sentinelPath=path.join(outside,'sentinel.json');
+   const originalBytes=Buffer.from('external asset sentinel\n');
+   fs.mkdirSync(path.dirname(trackedPath),{recursive:true});
+   fs.writeFileSync(sentinelPath,originalBytes);
+   const sentinelBytes=fs.readFileSync(sentinelPath);
+   fs.symlinkSync(outside,trackedPath,'dir');
+   execFileSync('git',['init','--quiet'],{cwd:root,stdio:'ignore'});
+   execFileSync('git',['add','--',trackedRelative],{cwd:root,stdio:'ignore'});
+
+   const outsideEntries=fs.readdirSync(outside).sort();
+   const outputArgs=['--out-dir',path.join(trackedPath,'new')];
+   const defaultResolved=resolveOutputDir('qa-output',outputArgs,root,{});
+   expect(defaultResolved.updateEvidence).toBe(false);
+   expect(()=>ensureOutputDir(defaultResolved.dir,{root,updateEvidence:defaultResolved.updateEvidence})).toThrow(/refusing to overwrite tracked file assets\/external-link/);
+   expect(fs.existsSync(path.join(outside,'new'))).toBe(false);
+   expect(fs.readdirSync(outside).sort()).toEqual(outsideEntries);
+   expect(fs.readFileSync(sentinelPath)).toEqual(sentinelBytes);
+
+   const updateResolved=resolveOutputDir('qa-output',[...outputArgs,'--update-evidence'],root,{});
+   expect(updateResolved.updateEvidence).toBe(true);
+   expect(ensureOutputDir(updateResolved.dir,{root,updateEvidence:updateResolved.updateEvidence})).toBe(updateResolved.dir);
+   expect(fs.statSync(path.join(outside,'new')).isDirectory()).toBe(true);
+   expect(fs.readdirSync(outside).sort()).toEqual([...outsideEntries,'new'].sort());
+   expect(fs.readFileSync(sentinelPath)).toEqual(sentinelBytes);
+
+   const target=path.join(updateResolved.dir,'generated.json');
+   expect(()=>assertTrackedWriteAllowed(target,{root,updateEvidence:false})).toThrow();
+   expect(()=>assertTrackedWriteAllowed(target,{root,updateEvidence:updateResolved.updateEvidence})).not.toThrow();
   });
  });

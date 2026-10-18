@@ -20,7 +20,7 @@ if(res.status!==200){console.error(JSON.stringify(res.body));process.exit(1);}
 const pkg=res.body as PosePackage;
 const errors=validatePosePackage(pkg,ctx.manifest);
 if(errors.length){console.error('VALIDATION FAILED',errors);process.exit(1);}
-ensureOutputDir(path.dirname(target),{root});
+ensureOutputDir(path.dirname(target),{root,updateEvidence:output.updateEvidence});
 const out=assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
 fs.writeFileSync(out,JSON.stringify(pkg));
 if(id==='idle'&&!output.updateEvidence){
