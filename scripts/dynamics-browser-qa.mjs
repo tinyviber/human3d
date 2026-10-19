@@ -10,6 +10,16 @@ if(output.args.length)throw new Error(`unexpected dynamics QA arguments: ${outpu
 ensureOutputDir(output.dir,{root:repoRoot,updateEvidence:output.updateEvidence});
 const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root:repoRoot,updateEvidence:output.updateEvidence});
 const webUrl=process.env.QA_WEB_URL??`http://127.0.0.1:${process.env.HUMAN3D_WEB_PORT??5173}/`;
+// Same checkout-identity rule as browser-qa.mjs (issue #11 WP-0C): refuse a
+// foreign worktree's dev server on the default port; QA_WEB_URL opt-in only
+// warns when the identity probe cannot verify it.
+const {verifyWebIdentity}=await import('./lib/worktree-check.mjs');
+const webIdentity=await verifyWebIdentity(repoRoot,webUrl);
+if(process.env.QA_WEB_URL!==undefined){
+ if(!webIdentity.ok)console.warn(`QA_WEB_URL is an explicit opt-in: web checkout identity NOT verified (${webIdentity.detail})`);
+}else if(!webIdentity.ok){
+ throw new Error(`dev server at ${webUrl} does not serve this checkout (${webIdentity.detail}); start it from this worktree (npm run dev) or opt in explicitly with QA_WEB_URL`);
+}
 const envelope=id=>JSON.parse(fs.readFileSync(`assets/motions/${id}.json`,'utf8'));
 const throwEnv=envelope('baseball-throw'),punchEnv=envelope('punch');
 assert.equal(throwEnv.kind,'dynamics-motion');assert.equal(punchEnv.kind,'dynamics-motion');

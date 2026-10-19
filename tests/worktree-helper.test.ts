@@ -3,7 +3,9 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import {createServer} from 'node:net';
-import {validateWorktreePath,validateWorkspaceLinks,assertPortAvailable} from '../scripts/lib/worktree-check.mjs';
+import {validateWorktreePath,validateWorkspaceLinks,assertPortAvailable,verifyWebIdentity} from '../scripts/lib/worktree-check.mjs';
+import {createServer as createHttpServer} from 'node:http';
+import type {AddressInfo} from 'node:net';
 
 const WORKSPACES=['motion-core','web','server'];
 const tempDirs:string[]=[];
@@ -134,6 +136,78 @@ describe('workspace dependency link isolation',()=>{
   const result=validateWorkspaceLinks(worktreeRoot,WORKSPACES);
   expect(result.ok).toBe(false);
   expect(result.issues.some(i=>i.includes('motion-core')&&i.includes('expected'))).toBe(true);
+ });
+});
+
+describe('web dev-server identity',()=>{
+ const writeProtocol=(root:string,version:string)=>{
+  const file=path.join(root,'packages/motion-core/src/protocol.ts');
+  fs.mkdirSync(path.dirname(file),{recursive:true});
+  fs.writeFileSync(file,`export const SERVICE_VERSION='${version}';\n`);
+  return file;
+ };
+ // Vite serves /@fs/<abs> only under server.fs.allow; a foreign worktree's
+ // server must answer non-200 for paths outside its root.
+ const fakeVite=(allowedRoot:string,body:string)=>{
+  const server=createHttpServer((req,res)=>{
+   const url=new URL(req.url??'/','http://127.0.0.1');
+   if(!url.pathname.startsWith('/@fs/')){res.writeHead(404);res.end();return;}
+   const target=decodeURIComponent(url.pathname.slice('/@fs'.length));
+   if(!target.startsWith(allowedRoot)){res.writeHead(403);res.end();return;}
+   res.writeHead(200,{'content-type':'text/javascript'});res.end(body);
+  });
+  return new Promise<{url:string,close:()=>Promise<void>}>((resolve,reject)=>{
+   server.once('error',reject);
+   server.listen(0,'127.0.0.1',()=>{
+    const {port}=(server.address() as AddressInfo);
+    resolve({url:`http://127.0.0.1:${port}/`,close:()=>new Promise<void>((res,rej)=>server.close(e=>e?rej(e):res()))});
+   });
+  });
+ };
+
+ it('accepts a dev server that serves this checkout files',async()=>{
+  const root=tempDir();
+  const file=writeProtocol(root,'0.4.0');
+  const vite=await fakeVite(root,`export const SERVICE_VERSION = "0.4.0";`);
+  try{
+   const result=await verifyWebIdentity(root,vite.url);
+   expect(result.ok).toBe(true);
+  }finally{await vite.close();}
+  expect(fs.existsSync(file)).toBe(true);
+ });
+
+ it('rejects a dev server that refuses the checkout path (foreign worktree)',async()=>{
+  const root=tempDir();
+  writeProtocol(root,'0.4.0');
+  const foreignRoot=path.join(tempDir(),'foreign');
+  const vite=await fakeVite(foreignRoot,'export const SERVICE_VERSION = "0.4.0";');
+  try{
+   const result=await verifyWebIdentity(root,vite.url);
+   expect(result.ok).toBe(false);
+   expect(result.detail).toContain('403');
+  }finally{await vite.close();}
+ });
+
+ it('rejects when the served file lacks this checkout version',async()=>{
+  const root=tempDir();
+  writeProtocol(root,'0.4.0');
+  const vite=await fakeVite(root,`export const SERVICE_VERSION = "0.3.0";`);
+  try{
+   const result=await verifyWebIdentity(root,vite.url);
+   expect(result.ok).toBe(false);
+   expect(result.detail).toContain('0.4.0');
+  }finally{await vite.close();}
+ });
+
+ it('rejects when nothing answers on the port',async()=>{
+  const root=tempDir();
+  writeProtocol(root,'0.4.0');
+  const reservation=createServer();
+  await new Promise<void>((resolve,reject)=>{reservation.once('error',reject);reservation.listen(0,'127.0.0.1',resolve);});
+  const {port}=(reservation.address() as AddressInfo);
+  await new Promise<void>((resolve,reject)=>reservation.close(e=>e?reject(e):resolve()));
+  const result=await verifyWebIdentity(root,`http://127.0.0.1:${port}/`);
+  expect(result.ok).toBe(false);
  });
 });
 

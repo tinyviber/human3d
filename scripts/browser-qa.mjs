@@ -16,6 +16,17 @@ const webBase=new URL(process.env.QA_WEB_URL??`http://127.0.0.1:${process.env.HU
 const serviceBase=new URL(process.env.QA_SERVICE_URL??`http://127.0.0.1:${process.env.HUMAN3D_PORT??8788}/`);
 const webUrl=route=>new URL(route,webBase).href;
 const serviceUrl=route=>new URL(route,serviceBase).href;
+// Web identity is checked before the browser starts (issue #11 WP-0C): the
+// dev server must serve THIS checkout's files — a foreign worktree's Vite on
+// the shared 5173 port is a failure, never a silent reuse. QA_WEB_URL is an
+// explicit opt-in: an unverifiable identity is annotated, not silently trusted.
+const {verifyWebIdentity}=await import('./lib/worktree-check.mjs');
+const webIdentity=await verifyWebIdentity(repoRoot,webBase);
+if(process.env.QA_WEB_URL!==undefined){
+ if(!webIdentity.ok)console.warn(`QA_WEB_URL is an explicit opt-in: web checkout identity NOT verified (${webIdentity.detail})`);
+}else if(!webIdentity.ok){
+ throw new Error(`dev server at ${webBase.origin} does not serve this checkout (${webIdentity.detail}); start it from this worktree (npm run dev) or opt in explicitly with QA_WEB_URL`);
+}
 const browser=await chromium.launch({headless:true,...(process.env.QA_BROWSER_CHANNEL?{channel:process.env.QA_BROWSER_CHANNEL}:{})});
 let svc; // spawned pose service (if not already running); killed in finally
 try {

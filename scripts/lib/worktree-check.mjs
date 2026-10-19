@@ -116,6 +116,42 @@ export function validateWorkspaceLinks(worktreeRoot,workspaceNames){
  return {ok:issues.length===0,issues};
 }
 
+/*
+ * Web dev-server identity (issue #11 WP-0C): browser QA must not silently
+ * exercise another worktree's Vite process on the shared default port. Vite
+ * serves /@fs/<absolute path> only when the path sits under its configured
+ * server.fs.allow (this repo's root) — a foreign worktree's server answers
+ * 403, and a non-Vite port fails the fetch. The body is also checked for the
+ * local checkout's SERVICE_VERSION literal so a stale or mismatched transform
+ * cannot pass silently. Residual: a dev server with a widened fs.allow could
+ * still serve this path; the explicit QA_WEB_URL opt-in path is annotated
+ * rather than enforced for that reason.
+ */
+export async function verifyWebIdentity(repoRoot,webBase,{fetchImpl=fetch}={}){
+ const probeFile=path.join(repoRoot,'packages/motion-core/src/protocol.ts');
+ const probe=new URL(`/@fs${probeFile}`,webBase instanceof URL?webBase:new URL(webBase));
+ let response;
+ try{response=await fetchImpl(probe.href);}catch(error){
+  return {ok:false,detail:`/@fs probe unreachable: ${error instanceof Error?error.message:String(error)}`};
+ }
+ if(response.status!==200)
+  return {ok:false,detail:`/@fs probe returned HTTP ${response.status}; a Vite dev server only serves files under its own worktree root`};
+ let text;
+ try{text=await response.text();}catch(error){
+  return {ok:false,detail:`/@fs probe body unreadable: ${error instanceof Error?error.message:String(error)}`};
+ }
+ let localText;
+ try{localText=fs.readFileSync(probeFile,'utf8');}catch{
+  return {ok:false,detail:`cannot read ${probeFile} for the identity marker`};
+ }
+ const expected=/SERVICE_VERSION\s*=\s*'([^']+)'/.exec(localText)?.[1];
+ if(expected&&!text.includes(expected))
+  return {ok:false,detail:`served protocol.ts lacks this checkout's SERVICE_VERSION ${expected}`};
+ if(!text.includes('SERVICE_VERSION'))
+  return {ok:false,detail:'served protocol.ts lacks the SERVICE_VERSION marker'};
+ return {ok:true,probe:probe.href};
+}
+
 export function assertPortAvailable(host,port){
  if(typeof host!=='string'||!host)throw new TypeError('host must be a non-empty string');
  if(!Number.isInteger(port)||port<1||port>65535)throw new RangeError(`invalid port: ${port}`);
