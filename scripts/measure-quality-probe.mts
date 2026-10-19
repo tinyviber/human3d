@@ -11,22 +11,26 @@
 // Usage: npx tsx scripts/measure-quality-probe.mts [fps=240] [motion=forehand|default|all]
 // `default` is the workbench's five-key seed document — the sparse-key case
 // where Hermite tangent overshoot is worst (dense bundled docs interpolate
-// near the secants already). Writes evidence/quality-probe-<motion>.json
-// next to the console report.
-import fs from 'node:fs';
+// near the secants already). Writes JSON results under isolated .out scratch
+// unless --out-dir is supplied; tracked writes require --update-evidence.
 import path from 'node:path';
 import {createService} from '@human3d/server';
 import {motionFileById} from '@human3d/motion-core';
 import {attachRacket} from '@human3d/motion-core';
 import {defaultDocument} from '@human3d/motion-core';
 import {formatProbeReport,probeDocument,probeFrames,stepAngles,type ProbeFrame} from '@human3d/motion-core';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 
-const fps=Number(process.argv[2]??240);
-const which=process.argv[3]??'forehand';
+const root=process.cwd();
+const output=resolveOutputDir('measure-quality-probe',process.argv.slice(2),root,process.env);
+const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root,updateEvidence:output.updateEvidence});
+const [fpsArg,whichArg]=output.args;
+const fps=Number(fpsArg??240);
+const which=whichArg??'forehand';
 const ctx=await createService(path.resolve('public'));
 const racket=attachRacket(ctx.rig);
 const ids=which==='all'?['default','forehand','squat','reach','ready','idle']:[which];
-fs.mkdirSync('evidence',{recursive:true});
+ensureOutputDir(output.dir,{root,updateEvidence:output.updateEvidence});
 const summary:Record<string,unknown>={};
 for(const id of ids){
  const doc=id==='default'?defaultDocument(ctx.rig.rest):motionFileById(id)?.document;
@@ -50,6 +54,6 @@ for(const id of ids){
   rootMaxStep:r.root.maxStep,rootMaxV:r.root.maxV,rootMaxA:r.root.maxA,
   pelvisShiftRange:[r.pelvis.shiftMin,r.pelvis.shiftMax],pelvisShiftJump:[r.pelvis.maxJump,r.pelvis.jumpT],
   soleMinY:r.sole.minY};
- fs.writeFileSync(`evidence/quality-probe-${id}.json`,JSON.stringify({motion:id,fps,duration:doc.duration,keys:doc.keys.length,...summary[id]},null,1));
+ atomicWriteFile(outputFile(`quality-probe-${id}.json`),JSON.stringify({motion:id,fps,duration:doc.duration,keys:doc.keys.length,...summary[id]},null,1));
 }
-fs.writeFileSync('evidence/quality-probe-summary.json',JSON.stringify(summary,null,1));
+atomicWriteFile(outputFile('quality-probe-summary.json'),JSON.stringify(summary,null,1));

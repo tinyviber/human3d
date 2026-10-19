@@ -1,6 +1,6 @@
 # 任务协议：切片、task brief 与 owner lane
 
-本文是**约定规范**：流程以纯 Markdown 约定直接成立，不依赖某一家 CLI 的私有行为。`.agents/skills/` 下的 `task-slice`/`fast-review`/`final-review`/`handoff` skill 属 **规划/待实现（PR-11A）**——在落地前，本文档即规范本体。
+本文是**约定规范**：流程以纯 Markdown 约定直接成立，不依赖某一家 CLI 的私有行为。`.agents/skills/` 下的 `task-slice`/`fast-review`/`final-review`/`handoff` skill 属 **规划/待实现（PR-11A 遗留）**——在落地前，本文档即规范本体。**权威分工**：brief 字段级模板与 verdict/record 契约在 [review-protocol.md](review-protocol.md) 与 [task-brief-template.md](task-brief-template.md)；本文拥有任务切片、owner lane 与运行 ledger 规则。
 
 ## 任务切片
 
@@ -9,26 +9,9 @@
 - 跨包接口变更先冻结契约、安排集成 owner，再并行实现。
 - 优先在现有包内拆模块交付，不新增 npm 包/submodule（issue #11「不做」）。
 
-## Task brief 模板
+## Task brief
 
-每个任务包开工前写 brief（可放任务私有空间或 PR 描述）：
-
-```text
-- task_id：                  唯一标识（如 PR-11C）
-- goal：                     一句话目标
-- base SHA：                 实现基线（审查与验证都锚定它）
-- worktree / branch：        隔离位置（见 worktree-policy.md）
-- 权威来源：                  issue/spec/文档指针
-- 允许修改范围（owner lane）：路径白名单
-- 输入契约：                  依赖的接口/不变量
-- 输出契约：                  交付物形态
-- 禁止变更：                  不得触碰的行为/文件/协议项
-- 验收样例：                  可复演的判定标准
-- 所需的局部测试：            实现期必须跑的最小集合
-- 需要由集成层完成的测试：    本地不跑但必须有人跑的项目
-- 依赖与风险：                前置任务、热文件冲突、偏差记录
-- 超范围处理：                发现 brief 外问题时的处置（记 ledger / 另立任务）
-```
+每个任务包开工前按 [task-brief-template.md](task-brief-template.md) 填 brief（可放任务私有空间或 PR 描述）；字段契约与示例见 [review-protocol.md](review-protocol.md) 及 [examples/task-slices.md](examples/task-slices.md)。
 
 ## 运行 ledger
 

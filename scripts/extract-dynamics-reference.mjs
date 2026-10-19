@@ -1,8 +1,17 @@
 /** CMU is a controller reference only. The rendered experiment pose comes
  * exclusively from forward dynamics, never from these capture samples. */
 import fs from 'node:fs';
+import path from 'node:path';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 import {BVHLoader} from 'three/addons/loaders/BVHLoader.js';
 import {Vector3,Quaternion,Group,AnimationMixer} from 'three';
+const root=process.cwd();
+const output=resolveOutputDir('extract-dynamics-reference',process.argv.slice(2),root,process.env);
+if(output.args.length>1)throw new Error('usage: extract-dynamics-reference.mjs [output-file] [--out-dir <directory>] [--update-evidence]');
+const updateTrackedDefault=output.updateEvidence&&!process.argv.some(arg=>arg==='--out-dir'||arg.startsWith('--out-dir='));
+const requestedTarget=output.args[0];
+const target=requestedTarget??(updateTrackedDefault?'assets/source/dynamics/capture-reference.json':path.join(output.dir,'capture-reference.json'));
+assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
 const actions=fs.readdirSync('assets/motions').filter(name=>name.endsWith('.json')&&!name.endsWith('.schema.json'))
  .map(name=>JSON.parse(fs.readFileSync(`assets/motions/${name}`,'utf8')))
  .filter(envelope=>envelope.kind==='dynamics-motion').map(envelope=>envelope.dynamics.action);
@@ -23,5 +32,7 @@ for(const spec of captures){
  }
  result.captures[id]={source:spec.file.split('/').at(-1).replace('.bvh',''),start:spec.start,end:spec.end,fps:120,sourceUrl:spec.url,samples};
 }
-fs.writeFileSync('assets/source/dynamics/capture-reference.json',JSON.stringify(result));
-console.log('Extracted controller references:',Object.fromEntries(Object.entries(result.captures).map(([id,v])=>[id,v.samples.length])));
+ensureOutputDir(path.dirname(target),{root,updateEvidence:output.updateEvidence});
+const outputFile=assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
+atomicWriteFile(outputFile,JSON.stringify(result));
+console.log(`Extracted controller references to ${outputFile}:`,Object.fromEntries(Object.entries(result.captures).map(([id,v])=>[id,v.samples.length])));

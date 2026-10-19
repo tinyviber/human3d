@@ -1,6 +1,6 @@
 # 审查门禁与验证生命周期
 
-本文合并两条既有口径：原 AGENTS.md 的「测试与验证策略」（Level 0–3）与 issue #11 的 Review/Verify 生命周期。**约定规范**：`fast-review`/`final-review` skill 与 CI 的 Draft/Ready 生命周期属 **规划/待实现（PR-11A）**；`check:affected` 属 **规划/待实现（PR-11B）**。在工具落地前，两级 review 由任务流程中的独立 reviewer 按本文手工执行。
+本文合并两条既有口径：原 AGENTS.md 的「测试与验证策略」（Level 0–3）与 issue #11 的 Review/Verify 生命周期。**权威分工**：审查协议字段级契约（brief 字段、verdict、record 字段、rework/handoff 规则、模板与示例）在 [review-protocol.md](review-protocol.md)；本文拥有验证级别映射与合并门禁现状。`.agents/skills/` 规范 skill 属 **规划/待实现（PR-11A 遗留）**；`check:affected` 属 **规划/待实现（PR-11B）**。在 skill 落地前，两级 review 由任务流程中的独立 reviewer 按两文手工执行。
 
 ## 目标循环
 
@@ -23,7 +23,7 @@ Issue → task-slice / 契约与方案预审
 
 ## Fast Review（开发期证伪）
 
-输入：task brief + `git diff <base>...<head>`（含未提交差异）。
+输入：task brief + `git diff <base>...<head>`（含未提交差异）。逐条检查清单、verdict 与 record 字段契约见 [review-protocol.md](review-protocol.md)「Fast Review」节；此处保留门禁语义。
 
 检查（只找确定的 blockers）：需求遗漏、反向依赖、破坏性 API、身份/版本/坐标系/接触语义、实现路径是否真实、测试被弱化、明显调用链错误——追踪必要的调用方与被调用方，不只看单文件。
 
@@ -48,9 +48,9 @@ REWORK 后只复审 blocker 修复及受影响调用链，未变区域不重复�
 
 ## 合并门禁现状与规划
 
-- **现状**：`pull_request` 与 `main` push 均跑完整 CI——`check` job（`npm run docs:check`、`tsc -b`、`spec:check`、全量 vitest、`build`）+ `dynamics` job（`dynamics:validate`、`dynamics:test`）。浏览器 E2E（`npm run qa`）**未进 CI**，其验证状态必须单独记录。
-- **规划/待实现（PR-11A）**：CI 区分 Draft/Ready——Draft 更新不启动重型验证，Ready 及后续新提交启动完整门禁；同 PR 过时运行 `concurrency`/`cancel-in-progress`；必需检查只认实际执行成功（「Skipped = Success」不算）。落地前所有 PR 一律按完整 CI 对待。
+- **现状（PR-11A 已落地）**：`test` workflow 区分 Draft/Ready——Draft 只跑 `fast`（bounded A1 检查）且 `required` 报 `draft_deferred`；Ready 与 `main` push 跑 `full`（`docs:check`、`tsc -b`、`spec:check`、全量 vitest、`build`）+ `dynamics`；稳定聚合检查 `test / required` 只认实际成功（skipped/cancelled/stale/unrun 一律红）。事件矩阵见 [ci-lifecycle.md](ci-lifecycle.md)。**尚未真实复演**：Draft→Ready 事件序列与远端 branch protection 配置（`test / required` 为必需检查）仍是待完成验收项。浏览器 E2E（`npm run qa`）**未进 CI**，其验证状态必须单独记录。
 - **规划/待实现（PR-11B）**：`check:affected`（只生成计划）/ `--run`（执行）/ `check:full`（完整本地验证）。落地前「affected checks」由人工按 [test-matrix.md](test-matrix.md) 映射执行。
+- **规划/待实现（PR-11A 遗留）**：`.agents/skills/` 下的 `task-slice`/`fast-review`/`final-review`/`handoff` 规范 skill。
 
 ## 最终交付报告（每次任务必须说明）
 

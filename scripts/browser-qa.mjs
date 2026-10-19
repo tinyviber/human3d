@@ -2,16 +2,37 @@ import {chromium} from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 // Dev-server URL for a motion-core source module: the Vite root is apps/web,
 // so workspace sources outside it are served through /@fs/ (the config's
 // server.fs.allow covers the repo root).
 const coreModule=p=>`/@fs/${path.resolve('packages/motion-core/src',p)}`;
+const repoRoot=process.cwd();
+const output=resolveOutputDir('browser-qa',process.argv.slice(2),repoRoot,process.env);
+if(output.args.length)throw new Error(`unexpected browser QA arguments: ${output.args.join(' ')}`);
+ensureOutputDir(output.dir,{root:repoRoot,updateEvidence:output.updateEvidence});
+const outputFile=name=>assertTrackedWriteAllowed(path.join(output.dir,name),{root:repoRoot,updateEvidence:output.updateEvidence});
+const webBase=new URL(process.env.QA_WEB_URL??`http://127.0.0.1:${process.env.HUMAN3D_WEB_PORT??5173}/`);
+const serviceBase=new URL(process.env.QA_SERVICE_URL??`http://127.0.0.1:${process.env.HUMAN3D_PORT??8788}/`);
+const webUrl=route=>new URL(route,webBase).href;
+const serviceUrl=route=>new URL(route,serviceBase).href;
+// Web identity is checked before the browser starts (issue #11 WP-0C): the
+// dev server must serve THIS checkout's files — a foreign worktree's Vite on
+// the shared 5173 port is a failure, never a silent reuse. QA_WEB_URL is an
+// explicit opt-in: an unverifiable identity is annotated, not silently trusted.
+const {verifyWebIdentity}=await import('./lib/worktree-check.mjs');
+const webIdentity=await verifyWebIdentity(repoRoot,webBase);
+if(process.env.QA_WEB_URL!==undefined){
+ if(!webIdentity.ok)console.warn(`QA_WEB_URL is an explicit opt-in: web checkout identity NOT verified (${webIdentity.detail})`);
+}else if(!webIdentity.ok){
+ throw new Error(`dev server at ${webBase.origin} does not serve this checkout (${webIdentity.detail}); start it from this worktree (npm run dev) or opt in explicitly with QA_WEB_URL`);
+}
 const browser=await chromium.launch({headless:true,...(process.env.QA_BROWSER_CHANNEL?{channel:process.env.QA_BROWSER_CHANNEL}:{})});
 let svc; // spawned pose service (if not already running); killed in finally
 try {
 const page=await browser.newPage({viewport:{width:1536,height:1024},deviceScaleFactor:1});
 const errors=[],warnings=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());if(m.type()==='warning')warnings.push(m.text());});
-await page.goto('http://127.0.0.1:5173/');await page.waitForFunction(()=>window.__LAB__?.ready,{timeout:60000});await page.locator('.loading-state').waitFor({state:'hidden'});
+await page.goto(webUrl('/'));await page.waitForFunction(()=>window.__LAB__?.ready,{timeout:60000});await page.locator('.loading-state').waitFor({state:'hidden'});
 assert.match(await page.title(),/KINESIS/);assert.equal(await page.locator('.motion-row').count(),8);assert.equal(await page.locator('vite-error-overlay').count(),0);
 const names={idle:'自然站立',walk:'行走',reach:'抬手与转身',squat:'下蹲',ready:'持拍准备',forehand:'正手挥拍'};
 async function choose(id,t=0,view='front'){
@@ -26,11 +47,11 @@ async function choose(id,t=0,view='front'){
 }
 const poses=[['idle',0,'front','front'],['idle',0,'side','side'],['idle',0,'back','back'],['walk',.34,'threeQuarter','walk'],['reach',2.7,'front','reach'],['squat',2.7,'side','squat-side'],['squat',2.7,'front','squat'],['ready',0,'threeQuarter','ready'],['ready',0,'hand','grip'],['forehand',1.3,'threeQuarter','backswing'],['forehand',2.55,'front','contact'],['forehand',3.35,'threeQuarter','follow-through']];
 const result={date:new Date().toISOString().slice(0,10),browser:await browser.version(),viewport:[1536,1024],poses:[],checks:{}};
-for(const [id,t,view,name]of poses){await choose(id,t,view);await page.screenshot({path:`evidence/${name}.png`});result.poses.push({id,t,view,file:`${name}.png`,metrics:await page.evaluate(()=>window.__LAB__.diagnostics())});}
+for(const [id,t,view,name]of poses){await choose(id,t,view);await page.screenshot({path:outputFile(`${name}.png`)});result.poses.push({id,t,view,file:`${name}.png`,metrics:await page.evaluate(()=>window.__LAB__.diagnostics())});}
 await choose('squat',2.7,'threeQuarter');
 for(const label of ['骨骼与关节','关节坐标轴','IK 端点']){await page.getByRole('switch',{name:label,exact:true}).click();assert.equal(await page.getByRole('switch',{name:label,exact:true}).getAttribute('aria-checked'),'true');}
-await page.waitForTimeout(250);await page.screenshot({path:'evidence/debug.png'});
-await page.getByRole('switch',{name:'人体表面',exact:true}).click();await page.screenshot({path:'evidence/skeleton.png'});
+await page.waitForTimeout(250);await page.screenshot({path:outputFile('debug.png')});
+await page.getByRole('switch',{name:'人体表面',exact:true}).click();await page.screenshot({path:outputFile('skeleton.png')});
 assert.equal(await page.evaluate(()=>{let visible=false;window.__LAB__.model.traverse(o=>{if(o.isSkinnedMesh&&o.visible)visible=true;});return visible;}),false);
 for(const label of ['人体表面','骨骼与关节','关节坐标轴','IK 端点'])await page.getByRole('switch',{name:label,exact:true}).click();
 result.checks.debug=true;
@@ -52,22 +73,46 @@ result.samples=await page.evaluate(()=>{const e=window.__LAB__,out={};for(const 
 for(const [id,samples]of Object.entries(result.samples)){assert(samples.every(s=>s.knee<=135.1&&s.elbow<=145.1));if(id==='forehand')assert(samples.every(s=>s.gripError<1e-8));}
 result.checks.motionSamples=true;
 // Responsive surface, including controls that move below the main canvas.
-await page.setViewportSize({width:390,height:844});await choose('ready',0,'front');await page.screenshot({path:'evidence/mobile.png'});await page.locator('.inspector').scrollIntoViewIfNeeded();await page.screenshot({path:'evidence/mobile-settings.png'});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);result.checks.mobileOverflow=false;
-await page.setViewportSize({width:1366,height:900});await choose('idle',0,'front');await page.screenshot({path:'evidence/laptop.png'});
+await page.setViewportSize({width:390,height:844});await choose('ready',0,'front');await page.screenshot({path:outputFile('mobile.png')});await page.locator('.inspector').scrollIntoViewIfNeeded();await page.screenshot({path:outputFile('mobile-settings.png')});assert.equal(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth),false);result.checks.mobileOverflow=false;
+await page.setViewportSize({width:1366,height:900});await choose('idle',0,'front');await page.screenshot({path:outputFile('laptop.png')});
 await page.setViewportSize({width:1536,height:1024});await choose('forehand',0,'threeQuarter');
 await page.getByRole('switch',{name:'球拍运动轨迹',exact:true}).click();await page.evaluate(()=>{window.__LAB__.loop=false;window.__LAB__.speed=1;});
 // Record the live WebGL canvas at 30fps, without synthetic frame generation.
 const recorded=await page.evaluate(async()=>{const e=window.__LAB__,stream=e.renderer.domElement.captureStream(30);const type=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';const recorder=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:4500000}),chunks=[];recorder.ondataavailable=ev=>chunks.push(ev.data);const done=new Promise(resolve=>recorder.onstop=async()=>{const data=await new Blob(chunks,{type:'video/webm'}).arrayBuffer();stream.getTracks().forEach(t=>t.stop());resolve(Array.from(new Uint8Array(data)));});recorder.start();e.replay();const poll=setInterval(()=>{if(!e.playing){clearInterval(poll);setTimeout(()=>recorder.stop(),200);}},50);setTimeout(()=>{if(recorder.state==='recording'){clearInterval(poll);recorder.stop();}},15000);return done;});
-fs.writeFileSync('evidence/forehand.webm',Buffer.from(recorded));result.checks.liveVideo=true;
+atomicWriteFile(outputFile('forehand.webm'),Buffer.from(recorded));result.checks.liveVideo=true;
 // --- Pose-package E2E: the real service solves a real package, delivered
 // through the real file input, decoded by the lab's PosePackageSource.
-try{await fetch('http://127.0.0.1:8788/v1/capabilities');}
-catch{
+// Service ownership is EXCLUSIVE by default: the port must be free so the QA
+// spawns this checkout's own service — a foreign worktree process on the same
+// port is a failure, never a silent reuse (issue #11 WP-0C). Setting
+// QA_SERVICE_URL explicitly opts into an external service, whose identity is
+// then verified (human3d-motion v1 + SERVICE_VERSION equal to this checkout's
+// protocol.ts). Port reachability alone is never sufficient evidence.
+const expectedServiceVersion=()=>{
+ const text=fs.readFileSync(path.join(repoRoot,'packages/motion-core/src/protocol.ts'),'utf8');
+ return /SERVICE_VERSION\s*=\s*'([^']+)'/.exec(text)?.[1];
+};
+const verifyServiceIdentity=async()=>{
+ const caps=await (await fetch(serviceUrl('/v1/capabilities'))).json();
+ if(caps?.service?.name!=='human3d-motion'||caps?.service?.protocol!=='v1')
+  throw new Error(`${serviceBase.origin} is not a human3d motion v1 service`);
+ const expected=expectedServiceVersion();
+ if(expected&&caps.service.version!==expected)
+  throw new Error(`service at ${serviceBase.origin} reports SERVICE_VERSION ${caps.service.version}, but this checkout has ${expected} — refusing to QA against another checkout's service`);
+};
+if(process.env.QA_SERVICE_URL!==undefined){
+ await verifyServiceIdentity();
+}else{
+ if(!['127.0.0.1','localhost','::1'].includes(serviceBase.hostname))throw new Error(`motion service is unavailable at ${serviceBase.origin}`);
+ const {assertPortAvailable}=await import('./lib/worktree-check.mjs');
+ await assertPortAvailable(serviceBase.hostname,Number(serviceBase.port||8788));
  const {spawn}=await import('node:child_process');
- svc=spawn('npx',['tsx','apps/server/src/serve.ts'],{stdio:'ignore'});
- for(let i=0;i<100;i++){try{await fetch('http://127.0.0.1:8788/v1/capabilities');break;}catch{await new Promise(r=>setTimeout(r,300));if(i===99){svc.kill();throw new Error('motion service did not start on 127.0.0.1:8788');}}}
+ svc=spawn('npx',['tsx','apps/server/src/serve.ts'],{stdio:'ignore',env:{...process.env,HUMAN3D_PORT:serviceBase.port||'8788'}});
+ for(let i=0;i<100;i++){try{await fetch(serviceUrl('/v1/capabilities'));break;}catch{await new Promise(r=>setTimeout(r,300));if(i===99){svc.kill();throw new Error(`motion service did not start at ${serviceBase.origin}`);}}}
+ await verifyServiceIdentity();
+ if(svc.exitCode!==null)throw new Error(`spawned motion service exited early (code ${svc.exitCode}); whatever answered on ${serviceBase.origin} is not ours`);
 }
-const pkgResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'idle'}})});
+const pkgResponse=await fetch(serviceUrl('/v1/motions'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'idle'}})});
 assert.equal(pkgResponse.status,200,'POST /v1/motions should return a pose package');
 const pkg=await pkgResponse.json();
 assert.equal(pkg.kind,'pose-package');assert.equal(pkg.rig.bones,163);
@@ -80,11 +125,11 @@ assert.equal(await page.locator('.motion-row').count(),9);
 assert.equal(await page.locator('.viewport-heading h2').textContent(),'自然站立');
 const pkgDiag=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(1.2);return {diagnostics:e.diagnostics(),status:e.source.status,error:e.source.error};});
 assert.equal(pkgDiag.status,'ready');assert.equal(pkgDiag.diagnostics.bones,163);assert(pkgDiag.diagnostics.root.every(Number.isFinite),'pose-package root must be finite');
-await page.screenshot({path:'evidence/pose-package.png'});result.checks.posePackage=true;
+await page.screenshot({path:outputFile('pose-package.png')});result.checks.posePackage=true;
 // Envelope derivation for a prop action: a bundled forehand package must
 // remount the racket (constant display — v2 carries no per-frame grip) and
 // resurface the hand-view/trail affordances; document.loop:false → one-shot.
-const fhResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'forehand'}})});
+const fhResponse=await fetch(serviceUrl('/v1/motions'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'forehand'}})});
 assert.equal(fhResponse.status,200,'POST /v1/motions {forehand} failed');
 const fhPkg=await fhResponse.json();
 await page.locator('input[type=file]').setInputFiles({name:'forehand.pose.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fhPkg))});
@@ -102,7 +147,7 @@ await choose('idle',0,'front'); // restore a bundled motion before the workshop 
 // NOTE: svc stays up — the workshop export assertions below POST the same
 // document to the real service for the byte-parity check.
 // --- Workshop E2E: real pointer drag → save → reload keeps the edited pose.
-await page.goto('http://127.0.0.1:5173/workshop.html');
+await page.goto(webUrl('/workshop.html'));
 await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
 assert.equal(await page.locator('.ws-key').count(),5);
 assert.equal(await page.locator('canvas').count(),1);
@@ -175,7 +220,7 @@ assert.deepEqual(shapeProblems,[],`shape check rejected the exported package: ${
 // same-engine byte-identity half of this contract is pinned separately by
 // apps/server/src/package-export.test.ts (buildPosePackageLocal vs handleRequest
 // under one Node process, toEqual on the full body).
-const peerResponse=await fetch('http://127.0.0.1:8788/v1/motions',{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'workshop-doc',parameters:{document:wsDoc}},sample:{fps:wsExportFps}})});
+const peerResponse=await fetch(serviceUrl('/v1/motions'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'workshop-doc',parameters:{document:wsDoc}},sample:{fps:wsExportFps}})});
 assert.equal(peerResponse.status,200,'service POST /v1/motions rejected the workshop document');
 const peerPkg=await peerResponse.json();
 const nearEqual=(a,b,path='$')=>{
@@ -193,7 +238,7 @@ const nonNumeric=v=>JSON.parse(JSON.stringify(v,(_k,x)=>typeof x==='number'?0:x)
 assert.deepEqual(nonNumeric(exported),nonNumeric(peerPkg),'package skeleton (ids/hashes/labels) differs from the service response');
 // Round-trip closure: the downloaded .pose.json must decode through the lab's
 // real file input — the same path the service-built package used above.
-await page.goto('http://127.0.0.1:5173/');
+await page.goto(webUrl('/'));
 await page.waitForFunction(()=>window.__LAB__?.ready,{timeout:60000});
 await page.locator('.loading-state').waitFor({state:'hidden'});
 await page.locator('input[type=file]').setInputFiles({name:download.suggestedFilename(),mimeType:'application/json',buffer:Buffer.from(exportedText)});
@@ -207,7 +252,7 @@ result.checks.workshopPackageExport=true;
 svc?.kill();svc=undefined; // every service-dependent assertion is done
 // Back to the workshop for the remaining pinned edits — the library
 // persists the QA doc's active selection across the navigation.
-await page.goto('http://127.0.0.1:5173/workshop.html');
+await page.goto(webUrl('/workshop.html'));
 await page.waitForFunction(()=>window.__WS__?.ready,{timeout:60000});
 assert((await page.evaluate(()=>window.__WS__.getDoc().name)).includes('QA 测试动作'),'QA doc lost the active selection across navigation');
 // --- Workshop GLB export: the derived binary download. Assert the container
@@ -564,12 +609,12 @@ await page.waitForTimeout(180);
 const abState=await page.evaluate(()=>({time:window.__WS__.time,view:window.__WS__.view,camera:window.__WS__.camera.position.toArray()}));
 await page.locator('[data-testid="preview-source"]').click();await page.waitForTimeout(180);
 assert.deepEqual(await page.evaluate(()=>window.__WS__.camera.position.toArray()),abState.camera,'A preview changed the camera');
-await page.locator('.ws-canvas canvas').screenshot({path:'evidence/generate-forehand-source.png'});
+await page.locator('.ws-canvas canvas').screenshot({path:outputFile('generate-forehand-source.png')});
 await page.locator('[data-testid="preview-candidate"]').click();await page.waitForTimeout(180);
 assert.equal(await page.evaluate(()=>window.__WS__.time),abState.time,'B preview changed the playhead time');
 assert.equal(await page.evaluate(()=>window.__WS__.view),abState.view,'B preview changed the camera preset');
 assert.deepEqual(await page.evaluate(()=>window.__WS__.camera.position.toArray()),abState.camera,'B preview changed the camera');
-await page.locator('.ws-canvas canvas').screenshot({path:'evidence/generate-forehand-candidate.png'});
+await page.locator('.ws-canvas canvas').screenshot({path:outputFile('generate-forehand-candidate.png')});
 result.checks.workshopGenerationAB=true;
 
 const keptIdBefore=await page.evaluate(()=>{
@@ -602,6 +647,6 @@ assert.equal(await page.evaluate(()=>window.__WS_GENERATOR__.activeId()),keptId,
 result.checks.workshopGenerationKeepExportUndo=true;
 
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
-fs.writeFileSync('evidence/browser-results.json',JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
+atomicWriteFile(outputFile('browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 
 } finally {svc?.kill();await browser.close();}

@@ -25,11 +25,12 @@
 ## 任务与审查入口
 
 - **知识索引**（按任务/模块找文档，新任务从这里进）：[`docs/README.md`](docs/README.md)
-- **任务协议**：task brief 模板、owner lane、运行 ledger → [`docs/engineering/task-protocol.md`](docs/engineering/task-protocol.md)
-- **审查门禁**：Fast Review / Final Review 双门禁 + 验证生命周期 → [`docs/engineering/review-gates.md`](docs/engineering/review-gates.md)
+- **审查协议**：task brief、Fast/Final Review verdict 字段、交接 → [`docs/engineering/review-protocol.md`](docs/engineering/review-protocol.md)（模板：task-brief-template.md、review-record-template.md、examples/）
+- **验证生命周期**：Level 0–3 最小验证 + 合并门禁现状 → [`docs/engineering/review-gates.md`](docs/engineering/review-gates.md)；CI Draft/Ready 事件矩阵 → [`docs/engineering/ci-lifecycle.md`](docs/engineering/ci-lifecycle.md)
+- **owner lane 与 ledger**：任务切片/热文件归属 → [`docs/engineering/task-protocol.md`](docs/engineering/task-protocol.md)
 - **最小验证集**：改动面 → 定向测试映射 → [`docs/engineering/test-matrix.md`](docs/engineering/test-matrix.md)
-- **worktree 隔离**：依赖/端口/测试发现防串线 → [`docs/engineering/worktree-policy.md`](docs/engineering/worktree-policy.md)
-- **规划/待实现**（不是已存在命令，勿直接使用）：`check:affected`/`check:full`（PR-11B）、CI Draft/Ready 生命周期与 concurrency（PR-11A）、`.agents/skills/` 规范 skill（PR-11A）。
+- **worktree 隔离**：依赖/端口/测试发现防串线 → [`docs/engineering/worktree-policy.md`](docs/engineering/worktree-policy.md)；`npm run worktree:check` 实查
+- **规划/待实现**（不是已存在命令，勿直接使用）：`check:affected`/`check:full`（PR-11B）、`.agents/skills/` 规范 skill（PR-11A 遗留）。
 
 ## 项目验证命令
 
@@ -48,6 +49,7 @@
 - `npx tsx scripts/generate-motion.mts [forehand|squat|forehand-detuned|squat-detuned|all]` — 确定性约束轨迹优化器；实现在 `generate.ts`，输出 `evidence/generate-*.json`
 - `npm run bench` — workshop 管线性能基线（`--quick` 冒烟 / `--compare` 对比；基线 `evidence/bench-workshop.json`，仅同机可比，GC 趋势需 `NODE_OPTIONS=--expose-gc`）
 - `node scripts/forehand-study/drive.mjs <ops.json> <out.doc.json>` — 工作台真实 UI 写路径回放器（需 dev server :5173）；账本见 `spec/examples/forehand-study.md`
+- `npm run worktree:check -- --source-root <源 checkout> [--worktree-root <worktree>]` — worktree 隔离检查：workspace link 解析、端口冲突、路径边界（不进 CI，任务并行前自跑）
 
 ## 验证策略（Level 0–3 × Review/Verify 生命周期）
 

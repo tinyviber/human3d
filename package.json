@@ -24,7 +24,9 @@
     "dynamics:test": "python3 scripts/test-dynamics-records.py",
     "dynamics:new": "python3 scripts/new-muscle-action.py",
     "dynamics:build": "python3 scripts/build-muscle-action.py",
-    "qa:dynamics": "node scripts/dynamics-browser-qa.mjs"
+    "qa:dynamics": "node scripts/dynamics-browser-qa.mjs",
+    "dynamics:extract-reference": "node scripts/extract-dynamics-reference.mjs",
+    "worktree:check": "node scripts/check-worktree.mjs"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",

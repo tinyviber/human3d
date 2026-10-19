@@ -11,7 +11,7 @@
 | 改工作台 UI/交互/持久化 | [domain/workshop.md](domain/workshop.md) → [WORKSHOP.md](WORKSHOP.md) → [QA.md](QA.md) | 真实 UI 写路径、显示/编辑分离、隔离区、撤销语义 |
 | 改包结构/依赖方向/构建 | [ARCHITECTURE.md](ARCHITECTURE.md) → `tests/architecture.test.ts` | 单向依赖、core 纯度、边界自动强制 |
 | 新增/改肌肉驱动动作 | [ACTION-TEMPLATE.md](ACTION-TEMPLATE.md) → [DYNAMICS.md](DYNAMICS.md) | 信封注册表、dynamics-motion kind、Python 工具链 |
-| 接任务/提交流程本身 | [engineering/task-protocol.md](engineering/task-protocol.md) → [engineering/review-gates.md](engineering/review-gates.md) | task brief、Fast/Final Review、Level 0–3 |
+| 接任务/提交流程本身 | [engineering/review-protocol.md](engineering/review-protocol.md) → [engineering/task-protocol.md](engineering/task-protocol.md) → [engineering/review-gates.md](engineering/review-gates.md) | task brief、Fast/Final Review、Level 0–3 |
 | 选最小验证集 | [engineering/test-matrix.md](engineering/test-matrix.md) | 改动面 → 定向测试映射 |
 | 开 worktree/并行任务 | [engineering/worktree-policy.md](engineering/worktree-policy.md) | 依赖/端口/测试发现防串线 |
 | 协议设计动机 | [ANIMATION-PROTOCOL-PLAN.md](ANIMATION-PROTOCOL-PLAN.md) | v1 MVP 边界、未实现项 |
@@ -21,7 +21,7 @@
 
 | 路径 | 内容 | 什么时候读 |
 |---|---|---|
-| [engineering/](engineering/) | 流程约定：任务协议、审查门禁、测试矩阵、worktree 隔离 | 接任务/提交前 |
+| [engineering/](engineering/) | 流程约定：review-protocol（审查协议 + 模板）、task-protocol（owner lane/ledger）、review-gates（验证生命周期）、ci-lifecycle（Draft/Ready CI 矩阵）、test-matrix、worktree-policy | 接任务/提交前 |
 | [domain/](domain/) | 领域不变量：motion-model / solver / pose-package / workshop | 改对应代码前按需读 |
 | [decisions/](decisions/) | ADR：已确认方案、被否方案与依据（0001–0009） | 要改某个设计前提时 |
 | [history/](history/) | 冻结的完整调查史（investigate.md）与 PR 审查记录（issue-11-pr13-16-review.md） | 只在需要历史证据时，非默认必读 |
@@ -36,7 +36,7 @@
 
 ## 常用命令速查
 
-- 门禁：`npx tsc -b`、`npm test`、`npm run spec:check`、`npm run build`、`npm run docs:check`（CI 全部执行；浏览器 `npm run qa`/`qa:dynamics` 未进 CI）
+- 门禁：`npx tsc -b`、`npm test`、`npm run spec:check`、`npm run build`、`npm run docs:check`（CI 的 `full` job 全部执行；Draft PR 只跑 `fast` bounded 检查，矩阵见 [engineering/ci-lifecycle.md](engineering/ci-lifecycle.md)；浏览器 `npm run qa`/`qa:dynamics` 未进 CI）
 - 定向：`npm test -- <test-file>`（低资源 `--maxWorkers=1 --no-file-parallelism`）
 - 测量/工具：`scripts/measure-motions.mts`、`measure-quality-probe.mts`、`generate-motion.mts`、`bench-workshop.mts`、`package-to-glb.mts`、`forehand-study/drive.mjs`——用途见根 `AGENTS.md`「项目验证命令」与 [engineering/test-matrix.md](engineering/test-matrix.md)
 - 动力学：`npm run dynamics:validate` / `dynamics:test` / `dynamics:new` / `dynamics:build`（需 `.venv-dynamics`，CI 门禁）
