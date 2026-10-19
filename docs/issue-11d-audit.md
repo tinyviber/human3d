@@ -143,3 +143,11 @@
 5. D5a：core 独立 tsconfig 收紧 lib；D5b：`loadRigFixture()` 共享助手（每测新实例）；references 先 profile。
 
 **审计验证范围**：静态读码 + `wc -l`/grep 定位 + `npm ci && npm run build` 实测 dist 字节。未跑 `npm test`/`spec:check`/`qa`（只读审计无代码变更，build 已含 `tsc -b` 通过）。dist/ 与 node_modules/ 为 gitignored 产物，本审计唯一入库写入为本文件。
+
+---
+
+## 外部审查附记（issue #11 四 PR 联审，归档于合并时）
+
+- **Verdict：PROCEED（可合并）**。审查确认本文件只做实施前调查：未提前拆 `document.ts`、未改 core exports、未搬 web 组件——边界合适。
+- **不得视为 P2 实施完成**。本记录对应 issue #11「建议 PR 划分」第 4 条的前置审计；D1–D5 是否实施及顺序应结合 #11 的性能目标重新排序——`document.ts` 846 行本身不是性能问题，是否立即拆取决于它实际造成的 Agent 冲突、上下文消耗与返工量。
+- 审查完整记录（含 #15/#16 返工项与集成注意）见 `docs/history/issue-11-pr13-16-review.md`（由 PR #13 引入）。
