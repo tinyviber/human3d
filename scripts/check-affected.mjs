@@ -1106,10 +1106,14 @@ export function main(argv=process.argv.slice(2),{root=repositoryRoot}={}){
   }));
  }
 
- // S2 boundary (pre-first-check)
- const s2=capturePair('S2');
- const s2special=s2.a.specialized??s2.b.specialized;
- const s2state=snapshotState();
+ // S2 boundary (pre-first-check). For a single selected check the S1 pair
+ // already bounds the pre-check state and post-check drift is caught by the
+ // pairwise P-vs-S1 projection comparison — the extra boundary pair would
+ // only add seconds of full-tree digests. With several checks S2 still gates
+ // the check sequence on a fresh consistency proof.
+ const s2=selection.selectedCheckIds.length>1?capturePair('S2'):null;
+ const s2special=s2?(s2.a.specialized??s2.b.specialized):null;
+ const s2state=s2?snapshotState():{complete:true,mismatch:false};
  if(s2special||s2state.mismatch||!s2state.complete){
   const kind=s2special??(s2state.mismatch?'snapshot-mismatch':'snapshot-unavailable');
   return finish(buildReceipt({

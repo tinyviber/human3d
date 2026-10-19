@@ -46,5 +46,5 @@
 - fail-open：新文件、未知路径、依赖图不完整、公共入口/包配置/TSConfig/CI 改动一律保守扩大验证，不得为省测试错误缩小影响面。
 - 输出 machine-readable receipt（base/head SHA、clean/dirty、选中/跳过及理由、命令/结果/耗时、未执行风险）；只有对应准确 head 且工作树验证期间未变的结果可作证据。
 - 快照成本分级：plan-only 每边界单次轻量捕获（不含全仓内容 digest），`snapshotConsistency` 标 `single-collected-boundary-git-visible`；`--run` 保留双采完整一致性证明（`double-collected-git-visible`）。
-- **性能基线（2025-01 实测，本地 clone，plan-only 端到端）**：docs-only 与单文件 TS 改动均为 ~0.5s（2 次轻量捕获）；改动前实现为 ~2.3–2.9s（4 次全量捕获）。验收口径：plan-only 选择器自身开销应 ≤1s、相对实际检查耗时只应是小数位占比；若快照/扫描成本回升到秒级以上，须重新评估采集策略而不是扩大防御逻辑。
+- **性能基线（2025-01 实测，本地 clone，端到端）**：plan-only 下 docs-only 与单文件 TS 改动均为 ~0.5s（2 次轻量捕获），旧实现为 ~2.3–2.9s（4 次全量捕获）；docs-only `--run` ~3.5s（6 次完整捕获，其中 docs 检查本身 <0.5s，其余为正式一致性证据成本）。验收口径：plan-only 选择器自身开销应 ≤1s、相对实际检查耗时只应是小数位占比；`--run` 用于正式验证证据（如交付/合并前），日常迭代优先 plan-only。若快照/扫描成本回升到秒级以上，须重新评估采集策略而不是扩大防御逻辑。
 - 开发期最小集合允许 `git diff --check`、小型 Red→Green、相关模块测试；最终 CI 永远跑完整必需套件。

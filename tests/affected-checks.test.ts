@@ -586,7 +586,10 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
   expect(receipt.selectedCheckIds).toEqual(['docs']);
   expect(receipt.executedCheckIds).toEqual(['docs']);
   expect(receipt.snapshotConsistency).toBe(SNAPSHOT_CONSISTENCY);
-  expect(receipt.snapshotCaptures).toHaveLength(6+2*1);
+  // Single-check run: S0+S1 boundary pairs + one post-check P pair — the
+  // dedicated S2 pair is skipped because S1 already bounds the pre-check
+  // state and drift is caught by the pairwise P-vs-S1 projection comparison.
+  expect(receipt.snapshotCaptures).toHaveLength(6);
   expect(receipt.checkResults.find((entry:{checkId:string})=>entry.checkId==='docs')?.outcome).toBe('passed');
   expect(receipt.failureKind).toBeNull();
  },30000);
