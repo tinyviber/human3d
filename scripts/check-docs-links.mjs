@@ -2,7 +2,7 @@
 /*
  * Markdown 相对链接检查器（零依赖，Node 标准库）。
  *
- * 覆盖范围：git 跟踪的全部 *.md（另含未被 ignore 的未跟踪 *.md，
+ * 覆盖范围：git 跟踪的全部 *.md / *.mdx（另含未被 ignore 的未跟踪同类文件，
  * 使本地提交前即可检查新文档）中的行内链接/图片目标 `](...)`。
  * 对相对链接做文件/目录存在性检查；外部 URL（scheme:...）、纯 # 锚点跳过。
  * 代码围栏（``` / ~~~）与行内 `code` 段内的 `](...)` 不计入。
@@ -68,7 +68,7 @@ const allowlistUsed = new Set();
 
 const files = [
   ...new Set(
-    execFileSync('git', ['ls-files', '-c', '-o', '--exclude-standard', '--', '*.md'], {
+    execFileSync('git', ['ls-files', '-c', '-o', '--exclude-standard', '--', '*.md', '*.mdx'], {
       cwd: ROOT,
       encoding: 'utf8',
     })
