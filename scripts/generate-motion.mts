@@ -21,7 +21,7 @@ import {createService} from '@human3d/server';
 import {attachRacket,motionFileById,generateMotion,subsampleDoc,
  buildGenContext,applyGenMove,retimeStep,
  type ChannelGroup,type MotionGenResult,type WorkshopDoc} from '@human3d/motion-core';
-import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 
 const root=process.cwd();
 const output=resolveOutputDir('generate-motion',process.argv.slice(2),root,process.env);
@@ -94,7 +94,7 @@ for(const id of ids){
   const failed=cand.constraints.filter(g=>!g.ok);
   console.log(`  constraints: ${cand.constraints.map(g=>`${g.ok?'✓':'✗'}${g.code}`).join('  ')}${failed.length?` — ${failed.map(g=>g.detail).join('；')}`:''}`);
  }
- fs.writeFileSync(outputFile(`generate-${id}.json`),JSON.stringify({
+ atomicWriteFile(outputFile(`generate-${id}.json`),JSON.stringify({
   case:id,damage:dmg.damage??null,
   request:{lockedKeyIds:c.lockedKeyIds??[],tip:!!c.tip},
   diagnostics:res.diagnostics,baseline:res.baseline,rejected:res.rejected,

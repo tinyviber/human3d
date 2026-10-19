@@ -10,7 +10,7 @@ import {posePackageToClip,exportGlb} from '@human3d/motion-core/glb';
 import {checkPosePackageShape} from '@human3d/motion-core';
 import {installFileReaderShim} from './lib/filereader-shim.mts';
 import type {PosePackage} from '@human3d/motion-core';
-import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 
 const root=process.cwd();
 const output=resolveOutputDir('package-to-glb',process.argv.slice(2),root,process.env);
@@ -36,6 +36,6 @@ if(problems.length){console.error(`INVALID PACKAGE ${input}:`);for(const p of pr
 const glb=await exportGlb(gltf.scene,posePackageToClip(pkg));
 ensureOutputDir(path.dirname(target),{root,updateEvidence:output.updateEvidence});
 const out=assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
-fs.writeFileSync(out,Buffer.from(glb));
+atomicWriteFile(out,Buffer.from(glb));
 const kb=(glb.byteLength/1024).toFixed(0);
 console.log(`${out} · ${kb}KB · ${pkg.timeline.count} frames × ${pkg.tracks.rotations.length+1} tracks · id ${pkg.id}`);

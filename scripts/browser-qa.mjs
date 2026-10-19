@@ -2,7 +2,7 @@ import {chromium} from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 // Dev-server URL for a motion-core source module: the Vite root is apps/web,
 // so workspace sources outside it are served through /@fs/ (the config's
 // server.fs.allow covers the repo root).
@@ -68,15 +68,38 @@ await page.setViewportSize({width:1536,height:1024});await choose('forehand',0,'
 await page.getByRole('switch',{name:'球拍运动轨迹',exact:true}).click();await page.evaluate(()=>{window.__LAB__.loop=false;window.__LAB__.speed=1;});
 // Record the live WebGL canvas at 30fps, without synthetic frame generation.
 const recorded=await page.evaluate(async()=>{const e=window.__LAB__,stream=e.renderer.domElement.captureStream(30);const type=MediaRecorder.isTypeSupported('video/webm;codecs=vp9')?'video/webm;codecs=vp9':'video/webm';const recorder=new MediaRecorder(stream,{mimeType:type,videoBitsPerSecond:4500000}),chunks=[];recorder.ondataavailable=ev=>chunks.push(ev.data);const done=new Promise(resolve=>recorder.onstop=async()=>{const data=await new Blob(chunks,{type:'video/webm'}).arrayBuffer();stream.getTracks().forEach(t=>t.stop());resolve(Array.from(new Uint8Array(data)));});recorder.start();e.replay();const poll=setInterval(()=>{if(!e.playing){clearInterval(poll);setTimeout(()=>recorder.stop(),200);}},50);setTimeout(()=>{if(recorder.state==='recording'){clearInterval(poll);recorder.stop();}},15000);return done;});
-fs.writeFileSync(outputFile('forehand.webm'),Buffer.from(recorded));result.checks.liveVideo=true;
+atomicWriteFile(outputFile('forehand.webm'),Buffer.from(recorded));result.checks.liveVideo=true;
 // --- Pose-package E2E: the real service solves a real package, delivered
 // through the real file input, decoded by the lab's PosePackageSource.
-try{await fetch(serviceUrl('/v1/capabilities'));}
-catch{
- const {spawn}=await import('node:child_process');
+// Service ownership is EXCLUSIVE by default: the port must be free so the QA
+// spawns this checkout's own service — a foreign worktree process on the same
+// port is a failure, never a silent reuse (issue #11 WP-0C). Setting
+// QA_SERVICE_URL explicitly opts into an external service, whose identity is
+// then verified (human3d-motion v1 + SERVICE_VERSION equal to this checkout's
+// protocol.ts). Port reachability alone is never sufficient evidence.
+const expectedServiceVersion=()=>{
+ const text=fs.readFileSync(path.join(repoRoot,'packages/motion-core/src/protocol.ts'),'utf8');
+ return /SERVICE_VERSION\s*=\s*'([^']+)'/.exec(text)?.[1];
+};
+const verifyServiceIdentity=async()=>{
+ const caps=await (await fetch(serviceUrl('/v1/capabilities'))).json();
+ if(caps?.service?.name!=='human3d-motion'||caps?.service?.protocol!=='v1')
+  throw new Error(`${serviceBase.origin} is not a human3d motion v1 service`);
+ const expected=expectedServiceVersion();
+ if(expected&&caps.service.version!==expected)
+  throw new Error(`service at ${serviceBase.origin} reports SERVICE_VERSION ${caps.service.version}, but this checkout has ${expected} — refusing to QA against another checkout's service`);
+};
+if(process.env.QA_SERVICE_URL!==undefined){
+ await verifyServiceIdentity();
+}else{
  if(!['127.0.0.1','localhost','::1'].includes(serviceBase.hostname))throw new Error(`motion service is unavailable at ${serviceBase.origin}`);
-  svc=spawn('npx',['tsx','apps/server/src/serve.ts'],{stdio:'ignore',env:{...process.env,HUMAN3D_PORT:serviceBase.port||'8788'}});
+ const {assertPortAvailable}=await import('./lib/worktree-check.mjs');
+ await assertPortAvailable(serviceBase.hostname,Number(serviceBase.port||8788));
+ const {spawn}=await import('node:child_process');
+ svc=spawn('npx',['tsx','apps/server/src/serve.ts'],{stdio:'ignore',env:{...process.env,HUMAN3D_PORT:serviceBase.port||'8788'}});
  for(let i=0;i<100;i++){try{await fetch(serviceUrl('/v1/capabilities'));break;}catch{await new Promise(r=>setTimeout(r,300));if(i===99){svc.kill();throw new Error(`motion service did not start at ${serviceBase.origin}`);}}}
+ await verifyServiceIdentity();
+ if(svc.exitCode!==null)throw new Error(`spawned motion service exited early (code ${svc.exitCode}); whatever answered on ${serviceBase.origin} is not ours`);
 }
 const pkgResponse=await fetch(serviceUrl('/v1/motions'),{method:'POST',headers:{'content-type':'application/json'},body:JSON.stringify({action:{id:'idle'}})});
 assert.equal(pkgResponse.status,200,'POST /v1/motions should return a pose package');
@@ -613,6 +636,6 @@ assert.equal(await page.evaluate(()=>window.__WS_GENERATOR__.activeId()),keptId,
 result.checks.workshopGenerationKeepExportUndo=true;
 
 result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
-fs.writeFileSync(outputFile('browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
+atomicWriteFile(outputFile('browser-results.json'),JSON.stringify(result,null,2));console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:recorded.length},null,2));
 
 } finally {svc?.kill();await browser.close();}

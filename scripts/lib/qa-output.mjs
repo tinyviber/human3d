@@ -262,6 +262,21 @@ export function assertTrackedWriteAllowed(target,{root,updateEvidence=false}){
  return absoluteTarget;
 }
 
+/* Publish contract: atomicWriteFile guarantees no partially-written final
+ * file (sibling temp + rename) for writes routed through it. Consumers that
+ * need a path up front — Playwright screenshots, download.saveAs — still write
+ * directly; only helper-mediated writes carry the no-partial-write guarantee. */
+export function atomicWriteFile(absoluteTarget,data){
+ const tmp=path.join(path.dirname(absoluteTarget),`.${path.basename(absoluteTarget)}.tmp-${randomUUID()}`);
+ try{fs.writeFileSync(tmp,data);}
+ catch(error){
+  try{fs.unlinkSync(tmp);}catch{/* best-effort cleanup */}
+  throw error;
+ }
+ fs.renameSync(tmp,absoluteTarget);
+ return absoluteTarget;
+}
+
 export function ensureOutputDir(dir,{root,updateEvidence=false}){
  const absoluteDir=path.resolve(dir);
  const rootDir=path.resolve(root);

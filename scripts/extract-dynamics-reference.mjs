@@ -2,7 +2,7 @@
  * exclusively from forward dynamics, never from these capture samples. */
 import fs from 'node:fs';
 import path from 'node:path';
-import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 import {BVHLoader} from 'three/addons/loaders/BVHLoader.js';
 import {Vector3,Quaternion,Group,AnimationMixer} from 'three';
 const root=process.cwd();
@@ -34,5 +34,5 @@ for(const spec of captures){
 }
 ensureOutputDir(path.dirname(target),{root,updateEvidence:output.updateEvidence});
 const outputFile=assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
-fs.writeFileSync(outputFile,JSON.stringify(result));
+atomicWriteFile(outputFile,JSON.stringify(result));
 console.log(`Extracted controller references to ${outputFile}:`,Object.fromEntries(Object.entries(result.captures).map(([id,v])=>[id,v.samples.length])));

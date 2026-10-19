@@ -16,15 +16,24 @@ afterEach(()=>{
  for(const dir of tempDirs.splice(0))fs.rmSync(dir,{recursive:true,force:true});
 });
 
-function makeWorkspaceLinks(worktreeRoot:string,escapeWorkspace?:string){
- const packages={
-  'motion-core':'packages/motion-core',
-  'web':'apps/web',
-  'server':'apps/server',
- } as const;
- for(const [name,relativeTarget] of Object.entries(packages)){
-  const target=name===escapeWorkspace?path.join(path.dirname(worktreeRoot),'outside-workspace'):path.join(worktreeRoot,relativeTarget);
-  fs.mkdirSync(target,{recursive:true});
+const PACKAGE_DIRS={
+ 'motion-core':'packages/motion-core',
+ 'web':'apps/web',
+ 'server':'apps/server',
+} as const;
+
+function makeWorkspaceLinks(worktreeRoot:string,escapeWorkspace?:string,swapTarget?:string){
+ fs.writeFileSync(path.join(worktreeRoot,'package.json'),JSON.stringify({workspaces:['apps/*','packages/*']}));
+ for(const [name,relativeTarget] of Object.entries(PACKAGE_DIRS)){
+  const declared=path.join(worktreeRoot,relativeTarget);
+  fs.mkdirSync(declared,{recursive:true});
+  fs.writeFileSync(path.join(declared,'package.json'),JSON.stringify({name:`@human3d/${name}`}));
+  const target=name===escapeWorkspace
+   ?path.join(path.dirname(worktreeRoot),'outside-workspace')
+   :name===swapTarget
+    ?path.join(worktreeRoot,Object.values(PACKAGE_DIRS).find(d=>d!==relativeTarget)!)
+    :declared;
+  if(name===swapTarget)fs.mkdirSync(target,{recursive:true});
   const link=path.join(worktreeRoot,'node_modules','@human3d',name);
   fs.mkdirSync(path.dirname(link),{recursive:true});
   fs.symlinkSync(target,link,'dir');
@@ -115,6 +124,16 @@ describe('workspace dependency link isolation',()=>{
   const result=validateWorkspaceLinks(worktreeRoot,WORKSPACES);
   expect(result.ok).toBe(false);
   expect(result.issues.length).toBeGreaterThan(0);
+ });
+
+ it('rejects a workspace link resolving to the wrong in-worktree package dir',()=>{
+  const base=tempDir();
+  const worktreeRoot=path.join(base,'worktree');
+  fs.mkdirSync(worktreeRoot,{recursive:true});
+  makeWorkspaceLinks(worktreeRoot,undefined,'motion-core');
+  const result=validateWorkspaceLinks(worktreeRoot,WORKSPACES);
+  expect(result.ok).toBe(false);
+  expect(result.issues.some(i=>i.includes('motion-core')&&i.includes('expected'))).toBe(true);
  });
 });
 

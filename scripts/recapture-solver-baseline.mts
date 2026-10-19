@@ -15,7 +15,7 @@ import {motionFileById} from '@human3d/motion-core';
 import {frameAt} from '@human3d/motion-core';
 import {solveEffectiveFrame} from '@human3d/motion-core';
 import type {RigInfo} from '@human3d/motion-core';
-import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 
 const root=process.cwd();
 const output=resolveOutputDir('recapture-solver-baseline',process.argv.slice(2),root,process.env);
@@ -48,6 +48,6 @@ for(const id of IDS){
   quats.push(bones.map(n=>rig.bone(n).quaternion.toArray() as number[]));
  }
  const next:GoldenFile={schema:old.schema,id,times:old.times,root,bones,quats};
- fs.writeFileSync(file,JSON.stringify(next,null,2)+'\n');
+ atomicWriteFile(file,JSON.stringify(next,null,2)+'\n');
  console.log(`${id}: recaptured ${old.times.length} instants × ${bones.length} bones from the current solver`);
 }

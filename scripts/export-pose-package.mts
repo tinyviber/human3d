@@ -8,7 +8,7 @@ import path from 'node:path';
 import {createService,handleRequest} from '@human3d/server';
 import {validatePosePackage} from '@human3d/motion-core';
 import type {PosePackage} from '@human3d/motion-core';
-import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 const root=process.cwd();
 const output=resolveOutputDir('export-pose-package',process.argv.slice(2),root,process.env);
 const [id='idle',requestedOut]=output.args;
@@ -22,7 +22,7 @@ const errors=validatePosePackage(pkg,ctx.manifest);
 if(errors.length){console.error('VALIDATION FAILED',errors);process.exit(1);}
 ensureOutputDir(path.dirname(target),{root,updateEvidence:output.updateEvidence});
 const out=assertTrackedWriteAllowed(target,{root,updateEvidence:output.updateEvidence});
-fs.writeFileSync(out,JSON.stringify(pkg));
+atomicWriteFile(out,JSON.stringify(pkg));
 if(id==='idle'&&!output.updateEvidence){
  const expected=fs.readFileSync(path.resolve(root,'spec/examples/idle.pose.json'));
  const generated=fs.readFileSync(out);

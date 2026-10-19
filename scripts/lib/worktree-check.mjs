@@ -49,17 +49,69 @@ export function validateWorktreePath(repoRoot,worktreeRoot){
  return {ok:issues.length===0,issues};
 }
 
+const workspacePackageDirs=root=>{
+ const manifestPath=path.join(root,'package.json');
+ let manifest;
+ try{manifest=JSON.parse(fs.readFileSync(manifestPath,'utf8'));}
+ catch(error){throw new Error(`could not read workspace manifest ${manifestPath}: ${error instanceof Error?error.message:String(error)}`);}
+ const dirs=new Map();
+ for(const pattern of manifest.workspaces??[]){
+  if(typeof pattern!=='string'||pattern.includes('**'))continue;
+  const star=pattern.indexOf('*');
+  if(star<0){
+   let name;
+   try{name=JSON.parse(fs.readFileSync(path.join(root,pattern,'package.json'),'utf8')).name;}
+   catch{continue;}
+   if(typeof name==='string'&&name)dirs.set(name,path.join(root,pattern));
+   continue;
+  }
+  const parentDir=path.join(root,pattern.slice(0,star));
+  let entries;
+  try{entries=fs.readdirSync(parentDir,{withFileTypes:true});}catch{continue;}
+  for(const entry of entries){
+   if(!entry.isDirectory())continue;
+   let name;
+   try{name=JSON.parse(fs.readFileSync(path.join(parentDir,entry.name,'package.json'),'utf8')).name;}
+   catch{continue;}
+   if(typeof name==='string'&&name)dirs.set(name,path.join(parentDir,entry.name));
+  }
+ }
+ return dirs;
+};
+
 export function validateWorkspaceLinks(worktreeRoot,workspaceNames){
  const root=realOrResolved(worktreeRoot);
  const issues=[];
+ let packages;
+ try{packages=workspacePackageDirs(root);}
+ catch(error){return {ok:false,issues:[error instanceof Error?error.message:String(error)]};}
  for(const name of workspaceNames){
-  const link=path.join(root,'node_modules','@human3d',name);
+  const scoped=name.startsWith('@')?name:`@human3d/${name}`;
+  const link=path.join(root,'node_modules','@human3d',scoped.replace(/^@[^/]+\//,''));
   let resolved;
   try{resolved=fs.realpathSync(link);}catch{
    issues.push(`missing workspace link ${path.relative(root,link)}; run npm ci inside this worktree`);
    continue;
   }
-  if(!inside(root,resolved))issues.push(`workspace link ${path.relative(root,link)} resolves outside worktree: ${resolved}`);
+  if(!inside(root,resolved)){
+   issues.push(`workspace link ${path.relative(root,link)} resolves outside worktree: ${resolved}`);
+   continue;
+  }
+  const expected=packages.get(scoped);
+  if(!expected){
+   issues.push(`workspace ${scoped} is not declared in ${path.join(root,'package.json')} workspaces`);
+   continue;
+  }
+  const expectedResolved=realOrResolved(expected);
+  if(resolved!==expectedResolved){
+   issues.push(`workspace link ${path.relative(root,link)} resolves to ${resolved}, expected ${expectedResolved}`);
+   continue;
+  }
+  let manifestName;
+  try{manifestName=JSON.parse(fs.readFileSync(path.join(resolved,'package.json'),'utf8')).name;}
+  catch{issues.push(`workspace link target ${resolved} has no readable package.json`);continue;}
+  if(manifestName!==scoped)
+   issues.push(`workspace link ${path.relative(root,link)} resolves to package ${manifestName??'<unnamed>'}, expected ${scoped}`);
  }
  return {ok:issues.length===0,issues};
 }

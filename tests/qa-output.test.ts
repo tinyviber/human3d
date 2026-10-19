@@ -4,7 +4,7 @@ import os from 'node:os';
 import path from 'node:path';
 import {execFileSync} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
-import {assertTrackedWriteAllowed,ensureOutputDir,resolveOutputDir} from '../scripts/lib/qa-output.mjs';
+import {assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir,resolveOutputDir} from '../scripts/lib/qa-output.mjs';
 import {resolveBuildOutDir} from '../apps/web/vite.config';
 
 const ROOT=path.resolve(path.dirname(fileURLToPath(import.meta.url)),'..');
@@ -529,17 +529,17 @@ describe('output preparation source order',()=>{
 
  it('prepares the dynamics reference output before a fresh write guard and write',()=>{
   const source=readRepoFile('scripts/extract-dynamics-reference.mjs');
-  expectFreshWriteOrder(source,/fs\.writeFileSync\s*\(\s*outputFile\s*,/);
+  expectFreshWriteOrder(source,/atomicWriteFile\s*\(\s*outputFile\s*,/);
  });
 
  it('prepares package-to-GLB output before a fresh write guard and write',()=>{
   const source=readRepoFile('scripts/package-to-glb.mts');
-  expectFreshWriteOrder(source,/fs\.writeFileSync\s*\(\s*out\s*,/);
+  expectFreshWriteOrder(source,/atomicWriteFile\s*\(\s*out\s*,/);
  });
 
  it('prepares pose-package output before a fresh write guard and write',()=>{
   const source=readRepoFile('scripts/export-pose-package.mts');
-  expectFreshWriteOrder(source,/fs\.writeFileSync\s*\(\s*out\s*,/);
+  expectFreshWriteOrder(source,/atomicWriteFile\s*\(\s*out\s*,/);
  });
 
  it('validates both bench output modes and preflights regular destinations',()=>{
@@ -561,13 +561,13 @@ describe('output preparation source order',()=>{
   }
 
   const profileMode=source.slice(profileStart,profileEnd);
-  const profileWrite=/fs\.writeFileSync\s*\(\s*profileOut\s*,/;
+  const profileWrite=/atomicWriteFile\s*\(\s*profileOut\s*,/;
   expect(profileMode).not.toMatch(/ensureOutputDir\s*\(\s*path\.dirname\s*\(\s*reportTarget|assertTrackedWriteAllowed\s*\(\s*reportTarget/);
   expectFreshWriteOrder(profileMode,profileWrite);
 
   const regularMode=source.slice(profileEnd+1);
-  const baselineWrite=/fs\.writeFileSync\s*\(\s*baselineOut\s*,/;
-  const reportWrite=/fs\.writeFileSync\s*\(\s*finalReportPath\s*,/;
+  const baselineWrite=/atomicWriteFile\s*\(\s*baselineOut\s*,/;
+  const reportWrite=/atomicWriteFile\s*\(\s*finalReportPath\s*,/;
   const firstRegularWrite=regularMode.search(baselineWrite);
   const finalReportWrite=regularMode.search(reportWrite);
   const firstRegularMeasurement=regularMode.search(/\brunStageLoop\s*\(/);
@@ -616,6 +616,25 @@ describe('output preparation source order',()=>{
   expect(compareGuardPosition).toBeGreaterThanOrEqual(0);
   expect(compareGuardPosition).toBeLessThan(firstRegularMeasurementAbsolute);
   expect(compareGuardPosition).toBeLessThan(firstRegularWriteAbsolute);
+ });
+});
+
+describe('atomic output writes',()=>{
+ it('publishes content via rename and leaves no sibling temp files',()=>{
+  const dir=tempDir();
+  const target=path.join(dir,'result.json');
+  atomicWriteFile(target,'{"a":1}');
+  expect(fs.readFileSync(target,'utf8')).toBe('{"a":1}');
+  expect(fs.readdirSync(dir)).toEqual(['result.json']);
+ });
+
+ it('replaces an existing file fully rather than appending or truncating in place',()=>{
+  const dir=tempDir();
+  const target=path.join(dir,'result.json');
+  atomicWriteFile(target,'long-original-contents');
+  atomicWriteFile(target,Buffer.from('short'));
+  expect(fs.readFileSync(target,'utf8')).toBe('short');
+  expect(fs.readdirSync(dir)).toEqual(['result.json']);
  });
 });
 

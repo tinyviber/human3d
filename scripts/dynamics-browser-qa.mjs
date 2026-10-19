@@ -2,7 +2,7 @@ import {chromium} from 'playwright';
 import fs from 'node:fs';
 import path from 'node:path';
 import assert from 'node:assert/strict';
-import {resolveOutputDir,assertTrackedWriteAllowed,ensureOutputDir} from './lib/qa-output.mjs';
+import {resolveOutputDir,assertTrackedWriteAllowed,atomicWriteFile,ensureOutputDir} from './lib/qa-output.mjs';
 
 const repoRoot=process.cwd();
 const output=resolveOutputDir('dynamics-browser-qa',process.argv.slice(2),repoRoot,process.env);
@@ -197,6 +197,6 @@ try{
  await page.evaluate(()=>{const e=window.__LAB__;e.setView('hand');e.seek(1.975);});await page.waitForTimeout(200);
  await page.screenshot({path:outputFile('punch-fist-hold.png')});result.punchFistHold='punch-fist-hold.png';
  result.errors=errors;result.warnings=warnings;assert.deepEqual(errors,[]);
- fs.writeFileSync(outputFile('dynamics-results.json'),JSON.stringify(result,null,2));
+ atomicWriteFile(outputFile('dynamics-results.json'),JSON.stringify(result,null,2));
  console.log(JSON.stringify({checks:result.checks,errors,warnings,poses:result.poses.length,videoBytes:result.videoBytes,punchKeyFrames},null,2));
 }finally{await browser.close();}

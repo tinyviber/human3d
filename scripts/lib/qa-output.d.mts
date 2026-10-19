@@ -18,4 +18,6 @@ export declare function assertTrackedWriteAllowed(
   options: { root: string; updateEvidence?: boolean },
 ): string;
 
+export declare function atomicWriteFile(absoluteTarget: string, data: string | Buffer): string;
+
 export declare function ensureOutputDir(dir: string, options: { root: string; updateEvidence?: boolean }): string;
