@@ -19,6 +19,6 @@
 - 任务收尾只把长期有用的裁决提炼到 [../decisions/](../decisions/) 或 [../learning.md](../learning.md)；逐轮过程不进默认必读面。
 - [../history/](../history/) 是冻结存档，不再追加。
 
-## 验证回执（规划/待实现，PR-11B）
+## 验证回执（已实现，PR-11B）
 
-`check:affected` 的 machine-readable receipt（base/head SHA、工作树 clean/dirty、选中/跳过及理由、命令/结果/耗时、未执行风险）落地前，回执由 task brief + PR 描述中的「已执行 / 未执行验证」清单手工承担——格式见 [review-gates.md](review-gates.md)「最终交付报告」。
+`npm run check:affected -- --base <sha>` 输出 machine-readable receipt（`.out/check-affected/<run>/receipt.json`）：base/head SHA、工作树 clean/dirty、选中/跳过检查及 fallback 理由、命令/结果/耗时、快照一致性模型。plan-only 用每边界单次轻量捕获（`snapshotConsistency: single-collected-boundary-git-visible`，不做全仓内容 digest）；`--run` 为正式验证证据保留双采完整捕获（`double-collected-git-visible`）。Receipt schemaVersion=2；`check:full` 统一封装仍是待实现项，在此之前交付报告照旧列「已执行 / 未执行验证」清单（格式见 [review-gates.md](review-gates.md)「最终交付报告」）。

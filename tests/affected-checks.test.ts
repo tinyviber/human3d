@@ -5,7 +5,7 @@ import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {execFileSync,spawnSync} from 'node:child_process';
 import {
- CHECK_IDS,FALLBACK_REASONS,RECEIPT_AUTHORITY,RECEIPT_SCHEMA_VERSION,
+ CHECK_IDS,CATEGORY_CHECKS,FALLBACK_REASONS,RECEIPT_AUTHORITY,RECEIPT_SCHEMA_VERSION,SNAPSHOT_CONSISTENCY,SNAPSHOT_CONSISTENCY_PLAN,
  classifyChangedPath,collectVitestTargets,createReceipt,fingerprintSnapshot,
  parseNameStatusZ,parsePorcelainV2Z,selectAffectedChecks,serializeReceipt,
 } from '../scripts/lib/affected-checks.mjs';
@@ -168,6 +168,9 @@ const classify=(relativePath:string,status='M')=>classifyChangedPath(relativePat
 
 describe('affected-check selector categories',()=>{
  it.each([
+  ['docs/ARCHITECTURE.md','docs',['docs']],
+  ['AGENTS.md','docs',['docs']],
+  ['docs/engineering/review-protocol.md','docs',['docs']],
   ['apps/web/src/lab/engine.ts','web',['fast','vitest','build']],
   ['apps/server/src/service.ts','server',['fast','spec','vitest','build']],
   ['packages/motion-core/src/document.ts','motion-core',['fast','spec','vitest','build']],
@@ -210,8 +213,7 @@ describe('affected-check selector categories',()=>{
   'vite.config.ts',
   '.npmrc',
   '.gitattributes',
-  'docs/engineering/review-protocol.md',
- ])('falls back to all six for %s',relativePath=>{
+ ])('falls back to all checks for %s',relativePath=>{
   const selection=selectAffectedChecks([{path:relativePath,status:'M'}]);
   expect(selection.selectedCheckIds).toEqual([...CHECK_IDS]);
   expect(selection.changedPaths[0]?.category).toBe('full-fallback');
@@ -219,8 +221,8 @@ describe('affected-check selector categories',()=>{
   expect(selection.fallbackReasons.length).toBeGreaterThan(0);
  });
 
- it('reports docs-only, unclassified, and unrepresentable reasons',()=>{
-  expect(classify('docs/ARCHITECTURE.md')).toMatchObject({fallbackReason:'docs-only'});
+ it('reports unclassified and unrepresentable reasons while docs stay a category',()=>{
+  expect(classify('docs/ARCHITECTURE.md')).toMatchObject({category:'docs',fallbackReason:null,selectedCheckIds:['docs']});
   expect(classify('README.unknown')).toMatchObject({fallbackReason:'unclassified-path'});
   expect(classify('../outside.ts')).toMatchObject({fallbackReason:'unrepresentable-path'});
  });
@@ -241,6 +243,15 @@ describe('affected-check selector categories',()=>{
   expect(selection.selectedCheckIds).toEqual(['fast','vitest','build','dynamics-validate','dynamics-test']);
  });
 
+ it('unions docs with code categories without widening',()=>{
+  const selection=selectAffectedChecks([
+   {path:'docs/ARCHITECTURE.md',status:'M'},
+   {path:'apps/web/src/lab/engine.ts',status:'M'},
+  ]);
+  expect(selection.selectedCheckIds).toEqual(['docs','fast','vitest','build']);
+  expect(selection.fallbackReasons).toEqual([]);
+ });
+
  it('lets any fallback overwrite every selective row',()=>{
   const selection=selectAffectedChecks([
    {path:'apps/web/src/lab/engine.ts',status:'M'},
@@ -256,11 +267,25 @@ describe('affected-check selector categories',()=>{
    [{path:'docs/ARCHITECTURE.md',status:'M'},{path:'scripts/a.mjs',status:'M'}],
    {dirty:true},
   );
-  expect(selection.fallbackReasons).toEqual(['dirty-tree','broad-input','docs-only']);
+  expect(selection.fallbackReasons).toEqual(['dirty-tree','broad-input']);
  });
 
  it.each(FALLBACK_REASONS)('keeps %s in the exported fallback vocabulary',reason=>{
   expect(FALLBACK_REASONS).toContain(reason);
+ });
+});
+
+describe('test-matrix parity',()=>{
+ it('keeps docs/engineering/test-matrix.md aligned with CATEGORY_CHECKS',()=>{
+  const doc=fs.readFileSync(path.join(repoRoot,'docs/engineering/test-matrix.md'),'utf8');
+  const section=doc.split('## check:affected 选择器映射')[1];
+  expect(section).toBeDefined();
+  const rows=[...section.matchAll(/^\|\s*([a-z-]+)\s*\|[^|]+\|\s*([a-z,-]+)\s*\|$/gm)]
+   .map(match=>({category:match[1],checks:match[2].replace(/`/g,'').split(',')}))
+   .filter(row=>!/^-+$/.test(row.category));
+  const expected=Object.entries(CATEGORY_CHECKS).map(([category,checks])=>({category,checks:[...checks]}));
+  expect(rows).toEqual(expected);
+  for(const row of rows)for(const checkId of row.checks)expect(CHECK_IDS).toContain(checkId);
  });
 });
 
@@ -333,10 +358,10 @@ describe('receipt contract',()=>{
  });
 
  it('pins schemaVersion and authority constants',()=>{
-  expect(RECEIPT_SCHEMA_VERSION).toBe(1);
+  expect(RECEIPT_SCHEMA_VERSION).toBe(2);
   expect(RECEIPT_AUTHORITY).toBe('human3d.local-check-runner');
   const receipt=build();
-  expect(receipt.schemaVersion).toBe(1);
+  expect(receipt.schemaVersion).toBe(RECEIPT_SCHEMA_VERSION);
   expect(receipt.authority).toBe('human3d.local-check-runner');
  });
 
@@ -402,6 +427,7 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
    fs.writeFileSync(target,contents);
    fs.chmodSync(target,0o755);
   };
+  stub('scripts/check-docs-links.mjs','process.exit(0);\n');
   stub('node_modules/vitest/vitest.mjs','process.exit(0);\n');
   stub('node_modules/typescript/bin/tsc','process.exit(0);\n');
   stub('node_modules/vite/bin/vite.js','process.exit(0);\n');
@@ -451,16 +477,20 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
   const [file]=receiptFiles(root);
   expect(file).toBeDefined();
   const receipt=JSON.parse(fs.readFileSync(file!,'utf8'));
-  expect(receipt.schemaVersion).toBe(1);
+  expect(receipt.schemaVersion).toBe(RECEIPT_SCHEMA_VERSION);
   expect(receipt.authority).toBe('human3d.local-check-runner');
   expect(receipt.state).toBe('planned');
   expect(receipt.selectedCheckIds).toEqual(['fast']);
+  expect(receipt.snapshotCaptures).toHaveLength(2);
+  expect(receipt.snapshotComplete).toBe(true);
+  expect(receipt.snapshotEqual).toBe(true);
+  expect(receipt.snapshotConsistency).toBe(SNAPSHOT_CONSISTENCY_PLAN);
   expect(receipt.cliExitCode).toBe(0);
   expect(fs.realpathSync(receipt.outputPath)).toBe(fs.realpathSync(file!));
   expect(Object.keys(receipt)[0]).toBe('schemaVersion');
  });
 
- it('forces all six when the worktree is dirty',()=>{
+ it('forces all checks when the worktree is dirty',()=>{
   const {root,base}=prepareRepo();
   fs.writeFileSync(path.join(root,'untracked.txt'),'dirty\n');
 
@@ -532,13 +562,42 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
     expect(Array.isArray(entry.cwd)).toBe(true);
    }
   }
- });
+ },30000);
 
- it('reports verified all-six checks with a second snapshot capture on a passing run',()=>{
-  const {root,base}=prepareRepo();
+ it('runs only the docs check for a docs-only change',()=>{
+  const {root}=prepareRepo();
   fs.writeFileSync(path.join(root,'docs.md'),'# docs\n');
   git(root,['add','-A']);
-  git(root,['commit','--quiet','-m','docs change']);
+  git(root,['commit','--quiet','-m','add docs']);
+  const docsBase=git(root,['rev-parse','HEAD']).toString('ascii').trim();
+  fs.writeFileSync(path.join(root,'docs.md'),'# docs\n\nmore\n');
+  git(root,['add','-A']);
+  git(root,['commit','--quiet','-m','modify docs']);
+
+  const result=runCli(root,['--base',docsBase,'--run']);
+
+  expect(result.stderr).toBe('');
+  expect(result.status).toBe(0);
+  const [file]=receiptFiles(root);
+  const receipt=JSON.parse(fs.readFileSync(file!,'utf8'));
+  expect(receipt.state).toBe('selected-passed');
+  expect(receipt.mode).toBe('run');
+  expect(receipt.claimScope).toBe('selected-checks-only');
+  expect(receipt.selectedCheckIds).toEqual(['docs']);
+  expect(receipt.executedCheckIds).toEqual(['docs']);
+  expect(receipt.snapshotConsistency).toBe(SNAPSHOT_CONSISTENCY);
+  expect(receipt.snapshotCaptures).toHaveLength(6+2*1);
+  expect(receipt.checkResults.find((entry:{checkId:string})=>entry.checkId==='docs')?.outcome).toBe('passed');
+  expect(receipt.failureKind).toBeNull();
+ },30000);
+
+ it('reports verified all checks with paired snapshot captures on a passing run',()=>{
+  const {root,base}=prepareRepo();
+  const manifest=JSON.parse(fs.readFileSync(path.join(root,'package.json'),'utf8'));
+  manifest.description='broad fixture change';
+  fs.writeFileSync(path.join(root,'package.json'),`${JSON.stringify(manifest,null,2)}\n`);
+  git(root,['add','-A']);
+  git(root,['commit','--quiet','-m','broad change']);
 
   const result=runCli(root,['--base',base,'--run']);
 
@@ -548,21 +607,22 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
   const receipt=JSON.parse(fs.readFileSync(file!,'utf8'));
   expect(receipt.state).toBe('verified');
   expect(receipt.mode).toBe('run');
-  expect(receipt.claimScope).toBe('all-six-checks');
+  expect(receipt.claimScope).toBe('all-checks');
   expect(receipt.checkResults.map((entry:{checkId:string})=>entry.checkId)).toEqual([...CHECK_IDS]);
   expect(receipt.executedCheckIds).toEqual([...CHECK_IDS]);
   expect(receipt.snapshotComplete).toBe(true);
-  expect(receipt.snapshotCaptures).toHaveLength(18);
+  expect(receipt.snapshotCaptures).toHaveLength(6+2*CHECK_IDS.length);
   expect(receipt.snapshotEqual).toBe(true);
+  expect(receipt.snapshotConsistency).toBe(SNAPSHOT_CONSISTENCY);
   expect(receipt.failureKind).toBeNull();
   expect(receipt.cliExitCode).toBe(0);
   expect(receipt.checkResults.map((entry:{outcome:string})=>entry.outcome)).toEqual(
-   Array(6).fill('passed'),
+   Array(CHECK_IDS.length).fill('passed'),
   );
   expect(receipt.checkResults.every((entry:{argv:unknown})=>Array.isArray(entry.argv))).toBe(true);
- });
+ },30000);
 
- it('treats assume-unchanged tracked files as hidden and runs all six',()=>{
+ it('treats assume-unchanged tracked files as hidden and runs all checks',()=>{
   const {root,base}=prepareRepo();
   fs.mkdirSync(path.join(root,'apps','web','src'),{recursive:true});
   fs.writeFileSync(path.join(root,'apps','web','src','a.ts'),'export const a=1;\n');
@@ -571,7 +631,7 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
   git(root,['update-index','--assume-unchanged','apps/web/src/a.ts']);
   fs.writeFileSync(path.join(root,'apps','web','src','a.ts'),'export const a=2;\n');
 
-  const result=runCli(root,['--base',base]);
+  const result=runCli(root,['--base',base,'--run']);
 
   expect(result.status).toBe(0);
   const [file]=receiptFiles(root);
@@ -579,7 +639,7 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
   expect(receipt.selectedCheckIds).toEqual([...CHECK_IDS]);
   expect(receipt.fallbackReasons).toContain('dirty-tree');
   expect(receipt.repository.worktreeMatchesIndex).toBe(false);
- });
+ },30000);
 
  it('ignores repository-local excludesFile when detecting untracked source',()=>{
   const {root,base}=prepareRepo();

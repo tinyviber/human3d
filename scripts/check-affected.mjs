@@ -4,7 +4,7 @@ import path from 'node:path';
 import {fileURLToPath,pathToFileURL} from 'node:url';
 import {spawnSync} from 'node:child_process';
 import {
- CHECK_IDS,FALLBACK_REASONS,decodeUtf8Strict,RECEIPT_AUTHORITY,RECEIPT_SCHEMA_VERSION,SNAPSHOT_CONSISTENCY,GIT_CONFIG_PREAMBLE,FAILURE_MESSAGES,snapshotFingerprintFromCaptures,
+ CHECK_IDS,FALLBACK_REASONS,decodeUtf8Strict,RECEIPT_AUTHORITY,RECEIPT_SCHEMA_VERSION,SNAPSHOT_CONSISTENCY,SNAPSHOT_CONSISTENCY_PLAN,GIT_CONFIG_PREAMBLE,FAILURE_MESSAGES,snapshotFingerprintFromCaptures,
  AffectedCheckError,collectVitestTargets,createReceipt,fingerprintSnapshot,
  findGitRedirect,isSafeSha,parseNameStatusZ,parsePorcelainV2Z,
  sanitizedGitEnv,selectAffectedChecks,serializeReceipt,
@@ -179,18 +179,15 @@ const flagRecords=output=>{
  return records;
 };
 
-const detectHiddenIndex=context=>{
- for(const record of flagRecords(context.run(['ls-files','-v','-z']).stdout)){
+const hiddenIndexFromOutputs=({v,f,stage,configBool})=>{
+ for(const record of flagRecords(v)){
   if(record.length>1&&record[0]!==0x48)return true;
  }
- for(const record of flagRecords(context.run(['ls-files','-f','-z']).stdout)){
+ for(const record of flagRecords(f)){
   if(record.length>1&&record[0]>=0x61&&record[0]<=0x7a)return true;
  }
- for(const probe of [['config','--bool','core.splitIndex'],['config','--bool','core.sparseCheckout']]){
-  const result=context.run(probe,{allowFailure:true});
-  if(result.status===0&&result.stdout.toString('ascii').trim()==='true')return true;
- }
- for(const record of flagRecords(context.run(['ls-files','--stage','-z']).stdout)){
+ if(configBool('core.splitIndex')||configBool('core.sparseCheckout'))return true;
+ for(const record of flagRecords(stage)){
   const space=record.indexOf(0x20);
   if(space<0)return true;
   if(record.subarray(0,space).toString('ascii')==='040000')return true;
@@ -202,6 +199,16 @@ const detectHiddenIndex=context=>{
  }
  return false;
 };
+
+const detectHiddenIndex=context=>hiddenIndexFromOutputs({
+ v:context.run(['ls-files','-v','-z']).stdout,
+ f:context.run(['ls-files','-f','-z']).stdout,
+ stage:context.run(['ls-files','--stage','-z']).stdout,
+ configBool:name=>{
+  const result=context.run(['config','--bool',name],{allowFailure:true});
+  return result.status===0&&result.stdout.toString('ascii').trim()==='true';
+ },
+});
 
 const readTrackedFile=root=>relativePath=>fs.readFileSync(path.join(root,relativePath),'utf8');
 
@@ -442,6 +449,8 @@ export function checkCommands(checkId,{root,runRoot,vitestTargets=[]}){
  const node=process.execPath;
  const nodeBin=name=>path.join(root,'node_modules',name);
  switch(checkId){
+  case 'docs':
+   return [{checkId,command:node,args:[path.join(root,'scripts','check-docs-links.mjs')],cwd:root}];
   case 'fast':
    return [{checkId,command:node,args:[nodeBin('vitest/vitest.mjs'),'run','--maxWorkers=1','--no-file-parallelism',...FAST_TESTS],cwd:root}];
   case 'spec':
@@ -534,7 +543,7 @@ export function executeChecks(checkIds,{root,runRoot,vitestTargets=[]}){
 }
 
 const claimScopeFor=state=>
- state==='verified'?'all-six-checks'
+ state==='verified'?'all-checks'
   :state==='selected-passed'?'selected-checks-only'
    :state==='planned'?'selection-only':'none';
 
@@ -757,6 +766,81 @@ const captureOnce=({context,root,format,baseSha,captureId,boundary,checkId,pass,
  return {capture,derived,specialized};
 };
 
+/* Plan-only capture: one pass per boundary, no repository probe and no
+ * tracked/untracked/ignored content digests (the full-repository scans are the
+ * expensive part). Drift evidence still covers head movement, status, all six
+ * diff manifests/patches (patch hashes are content-sensitive), the untracked
+ * manifest, and index entries/flags; the two boundary captures are compared by
+ * the same projection rules. Run mode keeps the double-collected full capture —
+ * formal provenance pays the full scan cost there (SNAPSHOT_CONSISTENCY). */
+const capturePlanOnce=({context,root,baseSha,captureId,boundary,toolHash,envHash})=>{
+ const capture=emptyCapture(captureId,boundary,null,'plan');
+ const derived={headSha:null,mergeBaseSha:null,mergeBaseUnavailable:true,shallow:null,dirty:null,hiddenIndex:true,changedPaths:[],ignoredInputCount:null,worktreeMatchesIndex:null,statusRecords:[]};
+ const safe=fn=>{try{return fn();}catch{return null;}};
+
+ derived.headSha=safe(()=>revParseSha(context,'HEAD'));
+ capture.headStartSha=derived.headSha;
+
+ const shallowText=safe(()=>trimLf(context.run(['rev-parse','--is-shallow-repository']).stdout));
+ derived.shallow=shallowText==='true'?true:shallowText==='false'?false:null;
+
+ const mergeBaseResult=context.run(['merge-base',baseSha,derived.headSha??'HEAD'],{allowFailure:true});
+ derived.mergeBaseSha=mergeBaseResult.status===0?trimLf(mergeBaseResult.stdout):null;
+ derived.mergeBaseUnavailable=derived.mergeBaseSha===null;
+ const diffBase=derived.mergeBaseSha??baseSha;
+ const headRef=derived.headSha??'HEAD';
+
+ const statusOut=safe(()=>context.run(['status','--porcelain=v2','-z','--untracked-files=all','--find-renames=50%']).stdout);
+ capture.statusSha256=statusOut===null?null:framedHash('status-v1',[[statusOut]]);
+ const committedManifest=safe(()=>context.run(['diff',...DIFF_FLAGS,diffBase,headRef,'--']).stdout);
+ capture.committedManifestSha256=committedManifest===null?null:framedHash('committed-manifest-v1',[[committedManifest]]);
+ const stagedManifest=safe(()=>context.run(['diff',...DIFF_FLAGS,'--cached',headRef,'--']).stdout);
+ capture.stagedManifestSha256=stagedManifest===null?null:framedHash('staged-manifest-v1',[[stagedManifest]]);
+ const unstagedManifest=safe(()=>context.run(['diff',...DIFF_FLAGS,'--']).stdout);
+ capture.unstagedManifestSha256=unstagedManifest===null?null:framedHash('unstaged-manifest-v1',[[unstagedManifest]]);
+ const committedPatch=safe(()=>context.run(['diff',...PATCH_FLAGS,diffBase,headRef,'--']).stdout);
+ capture.committedPatchSha256=committedPatch===null?null:framedHash('committed-patch-v1',[[committedPatch]]);
+ const stagedPatch=safe(()=>context.run(['diff',...PATCH_FLAGS,'--cached',headRef,'--']).stdout);
+ capture.stagedPatchSha256=stagedPatch===null?null:framedHash('staged-patch-v1',[[stagedPatch]]);
+ const unstagedPatch=safe(()=>context.run(['diff',...PATCH_FLAGS,'--']).stdout);
+ capture.unstagedPatchSha256=unstagedPatch===null?null:framedHash('unstaged-patch-v1',[[unstagedPatch]]);
+ const untrackedManifest=safe(()=>context.run(['ls-files','--others','--exclude-standard','-z']).stdout);
+ capture.untrackedManifestSha256=untrackedManifest===null?null:framedHash('untracked-manifest-v1',[[untrackedManifest]]);
+
+ const stageOut=safe(()=>context.run(['ls-files','--stage','-z']).stdout);
+ capture.indexEntriesSha256=stageOut===null?null:framedHash('index-entries-v1',[[stageOut]]);
+ const rawV=safe(()=>context.run(['ls-files','-v','-z']).stdout);
+ const rawT=safe(()=>context.run(['ls-files','-t','-z']).stdout);
+ const rawF=safe(()=>context.run(['ls-files','-f','-z']).stdout);
+ capture.indexFlagsSha256=rawV===null||rawT===null||rawF===null?null:framedHash('index-flags-v1',[['ls-files-v',rawV],['ls-files-t',rawT],['ls-files-f',rawF]]);
+ try{
+  derived.hiddenIndex=rawV===null||rawF===null||stageOut===null?true:hiddenIndexFromOutputs({
+   v:rawV,f:rawF,stage:stageOut,
+   configBool:name=>{
+    const result=context.run(['config','--bool',name],{allowFailure:true});
+    return result.status===0&&result.stdout.toString('ascii').trim()==='true';
+   },
+  });
+ }catch{derived.hiddenIndex=true;}
+
+ try{
+  derived.statusRecords=statusOut===null?[]:parsePorcelainV2Z(statusOut);
+  derived.dirty=derived.statusRecords.length>0;
+ }catch{derived.statusRecords=null;derived.dirty=null;}
+ try{
+  derived.changedPaths=committedManifest===null?[]:parseNameStatusZ(committedManifest);
+ }catch{derived.changedPaths=null;}
+
+ capture.toolIdentitySha256=toolHash;
+ capture.environmentSha256=envHash;
+ capture.headEndSha=safe(()=>revParseSha(context,'HEAD'));
+
+ const PLAN_REQUIRED=['headStartSha','headEndSha','statusSha256','committedManifestSha256','stagedManifestSha256','unstagedManifestSha256','untrackedManifestSha256','committedPatchSha256','stagedPatchSha256','unstagedPatchSha256','indexEntriesSha256','indexFlagsSha256','toolIdentitySha256','environmentSha256'];
+ capture.complete=PLAN_REQUIRED.every(key=>capture[key]!==null);
+ capture.captureSha256=capture.complete?captureDigest(capture):null;
+ return {capture,derived,specialized:null};
+};
+
 const captureProjection=capture=>PROJECTION_KEYS.map(key=>capture[key]??null);
 const projectionsEqual=(a,b)=>{
  const pa=captureProjection(a);
@@ -863,6 +947,17 @@ export function main(argv=process.argv.slice(2),{root=repositoryRoot}={}){
   captures.push(b.capture);
   return {a,b};
  };
+ // Plan-only mode is advisory: one light capture per boundary (no repository
+ // probe, no full-tree content digests). Consistency is still evidenced —
+ // S0 and S1 are compared by projection — but the receipt declares the weaker
+ // single-collected model instead of paying for double full scans.
+ const capturePlanSingle=boundary=>{
+  const result=capturePlanOnce({context,root,baseSha:args.base,captureId:nextCaptureId++,boundary,toolHash,envHash});
+  result.capture.capturedAt=toIso(new Date());
+  captures.push(result.capture);
+  return {a:result,b:result};
+ };
+ const captureBoundary=args.run?capturePair:capturePlanSingle;
 
  const finish=(receipt)=>{
   try{publishReceipt(root,outputPath,receipt);}catch(error){
@@ -892,7 +987,7 @@ export function main(argv=process.argv.slice(2),{root=repositoryRoot}={}){
  }
 
  // S0 boundary
- const s0=capturePair('S0');
+ const s0=captureBoundary('S0');
  const receiptRepository=repositoryForCapture(root,context,format,s0.a);
  const firstSpecial=s0.a.specialized??s0.b.specialized;
  const headSha=s0.a.derived.headSha??s0.b.derived.headSha;
@@ -982,7 +1077,7 @@ export function main(argv=process.argv.slice(2),{root=repositoryRoot}={}){
  }
 
  // S1 boundary (post-selection)
- const s1=capturePair('S1');
+ const s1=captureBoundary('S1');
  const s1special=s1.a.specialized??s1.b.specialized;
  const s1state=snapshotState();
  const headBound=headSha;
@@ -1006,7 +1101,7 @@ export function main(argv=process.argv.slice(2),{root=repositoryRoot}={}){
    selection,executedCheckIds:[],checkResults:[],
    repository:receiptRepository,
    toolIdentity,environment,
-   ...snapshotFields(),snapshotComplete:true,snapshotEqual:true,snapshotConsistency:SNAPSHOT_CONSISTENCY,
+   ...snapshotFields(),snapshotComplete:true,snapshotEqual:true,snapshotConsistency:SNAPSHOT_CONSISTENCY_PLAN,
    cliExitCode:0,
   }));
  }

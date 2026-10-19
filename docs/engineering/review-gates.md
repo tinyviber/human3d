@@ -1,6 +1,6 @@
 # 审查门禁与验证生命周期
 
-本文合并两条既有口径：原 AGENTS.md 的「测试与验证策略」（Level 0–3）与 issue #11 的 Review/Verify 生命周期。**权威分工**：审查协议字段级契约（brief 字段、verdict、record 字段、rework/handoff 规则、模板与示例）在 [review-protocol.md](review-protocol.md)；本文拥有验证级别映射与合并门禁现状。`.agents/skills/` 规范 skill 属 **规划/待实现（PR-11A 遗留）**；`check:affected` 属 **规划/待实现（PR-11B）**。在 skill 落地前，两级 review 由任务流程中的独立 reviewer 按两文手工执行。
+本文合并两条既有口径：原 AGENTS.md 的「测试与验证策略」（Level 0–3）与 issue #11 的 Review/Verify 生命周期。**权威分工**：审查协议字段级契约（brief 字段、verdict、record 字段、rework/handoff 规则、模板与示例）在 [review-protocol.md](review-protocol.md)；本文拥有验证级别映射与合并门禁现状。`.agents/skills/` 规范 skill 属 **规划/待实现（PR-11A 遗留）**；`check:affected` 已实现（PR-11B，plan-only 出选择回执、`--run` 执行并出完整一致性回执）。在 skill 落地前，两级 review 由任务流程中的独立 reviewer 按两文手工执行。
 
 ## 目标循环
 
@@ -48,8 +48,9 @@ REWORK 后只复审 blocker 修复及受影响调用链，未变区域不重复�
 
 ## 合并门禁现状与规划
 
-- **现状（PR-11A 已落地）**：`test` workflow 区分 Draft/Ready——Draft 只跑 `fast`（bounded A1 检查）且 `required` 报 `draft_deferred`；Ready 与 `main` push 跑 `full`（`docs:check`、`tsc -b`、`spec:check`、全量 vitest、`build`）+ `dynamics`；稳定聚合检查 `test / required` 只认实际成功（skipped/cancelled/stale/unrun 一律红）。事件矩阵见 [ci-lifecycle.md](ci-lifecycle.md)。**尚未真实复演**：Draft→Ready 事件序列与远端 branch protection 配置（`test / required` 为必需检查）仍是待完成验收项。浏览器 E2E（`npm run qa`）**未进 CI**，其验证状态必须单独记录。
-- **规划/待实现（PR-11B）**：`check:affected`（只生成计划）/ `--run`（执行）/ `check:full`（完整本地验证）。落地前「affected checks」由人工按 [test-matrix.md](test-matrix.md) 映射执行。
+- **现状（PR-11A 已落地）**：`test` workflow 区分 Draft/Ready——Draft 只跑 `fast`（bounded A1 检查）且 `required` 报 `draft_deferred`；Ready 与 `main` push 跑 `full`（`docs:check`、`tsc -b`、`spec:check`、全量 vitest、`build`）+ `dynamics`；稳定聚合检查 `test / required` 只认实际成功（skipped/cancelled/stale/unrun 一律红）。事件矩阵见 [ci-lifecycle.md](ci-lifecycle.md)（`converted_to_draft`/`ready_for_review` 已在 PR #15 实测复演；`main` push 事件与远端 branch protection 配置——`test / required` 为必需检查——仍是待完成验收项，`main` 当前无任何保护规则）。浏览器 E2E（`npm run qa`）**未进 CI**，其验证状态必须单独记录。
+- **已实现（PR-11B）**：`check:affected`（plan-only 选择回执）与 `--run`（顺序执行选中检查 + 完整一致性回执）；类别映射的唯一权威是 [test-matrix.md](test-matrix.md)「选择器映射」表，与 `CATEGORY_CHECKS` 有矩阵一致性测试钉死。
+- **规划/待实现**：`check:full`（完整本地验证的统一封装）。
 - **规划/待实现（PR-11A 遗留）**：`.agents/skills/` 下的 `task-slice`/`fast-review`/`final-review`/`handoff` 规范 skill。
 
 ## 最终交付报告（每次任务必须说明）

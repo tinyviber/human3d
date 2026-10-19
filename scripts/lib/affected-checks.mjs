@@ -8,10 +8,11 @@ import {fileURLToPath} from 'node:url';
 import {performance} from 'node:perf_hooks';
 
 export const CHECK_IDS=Object.freeze([
- 'fast','spec','vitest','build','dynamics-validate','dynamics-test',
+ 'docs','fast','spec','vitest','build','dynamics-validate','dynamics-test',
 ]);
 
 export const SNAPSHOT_CONSISTENCY='double-collected-git-visible';
+export const SNAPSHOT_CONSISTENCY_PLAN='single-collected-boundary-git-visible';
 
 export class AffectedCheckError extends Error{
  constructor(message,kind='snapshot-unavailable',options){
@@ -148,7 +149,7 @@ export function parsePorcelainV2Z(input){
  return parsed;
 }
 
-export const RECEIPT_SCHEMA_VERSION=1;
+export const RECEIPT_SCHEMA_VERSION=2;
 export const RECEIPT_AUTHORITY='human3d.local-check-runner';
 
 export const GIT_CONFIG_PREAMBLE=Object.freeze([
@@ -160,11 +161,12 @@ export const GIT_CONFIG_PREAMBLE=Object.freeze([
 ]);
 
 export const FALLBACK_REASONS=Object.freeze([
- 'dirty-tree','delete-rename-copy','broad-input','docs-only','graph-uncertainty',
+ 'dirty-tree','delete-rename-copy','broad-input','graph-uncertainty',
  'merge-base-unavailable','shallow-repository','unclassified-path','unrepresentable-path',
 ]);
 
 export const CATEGORY_CHECKS=Object.freeze({
+ docs:Object.freeze(['docs']),
  web:Object.freeze(['fast','vitest','build']),
  server:Object.freeze(['fast','spec','vitest','build']),
  'motion-core':Object.freeze(['fast','spec','vitest','build']),
@@ -234,7 +236,7 @@ export function classifyChangedPath(relativePath,status='M'){
   return {category,fallbackReason:null,selectedCheckIds:Object.freeze([...CATEGORY_CHECKS[category]])};
  }
  if(safe.startsWith('assets/'))return fullFallback('broad-input');
- if(/\.mdx?$/i.test(safe))return fullFallback('docs-only');
+ if(/\.mdx?$/i.test(safe))return {category:'docs',fallbackReason:null,selectedCheckIds:Object.freeze([...CATEGORY_CHECKS.docs])};
  const candidates=[
   ['apps/web/src/', 'web'],
   ['apps/server/src/', 'server'],
@@ -276,7 +278,7 @@ export function selectAffectedChecks(changedPaths,{
   }
   return {selectedCheckIds:Object.freeze([...CHECK_IDS]),fallbackReasons,changedPaths:items};
  }
- const selected=new Set(['fast']);
+ const selected=new Set(items.length===0?['fast']:[]);
  for(const item of items){
   for(const checkId of item.selectedCheckIds)selected.add(checkId);
  }

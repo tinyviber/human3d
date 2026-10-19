@@ -32,9 +32,10 @@ export type Selection = {
 
 export declare const CHECK_IDS: readonly string[];
 export declare const FALLBACK_REASONS: readonly string[];
-export declare const RECEIPT_SCHEMA_VERSION: 1;
+export declare const RECEIPT_SCHEMA_VERSION: 2;
 export declare const RECEIPT_AUTHORITY: 'human3d.local-check-runner';
 export declare const SNAPSHOT_CONSISTENCY: string;
+export declare const SNAPSHOT_CONSISTENCY_PLAN: string;
 export declare const GIT_REDIRECT_VARIABLES: readonly string[];
 export declare const GIT_CONFIG_PREAMBLE: readonly string[];
 

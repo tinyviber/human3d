@@ -1,6 +1,6 @@
 # Worktree 隔离与资源约定
 
-**约定规范**：自动化的 worktree 校验脚本属 **规划/待实现（PR-11A）**；落地前以下条款由任务流程手工执行。
+**约定规范**：自动化校验已由 `npm run worktree:check -- --source-root <源 checkout> [--worktree-root <worktree>]` 提供（PR-11A 已落地）：worktree 路径边界、workspace link 解析到本 worktree 声明的包目录、端口独占检查。以下条款由任务流程与该脚本共同执行。
 
 ## 隔离规则
 
