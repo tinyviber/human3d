@@ -26,7 +26,8 @@
     "dynamics:build": "python3 scripts/build-muscle-action.py",
     "qa:dynamics": "node scripts/dynamics-browser-qa.mjs",
     "dynamics:extract-reference": "node scripts/extract-dynamics-reference.mjs",
-    "worktree:check": "node scripts/check-worktree.mjs"
+    "worktree:check": "node scripts/check-worktree.mjs",
+    "check:affected": "f(){ case \"${npm_node_execpath-}\" in /*) test -f \"$npm_node_execpath\" && test -x \"$npm_node_execpath\" && exec \"$npm_node_execpath\" scripts/check-affected.mjs \"$@\";; esac; printf '%s\\n' 'check:affected: required tool unavailable' >&2; exit 3; }; f"
   },
   "devDependencies": {
     "@types/node": "^24.19.2",
