@@ -12,6 +12,10 @@
  * 防止 allowlist 漂移成无声的白名单。
  *
  * 出口码：0 = 无死链（或全部 allowlisted）；1 = 有未豁免死链或过期豁免。
+ *
+ * 已知盲区（当前仓库无对应写法，暂未覆盖）：reference-style 链接
+ * `[t][r]` / `[r]: url`；目标含未编码空格的 `](a b.md)` 不匹配即静默跳过；
+ * 4 空格缩进代码块不排除。仓库出现这些写法时需补强本检查器。
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';

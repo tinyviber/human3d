@@ -12,7 +12,7 @@ import {analyzeProbeFrames,formatProbeReport,probeDocument,stepAngles,PROBE_POIN
  type ProbeFrame,type ProbeReport} from './quality-probe';
 
 /* Quality-probe smoke + structural tests (WP-C step 1: the probe graduates
- * from an ad-hoc script into src/workshop/quality-probe.ts). This commit
+ * from an ad-hoc script into packages/motion-core/src/quality-probe.ts). This commit
  * asserts only structural facts — the report exists, every field is finite,
  * the sampling grid honours the endpoint contract, and the probe measures the
  * REAL solve path (frame parity with solveWorkshop's package). Hard quality

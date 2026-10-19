@@ -28,4 +28,4 @@
 
 - `maxKeys`：写入入口（`ensureKey`、拖动自动建帧）先拒绝并提示，校验器隔离只是兜底——可写路径不得产出会被隔离的文档（learning [11]）。
 - `retimeKeys` 等值域变换在合法区间内整体缩放（loop 按 `[0, duration−loopGap]`），不能只夹边界端点——后者会把边界问题转移成内部一致性问题（learning [12]）。
-- 键时间进 `definitionSHA256`；迁移/归一化对时间做 `Math.round(t*1e6)/1e6` 浮点尾数归一。
+- 键时间随整个规范化文档进请求指纹与制品哈希；`normalizeDoc` 只折叠 `gripSide` 同义写法与 `canonicalizeHands`，不改写键时间（一次性迁移器曾按 `Math.round(t*1e6)/1e6` 归一，非现行行为——见 [../history/investigate.md](../history/investigate.md)）。

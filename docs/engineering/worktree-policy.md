@@ -8,7 +8,7 @@
 - 任何 checkout 不得共用可写 build/QA 产物：`dist/`、`evidence/`、QA 截图录屏都是 per-worktree 状态。
 - worktree 建立后在**自身根目录** `npm ci`，并校验 `node_modules/@human3d/*` 解析到本 checkout 的 workspace——不要默认同名包解析正确（曾发生 in-repo worktree 把 `@human3d/*` 解析到主 checkout 的串线）。
 - Vitest 发现范围必须排除其他 worktree、`dist/` 与临时产物；`npm test -- <path>` 定向时显式给本 worktree 内路径。
-- Vite dev（默认 5173）与 motion 服务（8788）端口不静默复用别的 Agent 进程：端口被占要明确失败而不是悄悄换端口（`strictPort`）；并行任务用环境变量分开端口。
+- Vite dev（默认 5173）与 motion 服务（8788）端口不静默复用别的 Agent 进程：端口被占要明确失败而不是悄悄换端口（约定用 vite `strictPort` 之类显式锁端口；当前 `vite.config.ts` 尚未设置，属待落地项）；并行任务用环境变量分开端口。
 - QA 输出写任务私有的未跟踪路径；只有显式动作（如 `--update-evidence` 口径）才把结果写回入库基线 `evidence/`。
 - 不 push 远端、不动分支保护、不动其他分支，除非 brief 明确授权。
 

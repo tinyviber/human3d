@@ -19,7 +19,7 @@
 | `spec/` | 发布契约：JSON Schema、OpenAPI、golden 样例 | 改动 = 协议变更；golden 保持明文 | [AGENTS.md](spec/AGENTS.md) |
 
 - 路径不变：`assets/motions/*.json` 仍是工具链与文档共用的信封注册表（motion-core 相对路径静态导入）；`public/`、`dist/` 在仓库根。
-- 命令入口不变：`npm run dev|build|preview|test|spec:check|docs:check|service|qa` 都在仓库根执行，`dev` 委派给 `@human3d/web`。
+- 命令入口：`npm run dev|build|preview|test|spec:check|docs:check|service|qa` 都在仓库根执行（`docs:check` 为本切片新增的文档链接检查），`dev` 委派给 `@human3d/web`。
 - 完整设计记录（迁移裁决、被否备选、维护规则）：[`docs/ARCHITECTURE.md`](docs/ARCHITECTURE.md)。
 
 ## 任务与审查入口
