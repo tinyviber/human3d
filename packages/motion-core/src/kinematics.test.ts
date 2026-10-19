@@ -49,12 +49,17 @@ describe('constant-length IK',()=>{
 });
 describe('real authored asset and animation data',()=>{
  it('has a skinned continuous human surface, 163 bones and complete fingers',()=>{let mesh:SkinnedMesh|undefined;rig.model.traverse(o=>{if(o instanceof SkinnedMesh)mesh=o;});expect(mesh).toBeDefined();expect(mesh!.geometry.getAttribute('position').count).toBe(53514);expect(rig.bones.size).toBe(163);for(const side of ['L','R'])for(let f=1;f<=5;f++)for(let j=1;j<=3;j++)expect(rig.bones.has(`finger${f}-${j}_${side}`)).toBe(true);const w=mesh!.geometry.getAttribute('skinWeight');for(let i=0;i<w.count;i++)expect(w.getX(i)+w.getY(i)+w.getZ(i)+w.getW(i)).toBeCloseTo(1,5);});
- it('resolves all eight bundled motion files and drives every rig bone',()=>{
-  // The eight envelopes are the lab's motion list; five carry an inline
-  // document, walk references its clip asset, and the two dynamics-motion
-  // envelopes replay their MyoSim record (covered by the dynamics QA suite)
-  // rather than writing the skin rig through the document path.
-  expect(MOTION_FILES.map(f=>f.id).sort()).toEqual(['baseball-throw','forehand','idle','punch','reach','ready','squat','walk']);
+ it('resolves all bundled motion files and drives every rig bone',()=>{
+  // The envelopes are the lab's motion list; walk references a clip asset,
+  // and the two dynamics-motion envelopes replay MyoSim records rather than
+  // writing the skin rig through the document path.
+  expect(MOTION_FILES.map(f=>f.id).sort()).toEqual([
+   'alejandro-davidovich-fokina-forehand','alex-de-minaur-forehand','alexander-bublik-forehand','alexander-zverev-forehand',
+   'baseball-throw','ben-shelton-forehand','carlos-alcaraz-forehand','daniil-medvedev-forehand','felix-auger-aliassime-forehand',
+   'flavio-cobolli-forehand','forehand','frances-tiafoe-forehand','holger-rune-forehand','idle','ignacio-buse-forehand',
+   'jakub-mensik-forehand','karen-khachanov-forehand','marin-cilic-forehand','novak-djokovic-forehand','punch','reach','ready',
+   'roger-federer-forehand','squat','walk',
+  ]);
   for(const f of MOTION_FILES.filter(f=>f.kind!=='dynamics-motion')){
    expect(f.duration).toBeGreaterThan(1);
    const cleanup=setPose(f.id,f.duration/2);
@@ -73,11 +78,11 @@ describe('real authored asset and animation data',()=>{
   for(const f of MOTION_FILES.filter(f=>f.kind!=='dynamics-motion'))for(let i=0;i<80;i++){const cleanup=setPose(f.id,i/80*durationOf(f.id));
    for(const side of ['L','R']){
     const hip=rig.point(`lowerleg01_${side}`).sub(rig.point(`upperleg01_${side}`)).applyQuaternion(rig.bone('root').getWorldQuaternion(new Quaternion()).invert());
-    const h=Math.atan2(hip.z,-hip.y)*180/Math.PI;expect(h).toBeGreaterThanOrEqual(-20.1);expect(h).toBeLessThanOrEqual(120.1);
+    const h=Math.atan2(hip.z,-hip.y)*180/Math.PI;expect(h,`${f.id}@${(i/80*durationOf(f.id)).toFixed(3)}:${side}`).toBeGreaterThanOrEqual(-20.1);expect(h,`${f.id}@${(i/80*durationOf(f.id)).toFixed(3)}:${side}`).toBeLessThanOrEqual(120.1);
     const shank=rig.point(`foot_${side}`).sub(rig.point(`lowerleg01_${side}`)).applyQuaternion(rig.bone(`foot_${side}`).getWorldQuaternion(new Quaternion()).invert());
-    const ankle=Math.atan2(-shank.z,-shank.y)*180/Math.PI;expect(ankle).toBeGreaterThanOrEqual(-40.1);expect(ankle).toBeLessThanOrEqual(20.1);
+    const ankle=Math.atan2(-shank.z,-shank.y)*180/Math.PI;expect(ankle,`${f.id}@${(i/80*durationOf(f.id)).toFixed(3)}:${side}`).toBeGreaterThanOrEqual(-40.1);expect(ankle,`${f.id}@${(i/80*durationOf(f.id)).toFixed(3)}:${side}`).toBeLessThanOrEqual(20.1);
     const shoulder=rig.point(`lowerarm01_${side}`).sub(rig.point(`upperarm01_${side}`)).applyQuaternion(rig.bone(`clavicle_${side}`).getWorldQuaternion(new Quaternion()).invert());
-    expect(shoulder.angleTo(new Vector3(0,-1,0))*180/Math.PI).toBeLessThanOrEqual(165.1);
+    expect(shoulder.angleTo(new Vector3(0,-1,0))*180/Math.PI,`${f.id}@${(i/80*durationOf(f.id)).toFixed(3)}:${side}`).toBeLessThanOrEqual(165.1);
     const hand=rig.rest.get(`finger3-1_${side}`)!.clone().sub(rig.rest.get(`wrist_${side}`)!).applyQuaternion(rig.bone(`wrist_${side}`).getWorldQuaternion(new Quaternion()));
     expect(hand.angleTo(rig.point(`wrist_${side}`).sub(rig.point(`lowerarm01_${side}`)))*180/Math.PI).toBeLessThanOrEqual(60.1);
    }cleanup();

@@ -20,7 +20,13 @@ describe('capability catalog',()=>{
   expect(r.status).toBe(200);
   const c=r.body as {service:{version:string};actions:{id:string;kind:string}[];rigs:{id:string}[];limits:{maxFps:number}};
   expect(c.service.version).toBe(SERVICE_VERSION);
-  expect(c.actions.map(a=>a.id).sort()).toEqual(['forehand','idle','reach','ready','squat','workshop-doc']);
+  expect(c.actions.map(a=>a.id).sort()).toEqual([
+   'alejandro-davidovich-fokina-forehand','alex-de-minaur-forehand','alexander-bublik-forehand','alexander-zverev-forehand',
+   'ben-shelton-forehand','carlos-alcaraz-forehand','daniil-medvedev-forehand','felix-auger-aliassime-forehand',
+   'flavio-cobolli-forehand','forehand','frances-tiafoe-forehand','holger-rune-forehand','idle','ignacio-buse-forehand',
+   'jakub-mensik-forehand','karen-khachanov-forehand','marin-cilic-forehand','novak-djokovic-forehand',
+   'reach','ready','roger-federer-forehand','squat','workshop-doc',
+  ]);
   expect(c.rigs[0].id).toBe('makehuman-body');
   expect(c.limits.maxFps).toBe(60);
  });

@@ -1,0 +1,12 @@
+{
+  "name": "human3d-forehand-pose-debugger",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "start": "node server.mjs"
+  },
+  "dependencies": {
+    "@mediapipe/tasks-vision": "1.1.1"
+  }
+}

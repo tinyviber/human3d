@@ -1,7 +1,12 @@
 import type {MotionCapabilities} from './motion-file';
 import type {DynamicsRecords,MuscleActionFile} from './muscle-action';
 import type {WorkshopDoc} from './document';
-export type AuthoredMotionId='idle'|'walk'|'reach'|'squat'|'ready'|'forehand'|'baseball-throw'|'punch';
+export type AuthoredMotionId='idle'|'walk'|'reach'|'squat'|'ready'|'forehand'|'baseball-throw'|'punch'
+ |'novak-djokovic-forehand'|'roger-federer-forehand'|'carlos-alcaraz-forehand'|'alexander-zverev-forehand'
+ |'daniil-medvedev-forehand'|'ben-shelton-forehand'|'alexander-bublik-forehand'|'frances-tiafoe-forehand'
+ |'holger-rune-forehand'|'alex-de-minaur-forehand'|'alejandro-davidovich-fokina-forehand'|'flavio-cobolli-forehand'
+ |'marin-cilic-forehand'|'karen-khachanov-forehand'|'jakub-mensik-forehand'|'ignacio-buse-forehand'
+ |'felix-auger-aliassime-forehand';
 export type MotionId=AuthoredMotionId|(string & {});
 export type ViewId='front'|'side'|'back'|'threeQuarter'|'hand'|'free';
 export interface BoneInfo{name:string;sourceName:string;parent:string|null;head:number[];tail:number[]}
