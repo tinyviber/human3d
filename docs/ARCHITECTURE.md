@@ -27,7 +27,7 @@ apps/server @human3d/server ─┘
 | `apps/web` | `src/lab/`（实验室引擎 `engine.ts`、动力学回放 `dynamics.ts`、React 面板）、`src/playback/`（播放源 `motion-source.ts` + `PoseFade`）、`src/workshop/`（场景 `engine.ts`、`WorkshopApp.tsx`、`library.ts`、`history.ts`）、两个入口页与 `vite.config.ts` | 可 import motion-core；生产代码不得 import `@human3d/server`（仅测试用其 devDependency） |
 | `apps/server` | `serve.ts`（loopback HTTP，`node:http`）、`service.ts`（目录 / 求解编排 / 幂等）、`contract.ts`（Ajv 严格编译 `spec/`）、`rig-manifest.ts`（node:crypto 身份哈希）、`errors.ts` | 可 import motion-core；不得 import web |
 
-测试按"最高依赖"落位：core 6 / server 6 / web 3 个测试文件。core 的测试可读夹具（`node:fs`），生产代码不行。
+测试按"最高依赖"落位：core / server / web 各自的 `*.test.ts` 就近放包内，仓库根 `tests/` 另放跨包边界与工具链检查。core 的测试可读夹具（`node:fs`），生产代码不行。
 
 路径不变的部分：`assets/motions/*.json` 仍是工具链与文档使用的注册表路径（motion-core 以相对路径静态导入）；`spec/` 由 `apps/server/src/contract.ts` 以 `import.meta.url` 相对定位；`public/` 与 `dist/` 仍在仓库根（Vite `publicDir`/`outDir` 指过去，`server.fs.allow` 覆盖仓库根以便 `/@fs/` 提供工作区源码）。
 
