@@ -12,7 +12,7 @@ import {analyzeProbeFrames,formatProbeReport,probeDocument,stepAngles,PROBE_POIN
  type ProbeFrame,type ProbeReport} from './quality-probe';
 
 /* Quality-probe smoke + structural tests (WP-C step 1: the probe graduates
- * from an ad-hoc script into src/workshop/quality-probe.ts). This commit
+ * from an ad-hoc script into packages/motion-core/src/quality-probe.ts). This commit
  * asserts only structural facts — the report exists, every field is finite,
  * the sampling grid honours the endpoint contract, and the probe measures the
  * REAL solve path (frame parity with solveWorkshop's package). Hard quality
@@ -22,7 +22,7 @@ import {analyzeProbeFrames,formatProbeReport,probeDocument,stepAngles,PROBE_POIN
  *
  * Baseline @240fps (post-WP-C solver — tangent clamp κ=2 + hand-frame SO(3)
  * cubic active; the pre-fix record and measurements are in
- * docs/investigate.md WP-C). The hand squad removed the per-segment slerp's
+ * docs/history/investigate.md WP-C). The hand squad removed the per-segment slerp's
  * C⁰ angular-velocity jumps at keys: forehand tip kicks 62→26 (the at-key
  * subset 44→9), defaultDocument's worst single-frame tip Δv 10.26→4.87 m/s
  * and wristStep at-key median 1.38°→0.17°. defaultDocument's kick COUNT is

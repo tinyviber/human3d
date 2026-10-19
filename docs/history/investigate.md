@@ -1,5 +1,7 @@
-# !!!INVESTIGATE!!!
+# !!!INVESTIGATE!!!（已冻结）
 
+> **冻结状态（PR-11C / issue #11 WP-1C）**：本文原位于 `docs/investigate.md`，现移入 `docs/history/` 存档；指向原路径的外部深链已失效，请改指本路径。本文是**历史调查记录，不再默认必读**：现行规则入口是根 `AGENTS.md` 与 `docs/learning.md`，领域不变量在 `docs/domain/`，被否方案与决策依据的提炼版在 `docs/decisions/`。不要再向本文追加新调查内容——任务运行记录放任务私有空间，收尾时只把长期有用的裁决提炼进 `docs/decisions/` 或 `docs/learning.md`。
+>
 > 调查对象：PR #1「Motion protocol v1 服务 + 工作台评审修复」（分支 `feat/motion-protocol-v1`）与 PR #3「issue #2 评审路线图实现」（分支 `fix/issue-2-review-roadmap`）。
 > PR #1 历程：`7e653c4`（被评审）→ `4b053bf` → `c850ece` → `327c86c` → `0edc53a`，共四轮 review、四轮修复，已于 `27d8aaf` 合并入 main。
 > PR #3 历程：`e26c4fe`（被评审）→ `3a01861` → 两轮 review、两轮修复，squash 合并。
@@ -612,7 +614,7 @@ eval 裁决语义:镜像平面 x=0(该 rig 左=+X、右=−X),`mirrorDoc(doc)` �
 
 # PR #9 — npm workspaces 三包拆分
 
-> 完整设计记录见 [`ARCHITECTURE.md`](ARCHITECTURE.md)：结构、依赖方向、七条迁移裁决、被否备选、验证证据、phase 2/3 与维护规则。
+> 完整设计记录见 [`ARCHITECTURE.md`](../ARCHITECTURE.md)：结构、依赖方向、七条迁移裁决、被否备选、验证证据、phase 2/3 与维护规则。
 
 要点：按**依赖方向**而非现有目录名切包（`packages/motion-core` 纯域 / `apps/web` 场景与 DOM / `apps/server` 传输与 node 设施），消除 `core → server` 与 `server → workshop` 两处反向依赖；`validate.ts`、`package-export`、`glb-export`、`quality-probe`、`random-document` 进 core（它们有 Node CLI / 测试消费者），`motion-source.ts` 拆成 core 的 `package-inspect.ts` 与 web 的播放源。
 

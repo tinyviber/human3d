@@ -12,6 +12,7 @@
     "build": "tsc -b && npm run build --workspace @human3d/web",
     "preview": "npm run preview --workspace @human3d/web",
     "test": "vitest run",
+    "docs:check": "node scripts/check-docs-links.mjs",
     "spec:check": "vitest run apps/server/src/contract.test.ts",
     "service": "tsx apps/server/src/serve.ts",
     "protocol:example": "tsx scripts/export-pose-package.mts",
