@@ -9,7 +9,9 @@ The `test` workflow handles pull requests opened, synchronized, reopened, marked
 | Push to `main` | Runs | Runs all type, contract, unit, and build checks | Runs dynamics validation | Green only when `full` and `dynamics` succeed; `fast` may be skipped or successful |
 | Required work failed, cancelled, stale, skipped, or unrun | Status recorded | Status recorded | Status recorded | Fails with a reason naming the unsuccessful work |
 
-`required` is the stable aggregate job and uses `always()` so it reports deferred or unsuccessful work. Configure branch protection to require **`test / required`** (workflow name `test`, job `required`). Do not require the conditional `full` or `dynamics` jobs directly: they are intentionally skipped on draft pull requests. Branch protection settings and remote event replay have not been exercised by this local change.
+`required` is the stable aggregate job and uses `always()` so it reports deferred or unsuccessful work. Configure branch protection to require **`test / required`** (workflow name `test`, job `required`). Do not require the conditional `full` or `dynamics` jobs directly: they are intentionally skipped on draft pull requests.
+
+Event-matrix evidence (PR #15, head `da7e5c3`): `converted_to_draft` ran `fast` only, skipped `full`/`dynamics`, and `required` failed with `{"ok":false,"reason":"draft_deferred"}` (run 39224448924); `ready_for_review` ran all four jobs green including `docs:check` (run 39224764959). Not yet exercised: the `push` event on `main` (fires only after merge) and branch protection enforcement — `main` has no protection rules configured as of this change, which requires repository admin access and is deliberately not part of this PR.
 
 Draft checks run only the three focused A1 tests. Ready pull requests and pushes run the complete local CI gates, with Python dynamics validation in a separate job. Caches are limited to npm and pip package caches.
 
