@@ -8,8 +8,8 @@ This folder preserves the inputs and offline analysis artifacts for the tennis f
 - `frames/`: selected still frames for the 17 player profiles, five timestamps per profile.
 - `pose-debugger/`: a separate local browser tool and the 5.78 MB MediaPipe Pose Landmarker Lite model. The browser processes selected videos and screenshots locally.
 - `evidence/`: same-model comparison screenshots and a footwork pose screenshot from the current implementation.
-- `../../scripts/player-forehand-landmarks.json`: the compact 2D landmarks used by the motion generator.
-- `../../scripts/generate-player-forehands.mts`: regenerate the motion preset JSON files.
+- `../../scripts/player-forehand-landmarks.json`: the compact 2D landmarks with the selected timestamps. The frame extractor reads the timestamps; the motion generator does **not** map these landmarks onto the rig (see `docs/reports/forehand-video-retargeting.md`).
+- `../../scripts/generate-player-forehands.mts`: regenerate the motion preset JSON files as parametric variants of the workshop forehand seed.
 
 ## Recreate selected frames
 

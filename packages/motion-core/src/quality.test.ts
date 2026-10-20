@@ -52,6 +52,7 @@ import {analyzeProbeFrames,formatProbeReport,probeDocument,stepAngles,PROBE_POIN
  *   wristClamp  bend demand max 105.7° @1.808 · clamped 589/1249f (47%)
  *               deficit max ~46° med ~17° · 4 transitions @1.342/2.371/2.904/4.333
  *   wrist/tip   wrist vmax 1.60 m/s @2.104 (2 kicks) · tip 4.25 m/s @2.971 (26 kicks, 1 reversal)
+ *               2026-10-20 arm choreography: tip 4.7 m/s @2.73 (52 kicks, 23 at keys) · wrist 6 kicks
  *   ik          arm_R residual 0.91cm @2.288 · reachMax 101.7% @2.288 · leg residual 0.00cm
  *   root        maxStep 0.52mm @2.100 · maxV 0.124 m/s · maxA 0.67 m/s² @1.958
  *   pelvis      shift 0–0 · saturated 0f      ground  sole minY 19.2mm · foot-depth 0
@@ -59,6 +60,21 @@ import {analyzeProbeFrames,formatProbeReport,probeDocument,stepAngles,PROBE_POIN
  *   chain(1.3–3.5s)  upperArm 11.4@2.163 → forearm 10.5@2.421 → hand 5.9@2.163
  *   contact     @2.55s · tip speed 1.01 m/s
  *   spikes      arm-reach-residual-R 0.91cm · root-accel-peak 0.67 m/s² */
+
+/** The probe's tip kicks (|Δv|>0.1 m/s between consecutive 240 fps frames)
+ * split by proximity to authored keys: a C⁰ velocity step at a key lands in
+ * the ±`windowS` bucket, a physically fast swing spreads its kicks evenly. */
+function tipKicksByKey(r:{frames:{t:number;tip:ArrayLike<number>|null}[]},keyTimes:number[],windowS=.02){
+ const f=r.frames,dt=f[1].t-f[0].t;
+ const vel=(i:number)=>[0,1,2].map(c=>(f[i+1].tip![c]-f[i].tip![c])/dt);
+ let prev=vel(0),atKey=0,interior=0;
+ for(let i=1;i<f.length-1;i++){
+  const v=vel(i),dv=Math.hypot(v[0]-prev[0],v[1]-prev[1],v[2]-prev[2]);prev=v;
+  if(dv<=.1)continue;
+  if(keyTimes.some(k=>Math.abs(k-f[i].t)<=windowS))atKey++;else interior++;
+ }
+ return {atKey,interior};
+}
 
 let rig:HumanRig,racket:ReturnType<typeof attachRacket>;
 beforeAll(async()=>{
@@ -189,8 +205,18 @@ describe('quality probe',()=>{
   //   default   tip kicks 191 → 191(0.8s 挥拍 tip ~24m/s,|Δv|>0.1 是物理下限,
   //             真正消失的是键时刻 C0:atKey 步长中位 1.38°→0.17°,最差单帧
   //             tip Δv 10.26→4.87 m/s, accelTop 2463→1169 m/s²)
-  const fh=probeDocument(rig,motionFileById('forehand')!.document!,{fps:240,tip:racket,name:'forehand',activeWindow:[1.3,3.5]});
-  expect(fh.tip!.kicks).toBeLessThan(40); // measured 26 (pre-squad 62)
+  const fhDoc=motionFileById('forehand')!.document!;
+  const fh=probeDocument(rig,fhDoc,{fps:240,tip:racket,name:'forehand',activeWindow:[1.3,3.5]});
+  // Measured 52 with the 2026-10-20 arm choreography (16 before it, 26 at
+  // the pre-fix authored swing, 62 pre-squad). The tip now swings 4.7 m/s
+  // through contact; a |Δv|>0.1 m/s/frame kick at 240 fps is 24 m/s², the
+  // centripetal floor of that swing (v²/r ≈ 4.7²/0.9), so like defaultDocument
+  // the COUNT is speed-floor-bound. The key-C⁰ regression this test guards is
+  // the at-key share: ±20 ms windows around 49 keys cover 38% of 5.2 s, and
+  // the kicks split 23 at-key / 29 interior (pre-squad: 44 of 62 at keys).
+  expect(fh.tip!.kicks).toBeLessThan(80);
+  const split=tipKicksByKey(fh,fhDoc.keys.map(k=>k.time));
+  expect(split.atKey/(split.atKey+split.interior)).toBeLessThan(.6);
   const d=probeDocument(rig,defaultDocument(rig.rest),{fps:240,tip:racket});
   expect(d.wristStep.atKeyMedian).toBeLessThan(d.wristStep.interiorMedian/2); // 0.17° vs 1.47° (was 1.38° vs 1.50°)
   expect(d.tip!.accelTop[0].a).toBeLessThan(1500); // measured 1169 (pre-squad 2463, at keyΔ0ms)

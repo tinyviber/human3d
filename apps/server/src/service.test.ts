@@ -37,7 +37,7 @@ describe('capability catalog',()=>{
  it('returns per-action descriptors and 404 for unknown ids',()=>{
   const ok=handleRequest(ctx,'GET','/v1/actions/forehand');
   expect(ok.status).toBe(200);
-  expect((ok.body as {notes:string[]}).notes[0]).toContain('documented-defect');
+  expect((ok.body as {notes:string[]}).notes[0]).toContain('research-reference');
   expect(handleRequest(ctx,'GET','/v1/actions/fly').status).toBe(404);
  });
 });
@@ -76,9 +76,12 @@ describe('POST /v1/motions — bundled actions',()=>{
   expect(pkg.events.map(e=>e.label)).toContain('最低点');
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
  });
- it('reports per-frame quality checks and the documented forehand defect',()=>{
+ it('reports per-frame quality checks and carries the envelope notes as warnings',()=>{
   const pkg=post({action:{id:'forehand'}}).body as PosePackage;
-  expect(pkg.quality.warnings[0]).toContain('穿插');
+  // Envelope notes land in warnings verbatim; the forehand is a research
+  // reference approximation, not a documented defect any more.
+  expect(pkg.quality.warnings[0]).toContain('research-reference');
+  expect(pkg.quality.warnings.some(w=>w.includes('穿插'))).toBe(false);
   const ids=pkg.quality.checks.map(c=>c.code);
   for(const s of ['L','R'])expect(ids).toEqual(expect.arrayContaining([`knee-flexion-${s}`,`elbow-flexion-${s}`,`shoulder-elevation-${s}`,`foot-depth-${s}`,`ankle-dorsiflexion-${s}`]));
   // Codes are stable machine identifiers: lower-case, hyphenated, side-suffixed.

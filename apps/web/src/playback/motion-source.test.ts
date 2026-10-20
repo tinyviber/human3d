@@ -217,7 +217,7 @@ describe('posePackageSpec — bundled envelope restore',()=>{
   expect(pkg.quality.warnings.length).toBeGreaterThan(0);
   expect(spec.description).toContain(pkg.provenance.solver);
   expect(spec.description).toContain(`质量警告 ${pkg.quality.warnings.length} 条`);
-  expect(spec.description).toContain('穿插');
+  expect(spec.description).toContain('research-reference');
   expect(spec.description).toContain('常量显示');
  });
  it('the derived prop hint drives wantsProp and the grip readout',()=>{

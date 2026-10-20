@@ -1,6 +1,9 @@
 import fs from 'node:fs';
 import path from 'node:path';
-import {frameAt,mirrorDoc,normalizeDoc,type WorkshopDoc} from '@human3d/motion-core';
+import {Vector3} from 'three';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {HumanRig,frameAt,mirrorDoc,normalizeDoc,solveEffectiveFrame,type RigInfo,type WorkshopDoc} from '@human3d/motion-core';
+import {blendHand,handAxis,offArm,offReach,offTransition,racketArm,racketPath,torsoFrame,type HandLike} from './lib/forehand-arms.mts';
 
 type PlayerPreset={
  id:string;name:string;order:number;side?:'L';video:string;frames:[number,number,number,number,number];
@@ -10,12 +13,14 @@ type PlayerPreset={
  step?:number;
  focus:[string,string,string];
 };
-type ImageJoint={x:number;y:number;confidence:number};
-type PlayerLandmarkData={profiles:Record<string,{frames:{time:number;joints:Record<string,ImageJoint>}[]}>};
 
-/** Source keyframes were extracted from the user-provided clips. The paired
- * MediaPipe Lite landmarks are 2D image coordinates retargeted onto the same
- * rig; they are camera-space approximations, not 3D motion capture. */
+/** Every preset is a parametric variant of the workshop forehand seed
+ * (spec/examples/forehand-study.request.json). `frames` are the source-video
+ * timestamps (seconds) of the five reference stills; they become the keys'
+ * `videoTime` provenance and the timing/amplitude parameters were authored
+ * against those stills. No 2D landmark is mapped onto the rig: uncalibrated
+ * monocular keypoints cannot place a 3D wrist/elbow target, and doing so folded
+ * every player's racket arm into the torso (docs/reports/forehand-video-retargeting.md). */
 const players:PlayerPreset[]=[
  {id:'novak-djokovic-forehand',name:'Novak Djokovic',order:8,video:'德约正手.mp4',frames:[0,3,6,7,8],duration:2.05,back:.77,contact:1.16,follow:1.52,hipTurn:1.02,shoulderTurn:1.08,reach:.96,armHeight:.98,depth:.94,dip:.02,forward:.025,stance:1.14,stagger:.035,finishLift:.13,balance:.012,step:.1,focus:['开放式站位','紧凑引拍','平衡回位']},
  {id:'roger-federer-forehand',name:'Roger Federer',order:9,video:'费德勒正手.mp4',frames:[130,131,132,133,135],duration:2.04,back:.73,contact:1.13,follow:1.5,hipTurn:.98,shoulderTurn:1.02,reach:1.13,armHeight:1.03,depth:1.04,dip:.01,forward:.012,stance:1.02,stagger:.035,finishLift:-.1,balance:.016,step:.11,focus:['舒展引拍','向前延伸击球','肩上结束']},
@@ -39,30 +44,28 @@ const players:PlayerPreset[]=[
 const root=process.cwd();
 const request=JSON.parse(fs.readFileSync(path.join(root,'spec/examples/forehand-study.request.json'),'utf8'));
 const source=request.action.parameters.document as WorkshopDoc;
-const landmarkData=JSON.parse(fs.readFileSync(path.join(root,'scripts/player-forehand-landmarks.json'),'utf8')) as PlayerLandmarkData;
+// The support arm is placed from SOLVED shoulders (it must follow the trunk
+// turn), so the generator runs the production rig — same load as
+// scripts/measure-player-forehands.mts.
+const glb=fs.readFileSync(path.join(root,'public/models/human.glb'));
+const gltf=await new GLTFLoader().parseAsync(glb.buffer.slice(glb.byteOffset,glb.byteOffset+glb.byteLength),'');
+const rig=new HumanRig(gltf.scene,JSON.parse(fs.readFileSync(path.join(root,'public/models/rig.json'),'utf8')) as RigInfo);
+const restRoot=rig.rest.get('root')!;
+const armLengths=(side:'L'|'R')=>({upper:rig.rest.get(`upperarm01_${side}`)!.distanceTo(rig.rest.get(`lowerarm01_${side}`)!),fore:rig.rest.get(`lowerarm01_${side}`)!.distanceTo(rig.rest.get(`wrist_${side}`)!)});
+const v3=(a:{x:number;y:number;z:number})=>new Vector3(a.x,a.y,a.z);
 const phaseWeights=[0,.72,1,.62,.24];
 const dipWeights=[0,1,.34,.08,0];
 const travelWeights=[0,.2,1,.58,.12];
 const finishWeights=[0,0,0,1,.38];
 const supportWeights=[0,.35,1,.72,.2];
+// Follow-through/recovery elbow-pole clearance (see buildDoc).
+const clearWeights=[0,0,.25,.75,1];
 const leadFootPath=[0,1,1,.9,.68];
 const rootStepPath=[0,.12,.4,.75,.35];
 const swingLift=[0,.06,0,.045,0];
 const floorY=.073646096;
 const rootRestY=.941043915;
 const rootRestZ=-.057132936;
-const rigTorsoLength=.475;
-
-function point(joints:Record<string,ImageJoint>,name:string,minConfidence=.2){
- const p=joints[name];return p&&p.confidence>=minConfidence?p:null;
-}
-function midpoint(a:ImageJoint,b:ImageJoint){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2,confidence:Math.min(a.confidence,b.confidence)};}
-function mappedPoint(p:ImageJoint,hip:ImageJoint,scale:number,rootY:number,rootZ:number,side:'L'|'R'){
- return{x:side==='L'?.19:-.19,y:rootY+(hip.y-p.y)*scale,z:rootZ+(p.x-hip.x)*scale};
-}
-function blendPoint(target:{x:number;y:number;z:number},mapped:{x:number;y:number;z:number},amount:number){
- target.x+=(mapped.x-target.x)*amount;target.y+=(mapped.y-target.y)*amount;target.z+=(mapped.z-target.z)*amount;
-}
 
 function buildDoc(player:PlayerPreset):WorkshopDoc{
  let doc=normalizeDoc(structuredClone(source));
@@ -75,8 +78,6 @@ function buildDoc(player:PlayerPreset):WorkshopDoc{
  const dominantSign=dominant==='R'?-1:1;
  const leadFoot=dominant==='R'?'L':'R';
  const step=player.step??(.075+Math.max(0,player.stance-1)*.055+player.dip*.12);
- const track=landmarkData.profiles[player.id];
- if(!track||track.frames.length!==5)throw new Error(`Missing five-frame pose landmark data for ${player.id}`);
  const [ready,back,hit,follow,recover]=doc.keys;
  const times=[0,player.back,player.contact,player.follow,player.duration];
  for(let i=0;i<doc.keys.length;i++){
@@ -132,42 +133,97 @@ function buildDoc(player:PlayerPreset):WorkshopDoc{
   hand.pole.z+=.0225*contactPath;
   support.target.x-=dominantSign*player.balance*.8*phaseWeights[i];
   support.pole.x-=dominantSign*player.balance*.35*phaseWeights[i];
-
-  // Fit wrist/elbow task-space goals to the same 2D landmarks used by the
-  // standalone visual comparator. Shoulder-to-hip length normalizes zoom and
-  // body size per frame. The source camera is uncalibrated, so lower-body
-  // landmarks remain diagnostic input rather than absolute 3D targets.
-  const joints=track.frames[i].joints;
-  const hip=midpoint(joints.leftHip,joints.rightHip);
-  const shoulder=midpoint(joints.leftShoulder,joints.rightShoulder);
-  const torsoLength=Math.hypot(shoulder.x-hip.x,shoulder.y-hip.y);
-  const scale=Math.min(3.6,Math.max(1.25,rigTorsoLength/Math.max(.12,torsoLength)));
-  const rootY=rootRestY+pose.root.y;
-  const rootZ=rootRestZ+pose.root.z;
-
-  for(const side of ['L','R'] as const){
-   const anatomical=side==='L'?'left':'right';
-   const target=point(joints,`${anatomical}Wrist`),elbow=point(joints,`${anatomical}Elbow`);
-   if(target&&elbow){
-    const arm=side==='L'?pose.handL:pose.handR;
-    const confidence=Math.min(.95,target.confidence,elbow.confidence);
-    blendPoint(arm.target,mappedPoint(target,hip,scale,rootY,rootZ,side),confidence);
-    blendPoint(arm.pole,mappedPoint(elbow,hip,scale,rootY,rootZ,side),confidence);
-   }
-  }
+  // The seed parks the elbow pole behind the trunk (z<0) while the wrist wraps
+  // to the far side through follow-through and recovery. Scaled by reach and
+  // armHeight that elbow can pass through the chest, so the pole moves forward
+  // and keeps the elbow in front of the torso. Measured on the production skin
+  // (scripts/measure-player-forehands.mts): removes the remaining arm–torso
+  // crossings with the wrist residual unchanged.
+  hand.pole.z+=.2*clearWeights[i];
  }
- // Keyframe labels and time grid are kept aligned with the envelope's phase markers.
- [ready.label,back.label,hit.label,follow.label,recover.label]=['准备','引拍','触球','随挥','恢复'];
- // Add one authored mid-swing waypoint so the stepping foot can rotate into
- // toe-clearance after liftoff. A release key intentionally inherits the
- // planted foot's orientation at its instant; without an unplanted key after
- // it, the model has no writable foot-angle waypoint during swing.
+ // Arm choreography (scripts/lib/forehand-arms.mts), anchored on the SOLVED
+ // shoulders so both arms follow the trunk turn. The racket arm's upper arm
+ // goes DOWN first and then diagonally UP:
+ //   racket arm  back: authored hand, elbow lifted · drop (added key): upper
+ //               arm hanging down-back, racket head dropped · hit: straighten
+ //               the authored contact direction (forearm catches up with the
+ //               upper arm) · extend (added key): still straight, upper arm
+ //               rising · fold (added key): half-way to the finish, chain
+ //               space · follow: finish — upper arm above the shoulder line,
+ //               forearm folded to the off shoulder, racket near vertical with
+ //               the head above that shoulder · recover: held finish, settled
+ //   off arm     back: guard across the chest · hit: tucked · extend/fold: on
+ //               the way to the racket · follow/recover: catching the throat
+ const offSide=dominant==='R'?'L':'R';
+ const racketArmOpt={contactReach:.98,finishLift:player.finishLift};
+ const frameAtKey=(time:number)=>{solveEffectiveFrame(rig,frameAt(doc,time,restRoot));return torsoFrame(dominant,rig.point(`upperarm01_${dominant}`),rig.point(`upperarm01_${offSide}`));};
+ const racketPhase:(('takeback'|'contact'|'finish'|'settle')|undefined)[]=[undefined,'takeback','contact','finish','settle'];
+ const offPhase:(('guard'|'tuck'|'catch')|undefined)[]=[undefined,'guard','tuck','catch','catch'];
+ doc.keys.forEach((key,i)=>{
+  const f=frameAtKey(key.time);
+  const hand:HandLike=key.pose[handSide],support:HandLike=key.pose[supportSide];
+  const rp=racketPhase[i];
+  if(rp)blendHand(hand,racketArm(rp,f,armLengths(dominant),hand,racketArmOpt),1);
+  const op=offPhase[i];
+  if(op)blendHand(support,offArm(op,f,armLengths(offSide),{wrist:v3(hand.target),axis:handAxis(hand,dominant)}),1);
+  // Ready: the seed's tucked hand sits behind the guard's elbow line; the
+  // ready→guard interpolation then sweeps the upper arm across the pec on
+  // the deeper, faster presets (Alcaraz). Carry the ready hand 35 % toward
+  // the guard — still a relaxed ready, but the elbow already out.
+  else if(i===0)blendHand(support,offArm('guard',f,armLengths(offSide)),.35);
+ });
+ // Two authored waypoints between contact and the finish. 延伸: the arm
+ // stays nearly straight after the ball instead of folding on the chord
+ // between the keys. 折肘: the fold half-way, computed in chain space so the
+ // elbow travels an arc in front of the chest (a wrist-position chord lets
+ // the two-bone solve pull the upper arm through the pec); the off hand is
+ // on its way to the throat with its elbow swung out.
+ const waypoints:{label:string;at:number;racket:(f:ReturnType<typeof frameAtKey>,hand:HandLike)=>void;off:number}[]=[
+  {label:'延伸',at:.3,racket:(f,hand)=>blendHand(hand,racketArm('extend',f,armLengths(dominant),hand,racketArmOpt),1),off:.25},
+  {label:'折肘',at:.65,racket:(f,hand)=>blendHand(hand,racketPath('extend','finish',.5,f,armLengths(dominant),hand,racketArmOpt),1),off:.65},
+ ];
+ const inserted=waypoints.map((wp,n)=>{
+  const time=player.contact+(player.follow-player.contact)*wp.at;
+  const frame=frameAt(doc,time,{x:0,y:rootRestY,z:rootRestZ});
+  const pose=structuredClone(frame.pose);
+  const f=frameAtKey(time);
+  const hand:HandLike=pose[handSide],support:HandLike=pose[supportSide];
+  wp.racket(f,hand);
+  blendHand(support,offReach(f,armLengths(offSide),{wrist:v3(hand.target),axis:handAxis(hand,dominant)},wp.off),1);
+  return {id:`${player.id}-fold${n}`,time,label:wp.label,pose,constraints:{...frame.constraints}};
+ });
+ doc.keys.splice(3,0,...inserted);
+ // Takeback → contact in chain space. The shoulder takes the UPPER ARM down
+ // first (the drop, bottom of the C — racket head below the hand) and then
+ // diagonally up into the ball; the forearm opens only through the last
+ // part. Waypoints are chain-space samples (scripts/lib/forehand-arms.mts
+ // racketPath) so every key carries an exact elbow pole: lerping the
+ // takeback and drop poles across the moving chord flipped the hinge
+ // (measured 95–119 rad/s on the upper arm at 0.8–1.1 s on every preset).
+ // The swing key doubles as the stepping foot's toe-clearance waypoint (a
+ // release key inherits the planted foot's orientation; without an unplanted
+ // key after it the model has no writable foot-angle waypoint in the swing).
  const swingTime=player.back+Math.min(.12,(player.contact-player.back)*.2);
- const swingFrame=frameAt(doc,swingTime,{x:0,y:rootRestY,z:rootRestZ});
- const swingPose=structuredClone(swingFrame.pose);
- const swingFoot=leadFoot==='L'?swingPose.footL:swingPose.footR;
- swingFoot.pitch+=12;
- doc.keys.splice(2,0,{id:`${player.id}-swing`,time:swingTime,label:'摆步',pose:swingPose,constraints:{...swingFrame.constraints}});
+ const span=player.contact-player.back;
+ const through=[
+  {id:'swing',label:'摆步',time:swingTime,from:'takeback' as const,to:'drop' as const},
+  {id:'drop',label:'落拍',time:player.back+span*.5,from:'takeback' as const,to:'drop' as const},
+  {id:'fwd1',label:'前挥',time:player.back+span*.68,from:'drop' as const,to:'contact' as const},
+  {id:'fwd2',label:'近球',time:player.back+span*.85,from:'drop' as const,to:'contact' as const},
+ ];
+ const dropTime=player.back+span*.5;
+ for(const wp of through){
+  const frame=frameAt(doc,wp.time,{x:0,y:rootRestY,z:rootRestZ});
+  const pose=structuredClone(frame.pose);
+  if(wp.id==='swing'){const foot=leadFoot==='L'?pose.footL:pose.footR;foot.pitch+=12;}
+  const f=frameAtKey(wp.time);
+  const w=wp.from==='takeback'?(wp.time-player.back)/(dropTime-player.back):(wp.time-dropTime)/(player.contact-dropTime);
+  const authored:HandLike=wp.from==='takeback'?back.pose[handSide]:hit.pose[handSide];
+  blendHand(pose[handSide],racketPath(wp.from,wp.to,w,f,armLengths(dominant),authored,racketArmOpt),1);
+  blendHand(pose[supportSide],offTransition(f,offArm('guard',f,armLengths(offSide)),offArm('tuck',f,armLengths(offSide)),(wp.time-player.back)/span),1);
+  doc.keys.push({id:`${player.id}-${wp.id}`,time:wp.time,label:wp.label,pose,constraints:{...frame.constraints}});
+ }
+ doc.keys.sort((a,b)=>a.time-b.time);
  return normalizeDoc(doc);
 }
 
@@ -182,10 +238,10 @@ for(const player of players){
  const envelope={
   schemaVersion:1,kind:'workshop-motion',order:player.order,id:player.id,name:player.name,english:player.name,
   duration:player.duration,
-  description:'按视频关键帧的 MediaPipe 2D 人体点映射到项目骨架并重建为正手；未估计单目深度或球拍朝向。',
-  method:'MediaPipe 2D 关键点重定向 · 摄像机空间近似',focus:player.focus,
+  description:'以工作台正手基准为种子，按该球员视频关键帧的时序与站位、引拍、随挥幅度参数化生成；触球时持拍臂近直、随挥折肘把球拍带到非持拍肩前、拍头竖直于肩上方，非持拍臂引拍护在身前、随挥在拍喉接住球拍。手臂目标不来自视频关键点，未估计单目深度或球拍朝向。',
+  method:'工作台正手种子 · 参数化变体（视频关键帧仅作时序参考）',focus:player.focus,
   phases:[{time:0,label:'准备'},{time:player.back,label:'引拍'},{time:player.contact,label:'击球区'},{time:player.follow,label:'随挥'},{time:player.duration,label:'恢复'}],
-  notes:[`参考 ${player.video} @ ${excerpt}；关键帧秒数：${frames}。${duplicateNote}`,'肘腕目标来自独立本地工具提取的 2D MediaPipe 关键点；脚步是带摆动中点的骨架内近似，不把未标定的髋踝像素直接当成 3D 目标。深度、手腕朝向与球拍姿态仍是近似，未将视频帧或模型写入动作资产。'],
+  notes:[`参考 ${player.video} @ ${excerpt}；关键帧秒数：${frames}。${duplicateNote}`,'手臂目标是种子动作的参数化缩放，不映射 2D 关键点：未标定单目视频的关节点无法决定三维手臂目标，此前的映射把持拍臂折进躯干（见 docs/reports/forehand-video-retargeting.md）。脚步是带摆动中点的骨架内近似；深度、手腕朝向与球拍姿态仍是近似，未将视频帧或模型写入动作资产。'],
   license:'Project-authored motion approximation; source video frames are not redistributed.',oneShot:true,
   capabilities:{prop:{kind:'racket',trail:true,handView:true,...(player.side?{side:player.side}:{})}},
   document:buildDoc(player),
