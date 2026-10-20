@@ -120,6 +120,18 @@ describe('POST /v1/motions — workshop-doc action',()=>{
   expect(pkg.quality.checks.some(c=>c.code.startsWith('com-support'))).toBe(true);
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
  });
+ it('solves the selected linear curve and versions its artifact',()=>{
+  const doc=JSON.parse(JSON.stringify(motionFileById('forehand')!.document!));
+  const smooth=post({action:{id:'workshop-doc',parameters:{document:doc}},sample:{fps:10}});
+  const linearDoc=JSON.parse(JSON.stringify(doc));linearDoc.keys[0].interpolation='linear';
+  const linear=post({action:{id:'workshop-doc',parameters:{document:linearDoc}},sample:{fps:10}});
+  expect(smooth.status).toBe(200);expect(linear.status).toBe(200);
+  const a=smooth.body as PosePackage,b=linear.body as PosePackage;
+  expect(a.id).not.toBe(b.id);
+  expect(a.provenance.solverRevision).toBe(SERVICE_VERSION);
+  expect(b.provenance.solverRevision).toBe(SERVICE_VERSION);
+  expect(a.tracks).not.toEqual(b.tracks);
+ });
  it('emits support events only at interval boundaries, one pair per contact',()=>{
   const doc=blankDocument(ctx.rig.rest,'换脚','support-events');
   // Both feet planted at key0; left lifts at key1 (a contact ends), then a

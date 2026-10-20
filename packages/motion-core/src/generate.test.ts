@@ -64,6 +64,17 @@ const detuneSquat=(doc:WorkshopDoc)=>{
  return damaged;
 };
 
+describe('subsampled interval curves',()=>{
+ it('retains each sampled key’s governing outgoing interpolation',()=>{
+  const doc=defaultDocument(rig.rest);doc.keys[0].interpolation='linear';
+  const keys=doc.keys.slice().sort((a,b)=>a.time-b.time);
+  const sub=subsampleDoc(doc,[keys[0].time,(keys[0].time+keys[1].time)/2,(keys[1].time+keys[2].time)/2,keys.at(-1)!.time],rig.rest);
+  expect(sub.keys[0].interpolation).toBe('linear');
+  expect(sub.keys[1].interpolation).toBe('linear');
+  expect(sub.keys[2].interpolation).toBeUndefined();
+ });
+});
+
 describe('integrated jerk metrics use time-aware finite differences',()=>{
  const duration=1.037;
  const grid=(fps:number)=>{

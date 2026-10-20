@@ -35,7 +35,7 @@ const _tbDir=new Vector3(),_tbBend=new Vector3(),_tbPole=new Vector3();
  * Engineering rig coordinates, not ISB clinical Euler angles. */
 export function solveTwoBone(root: Vector3, target: Vector3, pole: Vector3, a: number, b: number, maxFlex=145) {
   const direction = _tbDir.copy(target).sub(root);
-  const minReach = Math.sqrt(a*a+b*b+2*a*b*Math.cos(maxFlex*DEG));
+  const minReach = Math.max(1e-6,Math.sqrt(a*a+b*b+2*a*b*Math.cos(maxFlex*DEG)));
   const d = MathUtils.clamp(direction.length(), minReach, a+b-1e-6);
   if (direction.lengthSq()<1e-12) direction.set(0,-1,0);
   direction.normalize();

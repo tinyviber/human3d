@@ -7,7 +7,7 @@ import {canonical,WORKSHOP_REVISION,type RigManifest} from '@human3d/motion-core
 import type {PosePackage} from '@human3d/motion-core';
 import {sha256} from './rig-manifest';
 import {createService,handleRequest,type ServiceContext} from './service';
-import {blankDocument,defaultDocument,serializeDoc} from '@human3d/motion-core';
+import {blankDocument,defaultDocument,serializeDoc,rotateHandFrame,frameAt,solveEffectiveFrame} from '@human3d/motion-core';
 import {mulberry32,randomDoc} from '@human3d/motion-core';
 
 /** Peer-parity contract: the browser-side builder (buildPosePackageLocal)
@@ -59,6 +59,25 @@ describe('WebCrypto digest parity',()=>{
 });
 
 describe('peer parity — document shapes',()=>{
+ it('free-arm authoring delivers the unclamped wrist on both peers',async()=>{
+  const d=blankDocument(rig.rest,'自由手臂','free-arms');d.freeArms=true;
+  d.keys.forEach(k=>rotateHandFrame(k.pose.handR,'flex',150));
+  const free=await parity(wire(d));
+  expect(free.served.status).toBe(200);
+  delete d.freeArms;
+  const bounded=await parity(wire(d));
+  expect(bounded.served.status).toBe(200);
+  expect((free.built.body as PosePackage).tracks).not.toEqual((bounded.built.body as PosePackage).tracks);
+ });
+ it('free elbows beyond delivery limits receive the same semantic rejection on both peers',async()=>{
+  const d=blankDocument(rig.rest,'自由肘','free-elbow');d.freeArms=true;
+  solveEffectiveFrame(rig,frameAt(d,0,rig.rest.get('root')!));
+  const shoulder=rig.point('upperarm01_R');
+  d.keys.forEach(k=>{k.pose.handR.target={x:shoulder.x,y:shoulder.y-.08,z:shoulder.z};});
+  const {built}=await parity(wire(d));
+  expect(built.status).toBe(422);
+  expect((built.body as {error:{details:string[]}}).error.details.some(e=>e.includes('elbow flexion'))).toBe(true);
+ });
  it('defaultDocument',()=>parity(wire(defaultDocument(rig.rest))));
  it('pelvis handFrames with rotated pelvis',()=>{
   const d=blankDocument(rig.rest,'骨盆系','pelvis-frames');

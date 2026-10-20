@@ -93,6 +93,9 @@ describe('mirrorDoc — round-trip involution',()=>{
   const lDoc=parseDoc(JSON.stringify({...head,gripSide:'L',keys}));
   expect(lDoc.gripSide).toBe('L');
   expect(serializeDoc(mirrorDoc(mirrorDoc(lDoc)))).toBe(serializeDoc(lDoc));
+  lDoc.keys[1].interpolation='linear';
+  expect(mirrorDoc(lDoc).keys[1].interpolation).toBe('linear');
+  expect(serializeDoc(mirrorDoc(mirrorDoc(lDoc)))).toBe(serializeDoc(lDoc));
   for(const seed of [7,42,1234]){
    const d=randomDoc(mulberry32(seed),rig.rest);    // seeded sweep: loops, mixed handFrames, some 'L'
    expect(serializeDoc(mirrorDoc(mirrorDoc(d)))).toBe(serializeDoc(d));

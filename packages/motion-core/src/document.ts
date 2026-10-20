@@ -5,7 +5,7 @@ import type {Side} from './foot';
 
 /** Trajectory-first motion document (schema v2): keyframes carry task-space
  * poses AND constraints (foot plants, grip, contact). MuJoCo dynamics is
- * deliberately absent — continuous motion comes from bounded Hermite
+ * deliberately absent — continuous motion comes from per-segment linear or bounded Hermite
  * in-betweens over effector targets, and plausibility is checked
  * kinematically (see solver.ts). */
 
@@ -31,7 +31,8 @@ export interface KeyConstraints{
   /** Contact event: the racket head position at this key is a target point. */
   contact:boolean;
 }
-export interface WorkshopKey{id:string;time:number;label:string;pose:PoseParams;constraints:KeyConstraints;videoTime?:number}
+export type KeyInterpolation='hermite'|'linear';
+export interface WorkshopKey{id:string;time:number;label:string;pose:PoseParams;constraints:KeyConstraints;interpolation?:KeyInterpolation;videoTime?:number}
 /** How a hand target is interpolated between keys: in world space, or in the
  * pelvis frame (the laboratory's convention, so a hand keeps its place on the
  * body while the trunk turns). Poles always stay in world space. */
@@ -46,6 +47,8 @@ export interface WorkshopDoc{
    * high hand target (the authored reach behaviour — the solver derives the
    * amount per frame). */
   clavicleLift?:boolean;
+  /** Authoring policy: allow the arms and wrists beyond anatomical bend limits. */
+  freeArms?:boolean;
   /** Which hand grips the racket: 'L' mirrors the whole grip stage — wrap
    * fingers, wrist cone, clavicle assist and racket mount — onto the left
    * wrist. Absent means 'R' (canonical form; normalizeDoc folds an explicit
@@ -58,7 +61,7 @@ export interface WorkshopDoc{
 export type DocLike=Pick<WorkshopDoc,'keys'|'duration'|'loop'|'handFrames'>;
 /** Support weight of each foot in [0,1]: 1 = fully planted, 0 = free swing. */
 export interface SupportWeights{L:number;R:number}
-export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number;clavicleLift?:boolean;
+export interface EffectiveFrame{pose:PoseParams;constraints:KeyConstraints;keyIndex:number;support:SupportWeights;gripAmount:number;clavicleLift?:boolean;freeArms?:boolean;
  /** The document-level grip side flattened onto the frame — same delivery
   * pattern as clavicleLift, so solveEffectiveFrame sees it with no caller
   * contract change. Absent on hand-built frames means 'R'. */
@@ -193,7 +196,7 @@ function contactPlan(keys:WorkshopKey[],side:Side,loop:boolean,raw:number[][]):C
 /** One real key as the sampler sees it. `flat` is world space with contacts
  * applied; `interp` is what Hermite runs over (pelvis-frame hands converted,
  * angles unwrapped along the chain). */
-interface Entry{time:number;real:number;flat:number[];interp:number[];plant:Record<Side,boolean>;grip:boolean;rest:Record<Side,boolean>}
+interface Entry{time:number;real:number;flat:number[];interp:number[];interpolation:KeyInterpolation;plant:Record<Side,boolean>;grip:boolean;rest:Record<Side,boolean>}
 interface Model{keys:WorkshopKey[];entries:Entry[];chain:Entry[];duration:number;handFrames:Record<Side,HandFrame>;origin:Vector3;
  /** Per-side SO(3) cubic keys aligned to `chain` (index-for-index): hand
   * forward/normal frames as quaternions plus their per-key tangents. */
@@ -229,7 +232,7 @@ export function buildModel(doc:DocLike,origin:V3|Vector3):Model{
       setVecAt(interp[j],b+9,vecAt(f,b+9).applyQuaternion(inv));
     }
   }
-  const entries:Entry[]=keys.map((k,j)=>({time:k.time,real:j,flat:flat[j],interp:interp[j],
+  const entries:Entry[]=keys.map((k,j)=>({time:k.time,real:j,flat:flat[j],interp:interp[j],interpolation:k.interpolation??'hermite',
     plant:{L:k.constraints.plantL,R:k.constraints.plantR},grip:k.constraints.grip,rest:{L:rest.L[j],R:rest.R[j]}}));
   let chain=entries;
   if(doc.loop&&n>=2){
@@ -366,12 +369,15 @@ function interpolate(m:Model,time:number):Interpolated{
   };
   const width=chain[0].interp.length,out=new Array<number>(width);
   for(let c=0;c<width;c++){
-    const m0=tan(i,c),m1=tan(i+1,c);
-    out[c]=(2*u**3-3*u*u+1)*val(i,c)+(u**3-2*u*u+u)*dt*m0+(-2*u**3+3*u*u)*val(i+1,c)+(u**3-u*u)*dt*m1;
+    if(chain[i].interpolation==='linear')out[c]=val(i,c)+(val(i+1,c)-val(i,c))*u;
+    else{
+      const m0=tan(i,c),m1=tan(i+1,c);
+      out[c]=(2*u**3-3*u*u+1)*val(i,c)+(u**3-2*u*u+u)*dt*m0+(-2*u**3+3*u*u)*val(i+1,c)+(u**3-u*u)*dt*m1;
+    }
   }
   // A release key (planted run ends here) starts a swing: at its key instant
   // the foot is still at the inherited contact, so the key's stored target
-  // is a mid-swing waypoint. contact → waypoint → next target is C¹ and the
+  // is a mid-swing waypoint. In Hermite mode contact → waypoint → next target is C¹ and the
   // foot leaves the ground instead of sliding along it (拖步 only when the
   // stored target is itself at ground level).
   for(const s of ['L','R']as const){
@@ -390,7 +396,9 @@ function interpolate(m:Model,time:number):Interpolated{
       const end=i+1>=len-1||restAt(i+1,ch+c)?0:(val(i+2,ch+c)-val(i,ch+c))/(chain[i+2].time-t0);
       const h=(uu:number,v0:number,v1:number,m0:number,m1:number)=>
         (2*uu**3-3*uu*uu+1)*v0+(uu**3-2*uu*uu+uu)*half*m0+(-2*uu**3+3*uu*uu)*v1+(uu**3-uu*uu)*half*m1;
-      out[ch+c]=tc<=mid?h((tc-t0)/half,a,b,0,chord):h((tc-mid)/half,b,cc,chord,end);
+      if(chain[i].interpolation==='linear')out[ch+c]=tc<=mid
+        ?a+(b-a)*((tc-t0)/half):b+(cc-b)*((tc-mid)/half);
+      else out[ch+c]=tc<=mid?h((tc-t0)/half,a,b,0,chord):h((tc-mid)/half,b,cc,chord,end);
     }
   }
   const pose=unflattenPose(out);
@@ -398,7 +406,7 @@ function interpolate(m:Model,time:number):Interpolated{
   for(const s of ['L','R']as const){
     const hand=s==='L'?pose.handL:pose.handR,b=HAND_CH[s],pelvis=m.handFrames[s]==='pelvis';
     if(pelvis)hand.target=fromV(vecAt(out,b).applyQuaternion(Rt).add(o).add(root));
-    /* SO(3) cubic through the key frames — a corrected-slerp form of squad:
+    /* In Hermite mode, SO(3) cubic through the key frames — a corrected-slerp form of squad:
      *   q(u) = slerp(q_i, q_{i+1}, u) · exp( u(1−u)·(d0 + u·d1) )
      *   d0 = T_i·dt − b,  d1 = 2b − (T_i + T_{i+1})·dt
      * where b = ln(q_i⁻¹q_{i+1}) is the segment's secant log and T_j the
@@ -419,11 +427,15 @@ function interpolate(m:Model,time:number):Interpolated{
      * held a constant angular rate inside each interval, so its direction
      * changed stepwise at every key — a C⁰ velocity the 0.61 m racket lever
      * turned into measured tip kicks. */
-    const k0=m.squad[s][i],k1=m.squad[s][i+1],b2=k0.b!;
-    const d0=k0.T.clone().multiplyScalar(dt).sub(b2);
-    const d1=b2.clone().multiplyScalar(2).sub(k0.T.clone().add(k1.T).multiplyScalar(dt));
-    const e=d0.add(d1.multiplyScalar(u)).multiplyScalar(u*(1-u));
-    const q=k0.q.clone().slerp(k1.q,u).multiply(quatExp(e));
+    const k0=m.squad[s][i],k1=m.squad[s][i+1];
+    const q=k0.q.clone().slerp(k1.q,u);
+    if(chain[i].interpolation!=='linear'){
+      const b2=k0.b!;
+      const d0=k0.T.clone().multiplyScalar(dt).sub(b2);
+      const d1=b2.clone().multiplyScalar(2).sub(k0.T.clone().add(k1.T).multiplyScalar(dt));
+      const e=d0.add(d1.multiplyScalar(u)).multiplyScalar(u*(1-u));
+      q.multiply(quatExp(e));
+    }
     const f=basisVec(q,1,0,0),nn=basisVec(q,0,1,0);
     if(pelvis){f.applyQuaternion(Rt);nn.applyQuaternion(Rt);}
     hand.forward=fromV(f);hand.normal=fromV(nn);
@@ -431,7 +443,7 @@ function interpolate(m:Model,time:number):Interpolated{
   return {pose,i,t0,dt,support:{L:supportWeight(chain,i,u,'L'),R:supportWeight(chain,i,u,'R')},grip:gripAmountAt(chain,governingIndex(chain,time),time)};
 }
 
-/** Interpolated pose at time t (always Hermite, regardless of the in-between flag). */
+/** Interpolated pose at time t using each key's outgoing curve, regardless of the in-between flag. */
 export function samplePose(doc:DocLike,time:number,origin:V3|Vector3=ZERO_V3):PoseParams{
   return interpolate(buildModel(doc,origin),Math.max(0,Math.min(doc.duration,time))).pose;
 }
@@ -441,7 +453,7 @@ export function constraintsAt(keys:WorkshopKey[],time:number):{constraints:KeyCo
   return {constraints:keys[i].constraints,keyIndex:i};
 }
 /** Effective frame at time t. With in-betweens off, the frame is the stored key
- * after the contact rewrite (the same numbers the Hermite path reaches at key
+ * after the contact rewrite (the same numbers the selected curve reaches at key
  * instants), with no support fades and no grip ramp. */
 export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):EffectiveFrame{
   return frameFromModel(buildModel(doc,origin),doc,time);
@@ -451,15 +463,15 @@ export function frameAt(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):E
  * `m` must come from buildModel(doc, …) on THIS document. Param 2 is narrowed
  * to exactly the doc fields it reads so a CompiledMotion (which carries those
  * four fields verbatim) satisfies it directly; full WorkshopDocs still fit. */
-export function frameFromModel(m:Model,doc:Pick<WorkshopDoc,'duration'|'inbetweens'|'gripSide'|'clavicleLift'>,time:number):EffectiveFrame{
+export function frameFromModel(m:Model,doc:Pick<WorkshopDoc,'duration'|'inbetweens'|'gripSide'|'clavicleLift'|'freeArms'>,time:number):EffectiveFrame{
   const t=Math.max(0,Math.min(doc.duration,time)),side:Side=doc.gripSide==='L'?'L':'R';
   if(!doc.inbetweens){
     const {keyIndex,constraints}=constraintsAt(m.keys,t),e=m.entries[keyIndex];
     return {pose:unflattenPose(e.flat.slice()),constraints:{...constraints},keyIndex,
-      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0,clavicleLift:doc.clavicleLift,gripSide:side};
+      support:{L:e.plant.L?1:0,R:e.plant.R?1:0},gripAmount:e.grip?1:0,clavicleLift:doc.clavicleLift,freeArms:doc.freeArms,gripSide:side};
   }
   const r=interpolate(m,t),k=m.chain[r.i].real;
-  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift,gripSide:side};
+  return {pose:r.pose,constraints:{...m.keys[k].constraints},keyIndex:k,support:r.support,gripAmount:r.grip,clavicleLift:doc.clavicleLift,freeArms:doc.freeArms,gripSide:side};
 }
 
 /** Recursively Object.freeze a plain-JSON value — pojos, arrays and
@@ -492,6 +504,7 @@ export interface CompiledMotion{
  loop:boolean;
  gripSide?:Side;
  clavicleLift?:boolean;
+ freeArms?:boolean;
  /** The origin buildModel baked into the snapshot — a fresh Vector3 owned by
   * the model (compile already clones the caller's argument). Exposed so an
   * invalidation check can compare the compiled origin against the live
@@ -512,7 +525,7 @@ export function compileMotion(doc:WorkshopDoc,origin:V3|Vector3=ZERO_V3):Compile
  const keys=doc.keys.map(k=>freezeDeep<WorkshopKey>({...k,pose:clonePose(k.pose),constraints:{...k.constraints}}));
  const model=buildModel({keys,duration:doc.duration,loop:doc.loop,handFrames:{...doc.handFrames}},origin);
  return Object.freeze({docId:doc.id,keyCount:keys.length,duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
-  gripSide:doc.gripSide,clavicleLift:doc.clavicleLift,origin:Object.freeze(model.origin),model});
+  gripSide:doc.gripSide,clavicleLift:doc.clavicleLift,freeArms:doc.freeArms,origin:Object.freeze(model.origin),model});
 }
 /** frameAt over a compiled snapshot — the single sampling entry point for
  * batch consumers: the same EffectiveFrame, with the per-call buildModel
@@ -520,7 +533,7 @@ export function compileMotion(doc:WorkshopDoc,origin:V3|Vector3=ZERO_V3):Compile
 export function frameAtCompiled(c:CompiledMotion,time:number):EffectiveFrame{
  return frameFromModel(c.model,c,time);
 }
-/** Interpolated pose at time t over a compiled snapshot (always Hermite,
+/** Interpolated pose at time t over a compiled snapshot (using each key's outgoing curve,
  * regardless of the in-between flag) — samplePose minus the per-call
  * buildModel, same duration clamp. */
 export function sampleMotion(c:CompiledMotion,time:number):PoseParams{
@@ -564,14 +577,22 @@ export function nearestKey(doc:WorkshopDoc,time:number,eps=.02){
  * document the validator quarantines on next load, so callers must refuse the
  * edit and say so. `origin` must be the same rest root the caller samples
  * with: pelvis-frame hands convert through it, so a different origin stores a
- * shifted copy of the live pose (a visible jump on insertion). */
-export function ensureKey(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3):WorkshopKey|undefined{
-  const existing=nearestKey(doc,time);
+ * shifted copy of the live pose (a visible jump on insertion). Explicit
+ * insertion can use a smaller tolerance than the drag auto-key's 20 ms. */
+export function ensureKey(doc:WorkshopDoc,time:number,origin:V3|Vector3=ZERO_V3,tolerance=.02):WorkshopKey|undefined{
+  if(!Number.isFinite(time))return undefined;
+  const ceiling=doc.duration-(doc.loop?WORKSHOP_LIMITS.loopGap:0);
+  time=Math.max(0,Math.min(ceiling,time));
+  const existing=nearestKey(doc,time,tolerance);
   if(existing)return existing;
   if(doc.keys.length>=WORKSHOP_LIMITS.maxKeys)return undefined;
   const frame=frameAt(doc,time,origin);
-  const ceiling=doc.duration-(doc.loop?WORKSHOP_LIMITS.loopGap:0);
-  const key:WorkshopKey={id:`k${Math.random().toString(36).slice(2,8)}`,time:Math.max(0,Math.min(ceiling,time)),label:'',pose:frame.pose,constraints:frame.constraints};
+  const base=`k${Math.random().toString(36).slice(2,8)}`;let id=base,suffix=1;
+  while(keyAt(doc,id))id=`${base}-${suffix++}`;
+  const key:WorkshopKey={id,time,label:'',pose:frame.pose,constraints:frame.constraints};
+  const keys=sortedKeys(doc);let i=0;
+  while(i<keys.length-1&&key.time>=keys[i+1].time)i++;
+  if(keys[i]&&keys[i].time<key.time&&(i<keys.length-1||doc.loop)&&keys[i].interpolation!==undefined)key.interpolation=keys[i].interpolation;
   insertKey(doc,key);return key;
 }
 
@@ -596,6 +617,7 @@ export function validateDocShape(d:unknown):string[]{
  if(typeof doc.inbetweens!=='boolean')e.push('inbetweens 必须是布尔值');
  if(typeof doc.loop!=='boolean')e.push('loop 必须是布尔值');
  if(doc.clavicleLift!==undefined&&typeof doc.clavicleLift!=='boolean')e.push('clavicleLift 必须是布尔值');
+ if(doc.freeArms!==undefined&&typeof doc.freeArms!=='boolean')e.push('freeArms 必须是布尔值');
  if(doc.gripSide!==undefined&&doc.gripSide!=='R'&&doc.gripSide!=='L')e.push('gripSide 必须是 R 或 L');
  for(const s of ['L','R']as const){
   const v=(doc.handFrames as Record<string,unknown>|undefined)?.[s];
@@ -628,6 +650,7 @@ export function validateDocShape(d:unknown):string[]{
   else if(ids.has(k.id))e.push(`keys[${idx}].id=${k.id} 重复`);
   else ids.add(k.id);
   if(typeof k.label!=='string')e.push(`keys[${idx}].label 必须是字符串`);
+  if(k.interpolation!==undefined&&k.interpolation!=='hermite'&&k.interpolation!=='linear')e.push(`keys[${idx}].interpolation 必须是 hermite 或 linear`);
   if(!(typeof k.time==='number'&&Number.isFinite(k.time))){e.push(`keys[${idx}].time 不是有限数`);return;}
   if(k.time<-1e-9||k.time>doc.duration+1e-6)e.push(`keys[${idx}].time=${k.time} 超出 0–${doc.duration}`);
   if(k.time<=prev)e.push(`keys[${idx}].time=${k.time} 未严格递增（重复时间会污染补间）`);
@@ -733,8 +756,8 @@ export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
    * must get a line below (swap, mirror or keep — silent omission means the
    * mirrored document quietly keeps the source's value):
    *   WorkshopDoc: schemaVersion · id · name · english · duration ·
-   *     inbetweens · loop · handFrames · clavicleLift · gripSide · keys
-   *   WorkshopKey: id · time · label · pose · constraints · videoTime
+   *     inbetweens · loop · handFrames · clavicleLift · freeArms · gripSide · keys
+   *   WorkshopKey: id · time · label · pose · constraints · interpolation · videoTime
    *   PoseParams:  root · yaw · lean · chest · side · handL · handR ·
    *     footL · footR   (hand: target/pole/forward/normal; foot: +yaw/pitch)
    *   KeyConstraints: plantL · plantR · grip · contact                       */
@@ -744,6 +767,7 @@ export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
       pose:{root:mv(p.root),yaw:-p.yaw,lean:p.lean,chest:-p.chest,side:-p.side,
         handL:hand(p.handR),handR:hand(p.handL),footL:foot(p.footR),footR:foot(p.footL)},
       constraints:{plantL:c.plantR,plantR:c.plantL,grip:c.grip,contact:c.contact}};
+    if(k.interpolation!==undefined)key.interpolation=k.interpolation;
     if(k.videoTime!==undefined)key.videoTime=k.videoTime;
     return key;
   });
@@ -751,6 +775,7 @@ export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
     duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
     handFrames:{L:doc.handFrames.R,R:doc.handFrames.L},
     ...(doc.clavicleLift!==undefined?{clavicleLift:doc.clavicleLift}:{}),
+    ...(doc.freeArms!==undefined?{freeArms:doc.freeArms}:{}),
     ...(doc.gripSide==='L'?{}:{gripSide:'L' as const}),
     keys};
 }
