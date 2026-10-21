@@ -451,11 +451,11 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // 引拍 / 落拍 / 击球: authored shapes with per-phase wrist heuristics from
  // 2D landmark residuals (takeback too racket-side & high; drop too racket-side
  // & low; contact slightly too lead-side / short of forward reach).
- // Pose-validity safe: takeback stays near authored elevation (only mild
- // lateral damp). Drop/contact get stronger lateral + slight lift/forward.
- const takeUp=wristAdjust(TAKE_UP,{lateral:.85,reach:.98});
- const takeDrop=wristAdjust(TAKE_DROP,{lateral:.60,up:.98,forward:1.02,reach:.95,lift:.015});
- const ball=wristAdjust(BALL,{lateral:.88,up:1.01,forward:1.04,reach:1.0,lift:.008});
+ // Pose-validity: takeback changes lateral only (elevation must stay above
+ // drop by ≥12°). Drop/contact get lateral + lift/forward for 2D residuals.
+ const takeUp=wristAdjust(TAKE_UP,{lateral:.72,reach:.96}); // 677621d takeback — elevation locked for C-path
+ const takeDrop=wristAdjust(TAKE_DROP,{lateral:.55,up:.98,forward:1.03,reach:.95,lift:.012});
+ const ball=wristAdjust(BALL,{lateral:1.0,up:1.02,forward:1.06,reach:1.0,lift:.01});
  setHand(keys[1].pose.handR,racket(1,takeUp));
  setHand(keys[1].pose.handL,off(1,OFF_TAKE_UP));
  setHand(keys[2].pose.handR,racket(2,takeDrop));
