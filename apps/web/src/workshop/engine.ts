@@ -5,9 +5,11 @@ import {HumanRig,skeletonSegments} from '@human3d/motion-core';
 import {attachRacket,mountRacket} from '@human3d/motion-core';
 import type {RigInfo,ViewId} from '@human3d/motion-core';
 import type {CompiledMotion,EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
-import {compileMotion,contactStartKey,frameAtCompiled,isReleaseKey,parseDoc,serializeDoc,sortedKeys,toV} from '@human3d/motion-core';
+import {buildPelvisSchedule,compileMotion,contactStartKey,frameAtCompiled,isReleaseKey,parseDoc,serializeDoc,sortedKeys,toV} from '@human3d/motion-core';
 import {analyzePose,solveEffectiveFrame,type Analysis} from '@human3d/motion-core';
+import type {PelvisSchedule} from '@human3d/motion-core';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from '@human3d/motion-core';
+import {bindSceneBackground} from '../theme/scene-background';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
 export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean;onion:boolean;onionCount:number;onionMode:'keys'|'step';onionStep:number}
@@ -106,7 +108,7 @@ export class WorkshopEngine{
   model?:Group;rig?:HumanRig;racket?:Group;ready=false;disposed=false;
   playing=true;speed=1;time=0;view:ViewId='threeQuarter';
   options:WorkshopOptions={handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys',onionStep:.1};
-  private clock=new Clock();private raf=0;private lastNotify=0;private resizeObserver:ResizeObserver;
+  private clock=new Clock();private raf=0;private lastNotify=0;private resizeObserver:ResizeObserver;private unbindTheme?:()=>void;
   private keyLight?:DirectionalLight;
   private handleGroup=new Group();private handles:Handle[]=[];private contactMarkers:Mesh[]=[];
   private trajectories=new Map<string,Line>();private comMarker?:Mesh;private comLine?:Line;private supportLoop?:LineLoop;
@@ -129,6 +131,7 @@ export class WorkshopEngine{
    * them; a mid-sheet real-doc edit can cost ≤SHEET_MAX_TILES extra compiles
    * of the frozen doc, correctness intact. */
   private compiled?:{doc:WorkshopDoc;ver:number;c:CompiledMotion};
+  private pelvis?:{doc:WorkshopDoc;ver:number;schedule:PelvisSchedule};
   private docVer=0;
   private compiledFor(doc:WorkshopDoc){
    const e=this.compiled;
@@ -166,7 +169,7 @@ export class WorkshopEngine{
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=PCFSoftShadowMap;
     this.renderer.domElement.setAttribute('aria-label','动作工作台三维编辑视图');this.host.appendChild(this.renderer.domElement);
-    this.scene.background=new Color('#f5f7fa');this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
+    this.unbindTheme=bindSceneBackground(this.scene);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
     const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
     const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
     const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);
@@ -315,11 +318,22 @@ export class WorkshopEngine{
     const doc=this.getDoc();
     return this.frameAtTime(doc,Math.max(0,Math.min(doc.duration,this.time)));
   }
+  /** Shift schedule for the current document version. Rebuilt when the doc
+   * content changes; admissible documents leave the historical solve untouched. */
+  private scheduleFor(doc:WorkshopDoc){
+    const ver=this.docVer;
+    if(this.pelvis&&this.pelvis.doc===doc&&this.pelvis.ver===ver)return this.pelvis.schedule;
+    const schedule=buildPelvisSchedule(this.rig!,this.compiledFor(doc));
+    this.pelvis={doc,ver,schedule};
+    return schedule;
+  }
   /** Solve an effective frame; support fades, the grip ramp and the clavicle
-   * assist come from the sampler, not the key flags. */
-  private solveFrame(f:EffectiveFrame){
+   * assist come from the sampler, not the key flags. `t` selects the pelvis
+   * shift on a folding document. */
+  private solveFrame(f:EffectiveFrame,t:number){
     if(!this.rig)return;
-    solveEffectiveFrame(this.rig,f);
+    const schedule=this.scheduleFor(this.getDoc());
+    solveEffectiveFrame(this.rig,f,schedule.passthrough?undefined:schedule.at(t));
     /* Remount on side change — the frame carries the doc's gripSide, and the
      * mount is a constant per document, so this fires at most once per edit
      * (here, the one place every solve path funnels through, trajectory and
@@ -334,8 +348,10 @@ export class WorkshopEngine{
   }
   solveCurrent(){
     if(!this.rig)return;
-    const f=this.currentFrame();
-    this.solveFrame(f);
+    const doc=this.getDoc();
+    const t=Math.max(0,Math.min(doc.duration,this.time));
+    const f=this.frameAtTime(doc,t);
+    this.solveFrame(f,t);
     this.latestFrame=f;
     if(this.racket)this.racket.visible=f.gripAmount>0;
     this.updateHandles(f);
@@ -373,8 +389,9 @@ export class WorkshopEngine{
     // Trajectory lines at 60 samples.
     const samples=60,paths:Record<string,Vector3[]>={tip:[],wrist_R:[],wrist_L:[]};
     for(let i=0;i<=samples;i++){
-      const f=this.frameAtTime(doc,i/samples*doc.duration);
-      this.solveFrame(f);
+      const sampleT=i/samples*doc.duration;
+      const f=this.frameAtTime(doc,sampleT);
+      this.solveFrame(f,sampleT);
       paths.wrist_R.push(this.rig.point('wrist_R'));paths.wrist_L.push(this.rig.point('wrist_L'));
       // No grip → no racket: skipping the sample keeps non-grip stretches out
       // of the tip line instead of writing the world origin into the path.
@@ -391,7 +408,7 @@ export class WorkshopEngine{
     for(const m of this.contactMarkers){this.scene.remove(m);m.geometry.dispose();}
     this.contactMarkers=[];
     for(const k of keys.filter(k2=>k2.constraints.contact)){
-      const f=this.frameAtTime(doc,k.time);this.solveFrame(f);
+      const f=this.frameAtTime(doc,k.time);this.solveFrame(f,k.time);
       const at=this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3();
       const ball=new Mesh(new SphereGeometry(.022,16,12),new MeshStandardMaterial({color:0xf0b429,depthTest:false,transparent:true,opacity:.95}));
       ball.position.copy(at);ball.renderOrder=21;
@@ -431,7 +448,7 @@ export class WorkshopEngine{
     for(const l of this.onionLines)l.visible=false;
     for(const t of times){
       const line=this.onionLines[t.dir<0?t.dist-1:ONION_MAX+t.dist-1];if(!line)continue;
-      this.solveFrame(this.frameAtTime(doc,t.time));
+      this.solveFrame(this.frameAtTime(doc,t.time),t.time);
       const a=line.geometry.getAttribute('position');
       this.onionSegs.forEach((b,i)=>{const p=this.rig!.point(b.name),q=this.rig!.point(b.parent);a.setXYZ(i*2,p.x,p.y,p.z);a.setXYZ(i*2+1,q.x,q.y,q.z);});
       a.needsUpdate=true;line.visible=true;
@@ -641,7 +658,7 @@ export class WorkshopEngine{
     if(force||a)this.onFrame?.({time:this.time,duration:doc.duration,playing:this.playing,label,analysis:a});
   }
   dispose(){
-    this.disposed=true;cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();
+    this.disposed=true;this.unbindTheme?.();cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();
     const dom=this.renderer.domElement;
     dom.removeEventListener('pointerdown',this.onPointerDown);dom.removeEventListener('pointermove',this.onPointerMove);dom.removeEventListener('pointerup',this.onPointerUp);dom.removeEventListener('pointercancel',this.onPointerUp);
     // Everything in this scene was created by the workshop (handles, markers,

@@ -1,8 +1,11 @@
 import {createRoot} from 'react-dom/client';
 import {WorkshopApp} from './WorkshopApp';
 import type {RigInfo} from '@human3d/motion-core';
+import '../tailwind.css';
 import '../style.css';
 import './workshop.css';
+import '../components/ui/ui.css';
+import '../theme/panels.css';
 const host=document.getElementById('root')!;
 fetch('/models/rig.json')
  .then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>;})

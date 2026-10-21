@@ -60,6 +60,8 @@ apps/server @human3d/server ─┘
 | 求解零漂移 | 240fps 质量探针全量重跑：6 个动作与提交基线逐值相同（仅补上报告早已存在但基线未重生成的 `armReachResidual.side` 字段） |
 | 结构自检 | core 不 import apps ✓；core 生产代码无 `node:`/DOM ✓；web 生产代码不 import server ✓；server 不 import web ✓；无 `@human3d/*/src/` 深路径导入 ✓ |
 
+上表是工作区迁移当时的证据（当时 `SERVICE_VERSION` 为 0.4.0，idle 制品 id 为 `mot_c67dda30d91962fd`）。之后的求解语义变更见 [decisions/0002-package-identity-service-version.md](decisions/0002-package-identity-service-version.md)；当前 idle 制品 id 以 `spec/examples/idle.pose.json` 为准。
+
 ## 自动化边界检查
 
 `tests/architecture.test.ts` + `tests/architecture-boundaries.ts` 把上表的边界变成可执行断言，随 `npm test`（与 CI）运行——文档与一次性扫描守不住多 Agent 并行编辑：

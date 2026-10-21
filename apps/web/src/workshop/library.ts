@@ -95,6 +95,14 @@ export class MotionLibrary{
     this.save();
   }
   rename(id:string,name:string){const d=this.docs.find(x=>x.id===id);if(d){d.name=name;this.save();}}
+  /** Move `activeId` to the slot occupied by `overId`. No-op when either id is missing. */
+  reorder(activeId:string, overId:string){
+   const from=this.docs.findIndex(d=>d.id===activeId), to=this.docs.findIndex(d=>d.id===overId);
+   if(from<0||to<0||from===to)return;
+   const [doc]=this.docs.splice(from, 1);
+   this.docs.splice(to, 0, doc);
+   this.save();
+  }
   /** Insert a parsed import; regenerates the id when it clashes. */
   add(doc:WorkshopDoc){
     if(docIdTaken(this.docs,doc.id))doc.id=newDocId(doc.name);

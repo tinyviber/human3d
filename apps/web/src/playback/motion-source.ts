@@ -1,6 +1,6 @@
 import {LoopOnce,LoopRepeat,Quaternion,Vector3,type AnimationAction,type AnimationMixer,type Bone,type Object3D} from 'three';
-import {angleAt,checkPosePackageShape,compileMotion,frameAtCompiled,gripFrame,solveEffectiveFrame,HumanRig} from '@human3d/motion-core';
-import type {CompiledMotion,DebugOptions,DynamicsRecords,MuscleActionFile,MotionCapabilities,PosePackage,WorkshopDoc} from '@human3d/motion-core';
+import {angleAt,buildPelvisSchedule,checkPosePackageShape,compileMotion,frameAtCompiled,gripFrame,solveEffectiveFrame,HumanRig} from '@human3d/motion-core';
+import type {CompiledMotion,DebugOptions,DynamicsRecords,MuscleActionFile,MotionCapabilities,PelvisSchedule,PosePackage,WorkshopDoc} from '@human3d/motion-core';
 import type {DynamicsCase,DynamicsReplay} from '../lab/dynamics';
 
 /** Per-frame measurements for the inspector/QA: joint angles from FK points,
@@ -80,14 +80,17 @@ export class ClipSource implements MotionSource{
  * mutable document were ever handed in. */
 export class DocumentSource implements MotionSource{
   readonly kind='document' as const;status:SourceStatus='ready';
-  private readonly compiled:CompiledMotion;private grip=0;
+  private readonly compiled:CompiledMotion;private readonly schedule:PelvisSchedule;private grip=0;
   constructor(private rig:HumanRig,private doc:WorkshopDoc,private racket?:{getWorldPosition(v:Vector3):Vector3}){
     this.compiled=compileMotion(doc,rig.rest.get('root')!);
+    this.schedule=buildPelvisSchedule(rig,this.compiled);
   }
   get duration(){return this.compiled.duration;}
   seek(t:number){
-    const f=frameAtCompiled(this.compiled,Math.max(0,Math.min(this.compiled.duration,t)));
-    solveEffectiveFrame(this.rig,f);this.grip=f.gripAmount;
+    const time=Math.max(0,Math.min(this.compiled.duration,t));
+    const f=frameAtCompiled(this.compiled,time);
+    solveEffectiveFrame(this.rig,f,this.schedule.passthrough?undefined:this.schedule.at(time));
+    this.grip=f.gripAmount;
   }
   wantsProp(){return this.grip>0;}
   /** The document's authored grip side — the racket mount and readout follow it. */

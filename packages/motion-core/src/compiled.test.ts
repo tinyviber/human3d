@@ -6,10 +6,12 @@ import {HumanRig} from './rig';
 import {attachRacket} from './racket';
 import {motionFileById} from './motion-files';
 import {sampleTimes,solveWorkshop} from './pose-package';
+import {pelvisSampleCount} from './pelvis-schedule';
 import {probeFrames} from './quality-probe';
 import {WORKSHOP_REVISION,workshopMeta} from './protocol';
 import {compileMotion,defaultDocument,flattenPose,frameAt,frameAtCompiled,sampleMotion,samplePose,
  serializeDoc,sortedKeys,type WorkshopDoc} from './document';
+import {measurePelvisCorrection,solvePose} from './solver';
 import {mulberry32,randomDoc} from './random-document';
 
 /* PR-B (issue #10): the compiled sampling snapshot. compileMotion clones and
@@ -23,7 +25,9 @@ import {mulberry32,randomDoc} from './random-document';
  * The call-count pin works through vi.mock('./document'): pose-package,
  * quality-probe and random-document all import './document' relatively, so
  * their calls route through the counting wrappers too. Solver modules import
- * only types/toV — they can never inflate the frameAt count. */
+ * only types/toV — they can never inflate the frameAt count. The pelvis
+ * schedule samples `frameAtCompiled` on its own 120 Hz grid; that cost is
+ * part of the compiled count below, and `frameAt` stays at zero. */
 const calls=vi.hoisted(()=>({compile:0,frameAt:0,compiled:0}));
 vi.mock('./document',async importOriginal=>{
  const m=await importOriginal<typeof import('./document')>();
@@ -68,7 +72,7 @@ describe('compile once, sample many — batch consumers go through the snapshot'
   /* capture()'s extraTimes pass re-samples every key instant AFTER the
    * uniform grid — a key coinciding with a grid point is visited twice
    * (pose-package.ts), so the count is grid+keys, never deduplicated. */
-  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length+sortedKeys(doc).length);
+  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length+sortedKeys(doc).length+pelvisSampleCount(doc.duration));
   expect(calls.frameAt).toBe(0); // the per-call buildModel path stays cold
  });
  it('probeFrames compiles once and samples the uniform grid only',()=>{
@@ -76,8 +80,14 @@ describe('compile once, sample many — batch consumers go through the snapshot'
   resetCalls();
   probeFrames(rig,doc,fps,racket);
   expect(calls.compile).toBe(1);
-  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length); // no extraTimes pass
+  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length+pelvisSampleCount(doc.duration)); // no extraTimes pass; the schedule grid is separate
   expect(calls.frameAt).toBe(0);
+ });
+ it('measures the same pelvis shift solvePose applies when no override is passed',()=>{
+  const doc=defaultDocument(rig.rest);
+  const f=frameAt(doc,doc.duration/2,origin());
+  const state={support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide};
+  expect(measurePelvisCorrection(rig,f.pose,f.constraints,state).shift).toBe(solvePose(rig,f.pose,f.constraints,state).pelvisShift);
  });
 });
 

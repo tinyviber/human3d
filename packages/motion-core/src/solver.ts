@@ -14,8 +14,43 @@ export const DORSI_LIMIT_DEG=20;
 export interface SolveState{support?:SupportWeights;gripAmount?:number;clavicleLift?:boolean;
  /** Which hand grips (finger wrap + racket mount + clavicle assist). Absent
   * means 'R' — the pre-WP-D behaviour every existing caller relied on. */
- gripSide?:Side}
+ gripSide?:Side;
+ /** Posterior shift (m) applied instead of this frame's argmin. Absent, or
+  * within 1e-9 m of the argmin, leaves the historical solve untouched. */
+ pelvisShift?:number}
 export interface SolveReport{pelvisShift:number;pelvisSaturated:boolean}
+
+/** The per-frame dorsiflexion argmin. Stops before leg IK and the arms: the
+ * shift is fixed once the spine and the support-weighted ankle targets exist,
+ * and that is the number `solvePose` applies when no override is passed.
+ * Keeping the preamble here (instead of calling `solvePose`) is what makes a
+ * 120 Hz schedule cheap enough to build on every capture. */
+export function measurePelvisCorrection(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:SolveState={}){
+ const {pelvisShift:_drop,...rest}=state;
+ void _drop;
+ return rig.batch(()=>{
+  rig.reset();
+  const root=rig.bone('root'),origin=rig.rest.get('root')!;
+  root.position.copy(origin).add(new Vector3(
+    MathUtils.clamp(p.root.x,-.6,.6),
+    MathUtils.clamp(p.root.y,-.55,.35),
+    MathUtils.clamp(p.root.z,-.6,.6)));
+  rig.rotate('root',0,p.yaw,0);
+  for(const n of ['spine05','spine04','spine03','spine02','spine01'])rig.rotate(n,p.lean/5,p.chest/5,p.side/5);
+  rig.rotate('neck01',-p.lean*.22,-p.chest*.15,-p.side*.2);rig.rotate('neck02',-p.lean*.22,0,0);rig.rotate('head',-p.lean*.12,0,0);
+  const support=rest.support??{L:c.plantL?1:0,R:c.plantR?1:0};
+  const legs=(['L','R'] as const).map(side=>{
+    const f=side==='L'?p.footL:p.footR;
+    return {side,target:toV(f.target),pole:toV(f.pole),footQ:footRotation(f.yaw,f.pitch),
+      a:rig.rest.get(`upperleg01_${side}`)!.distanceTo(rig.rest.get(`lowerleg01_${side}`)!),
+      b:rig.rest.get(`lowerleg01_${side}`)!.distanceTo(rig.rest.get(`foot_${side}`)!)};
+  });
+  const dorsiLegs:DorsiLeg[]=legs.map(l=>({hip:rig.point(`upperleg01_${l.side}`),target:l.target,pole:l.pole,
+    upper:l.a,lower:l.b,footQ:l.footQ,weight:support[l.side]}));
+  const correction=pelvisDorsiCorrection(dorsiLegs,DORSI_LIMIT_DEG,.15);
+  return {shift:correction.shift,saturated:correction.saturated,worstDorsiflexion:0};
+ });
+}
 
 /** Solve one frame. `state` carries the interpolated support weights and grip
  * amount from the document sampler; without it the discrete constraint flags
@@ -51,7 +86,12 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   const dorsiLegs:DorsiLeg[]=legs.map(l=>({hip:rig.point(`upperleg01_${l.side}`),target:l.target,pole:l.pole,
     upper:l.a,lower:l.b,footQ:l.footQ,weight:support[l.side]}));
   const correction=pelvisDorsiCorrection(dorsiLegs,DORSI_LIMIT_DEG,.15);
-  if(correction.shift>0){root.position.z-=correction.shift;rig.syncWorld();}
+  const override=state.pelvisShift;
+  const useOverride=override!==undefined&&Math.abs(override-correction.shift)>1e-9;
+  // The else branch is the historical statement, kept as its own statement so
+  // an absent override subtracts `correction.shift` exactly as before.
+  if(useOverride){if(override!>0){root.position.z-=override!;rig.syncWorld();}}
+  else if(correction.shift>0){root.position.z-=correction.shift;rig.syncWorld();}
   for(const l of legs){rig.limb(l.side,'leg',l.target,l.pole);rig.worldRotation(`foot_${l.side}`,l.footQ);}
 
   // Clavicle assist (doc flag): the GRIPPING shoulder girdle rides up with a
@@ -74,14 +114,15 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   blendGrip(rig,gripSide,gripAmount);
   rig.relaxHand(gripSide==='R'?'L':'R');
   rig.syncWorld();
-  return {pelvisShift:correction.shift,pelvisSaturated:correction.saturated};
+  const applied=useOverride?override!:correction.shift;
+  return {pelvisShift:applied,pelvisSaturated:correction.saturated||applied+1e-9<correction.shift};
  });
 }
 
 /** The single solve entry for a sampled document frame: support fades, the
  * grip ramp and the clavicle assist all come from the frame, never re-derived. */
-export function solveEffectiveFrame(rig:HumanRig,f:EffectiveFrame){
-  return solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide});
+export function solveEffectiveFrame(rig:HumanRig,f:EffectiveFrame,pelvisShift?:number){
+  return solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide,pelvisShift});
 }
 
 /** Ankle dorsiflexion (degrees) of the solved rig, from the shank direction

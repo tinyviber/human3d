@@ -1,7 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {Group, Panel, Separator} from 'react-resizable-panels';
 import {Activity,ArrowLeft,Camera,Check,Download,FileBox,Film,FlipHorizontal2,LayoutGrid,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {LibraryList, Timeline} from './chrome';
+import {useWorkshopUi} from './ui-store';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
@@ -57,40 +60,17 @@ function WristPanel({k,side,edit}:{k:WorkshopKey;side:Side;edit:(fn:(key:Worksho
   <Slider label="旋前 / 旋后" value={v.twist} min={-90} max={90} step={1} onChange={x=>turn('twist',x)}/>
  </div>;
 }
-function Timeline({doc,time,selected,onSelect,onSeek,onRetime}:{doc:WorkshopDoc;time:number;selected:string;onSelect:(id:string)=>void;onSeek:(t:number)=>void;onRetime:(id:string,t:number)=>void}){
- const track=useRef<HTMLDivElement>(null);
- const [dragKey,setDragKey]=useState<string|null>(null);
- const frac=(x:number)=>{const r=track.current!.getBoundingClientRect();return Math.max(0,Math.min(1,(x-r.left)/r.width));};
- const move=(ev:{clientX:number})=>{
-  if(!dragKey||!track.current)return;
-  const keys=sortedKeys(doc),i=keys.findIndex(k=>k.id===dragKey);
-  const lo=(keys[i-1]?.time??0)+.01,hi=(keys[i+1]?.time??doc.duration)-.01;
-  onRetime(dragKey,Math.max(lo,Math.min(hi,frac(ev.clientX)*doc.duration)));
- };
- return <div className="ws-track-wrap">
-  <div ref={track} className="ws-track" onPointerDown={e=>{if(e.target===e.currentTarget)onSeek(frac(e.clientX)*doc.duration);}} onPointerMove={move} onPointerUp={()=>setDragKey(null)}>
-   <div className="ws-progress" style={{width:`${time/doc.duration*100}%`}}/>
-   <div className="ws-cursor" style={{left:`${time/doc.duration*100}%`}}/>
-   {sortedKeys(doc).map(k=><button key={k.id} className={`ws-key ${k.id===selected?'sel':''} ${k.constraints.contact?'contact':''}`} style={{left:`${k.time/doc.duration*100}%`}}
-     title={`${k.label||'关键帧'} · ${k.time.toFixed(2)}s`}
-     onPointerDown={e=>{e.stopPropagation();onSelect(k.id);setDragKey(k.id);(e.target as HTMLElement).setPointerCapture(e.pointerId);}}
-     onPointerMove={move} onPointerUp={()=>setDragKey(null)}
-     onClick={()=>{onSelect(k.id);onSeek(k.time);}}/>)}
-  </div>
-  <div className="ws-track-labels">{sortedKeys(doc).map(k=><button key={k.id} className={k.id===selected?'sel':''} style={{left:`${k.time/doc.duration*100}%`}} onClick={()=>{onSelect(k.id);onSeek(k.time);}}>{k.label||fmt(k.time)}</button>)}</div>
- </div>;
-}
 export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const mount=useRef<HTMLDivElement>(null),engine=useRef<WorkshopEngine|null>(null),video=useRef<HTMLVideoElement>(null),fileRef=useRef<HTMLInputElement>(null),importRef=useRef<HTMLInputElement>(null);
  const lib=useRef<MotionLibrary|null>(null);
  const generationPreview=useRef<WorkshopDoc|null>(null),generationWorker=useRef<Worker|null>(null),generationLocked=useRef(false);
  if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),globalThis.localStorage).load();
  const [,bump]=useState(0);
- const [selected,setSelected]=useState('k-contact');
- const [newName,setNewName]=useState('');
+ const selected=useWorkshopUi(s=>s.selected), setSelected=useWorkshopUi(s=>s.setSelected);
+ const newName=useWorkshopUi(s=>s.newName), setNewName=useWorkshopUi(s=>s.setNewName);
  const [info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState('');
  const [frame,setFrame]=useState<WorkshopFrame>({time:0,duration:.8,playing:true,label:''});
- const [view,setView]=useState<ViewId>('threeQuarter');
+ const view=useWorkshopUi(s=>s.view), setView=useWorkshopUi(s=>s.setView);
  const books=useRef(new HistoryBook()),gate=useRef(new RecordGate()),wristEpoch=useRef(0),shortcuts=useRef<{undo:()=>void;redo:()=>void}>({undo:()=>{},redo:()=>{}});
  const [hint,setHint]=useState('');
  useEffect(()=>{if(!hint)return;const t=setTimeout(()=>setHint(''),6000);return()=>clearTimeout(t);},[hint]);
@@ -112,7 +92,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const subtleOk=typeof globalThis.crypto?.subtle?.digest==='function';
  // Session-only display toggles (never persisted) — same convention as the
  // engine's WorkshopOptions defaults.
- const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys' as 'keys'|'step',onionStep:.1});
+ const opts=useWorkshopUi(s=>s.opts), setOpts=useWorkshopUi(s=>s.setOpts);
  const [videoUrl,setVideoUrl]=useState('');const [sync,setSync]=useState(false);const syncOffset=useRef(0);const [videoPlaying,setVideoPlaying]=useState(false);
  useEffect(()=>{
   if(!mount.current)return;let e:WorkshopEngine;
@@ -442,22 +422,16 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <div className="brand"><Activity size={25} strokeWidth={2}/><span>KINESIS</span><i/><h1>动作工作台</h1><small>姿态优先 · 关键帧 + 约束</small></div>
    <nav><a href="/" className="ws-back"><ArrowLeft size={14}/>返回实验室</a></nav>
   </header>
-  <main className="ws-main">
-   <aside className="ws-left">
+  <Group orientation="horizontal" className="ws-main" id="workshop-panes">
+   <Panel id="ws-library" className="ws-left" defaultSize={250} minSize={200} maxSize={420}>
     <section className="ws-card" inert={generationLockedUi}><h2>动作库 <small>{L.docs.length} 个动作</small></h2>
-     <div className="ws-lib">
-      {L.docs.map(doc=><div key={doc.id} className={`ws-lib-row ${doc.id===d.id?'sel':''}`}>
-       <button className="ws-lib-name" onClick={()=>selectDoc(doc.id)} title={doc.id}><span>{doc.name}</span><small>{doc.keys.length} 关键帧 · {doc.duration.toFixed(2)}s</small></button>
-       <button aria-label={`复制 ${doc.name}`} title="复制" onClick={()=>duplicateDoc(doc.id)}><Plus size={12}/></button>
-       <button aria-label={`删除 ${doc.name}`} title="删除" onClick={()=>removeDoc(doc.id)}><Trash2 size={12}/></button>
-      </div>)}
-     </div>
+     <LibraryList docs={L.docs} activeId={d.id} onSelect={selectDoc} onDuplicate={duplicateDoc} onRemove={removeDoc} onReorder={(active, over)=>{L.reorder(active, over);bump(v=>v+1);}}/>
      <div className="ws-row">
       <input className="ws-newname" value={newName} placeholder="新动作名称…" onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')createDoc();}}/>
       <button onClick={createDoc}><Plus size={13}/>新建</button>
      </div>
-     <p className="ws-note" style={L.lastError?{color:'#c0392b'}:undefined}>{L.lastError?`保存失败（仅存于内存）：${L.lastError}`:'动作自动保存到本机浏览器；导出 JSON 可跨设备分享。'}</p>
-     {L.quarantine.length?<div className="ws-quarantine"><p className="ws-note" style={{color:'#c0392b'}}>{L.quarantine.length} 个动作未通过校验，已隔离保存，不参与播放。导出后可修复再导入。</p>
+     <p className="ws-note" style={L.lastError?{color:'var(--red)'}:undefined}>{L.lastError?`保存失败（仅存于内存）：${L.lastError}`:'动作自动保存到本机浏览器；导出 JSON 可跨设备分享。'}</p>
+     {L.quarantine.length?<div className="ws-quarantine"><p className="ws-note" style={{color:'var(--red)'}}>{L.quarantine.length} 个动作未通过校验，已隔离保存，不参与播放。导出后可修复再导入。</p>
       {L.quarantine.map((q,i)=><div key={`${q.id}-${i}`} className="ws-row"><small>{q.name||q.id||'未命名'}：{q.reason}</small><button onClick={()=>exportQuarantine(i)}><Download size={12}/>导出</button><button aria-label={`丢弃 ${q.name||q.id}`} onClick={()=>{if(confirm('丢弃这个隔离动作？此操作不可撤销。'))L.discardQuarantine(i);bump(v=>v+1);}}><Trash2 size={12}/></button></div>)}
      </div>:null}
     </section>
@@ -549,8 +523,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <button onClick={()=>void exportPackage()} disabled={!subtleOk||exporting} title={subtleOk?'求解并校验当前文档，下载 .pose.json':'姿态包导出需 https 或 localhost 打开'}><Package size={13}/>{exporting?'求解中…':'导出姿态包'}</button>
        <button onClick={()=>void exportGlbFile()} disabled={!subtleOk||exporting} title={subtleOk?'同一求解结果烘焙成 glTF 动画，干净模型重新解析后导出':'GLB 导出需 https 或 localhost 打开'}><FileBox size={13}/>{exporting?'导出中…':'导出 GLB'}</button>
       </div>
-      <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
-      {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'#c0392b'}}>上一次导出被语义校验拒绝，未生成文件：</p>
+      <p className="ws-note" style={subtleOk?undefined:{color:'var(--red)'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
+      {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'var(--red)'}}>上一次导出被语义校验拒绝，未生成文件：</p>
        <ul>{pkgProblems.items.map((p,i)=><li key={i}>{p}</li>)}</ul></div>:null}
      </div>
      <div className="ws-sub"><h3>静帧渲染 <small>固定相机预设 · 固定出图尺寸</small></h3>
@@ -585,15 +559,17 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <p><i style={{background:'#d23c3c'}}/>拍头 · <em style={{color:'#f0b429'}}>触球点</em></p>
      <p className="ws-note">直接拖动末端，IK 自动解算整条链；在空白处拖动仍是旋转视角。</p>
     </section>
-   </aside>
-   <section className="ws-viewport">
+   </Panel>
+   <Separator className="pane-resize"/>
+   <Panel id="ws-stage" className="ws-viewport" minSize={320}>
     <div ref={mount} className="ws-canvas"/>
     <div className="ws-view-heading"><h2>{displayDoc.name}</h2><p>{frame.label||'—'} · {displayDoc.inbetweens?'连续补间预览':'关键帧步进'}{candidateSession?` · ${previewSide==='source'?'A 源动作':'B 候选'}`:''}</p></div>
     <div className="ws-cameras">{([['front','正面'],['side','侧面'],['threeQuarter','45°'],['back','背面']] as [ViewId,string][]).map(([v,l])=><button key={v} aria-pressed={view===v} onClick={()=>{setView(v);engine.current?.setView(v);}}>{l}</button>)}</div>
     <div className="ws-hint"><span className="status-dot"/>{info?'拖动彩色手柄调整姿态 · 编辑写入选中或自动新建的关键帧':'加载中'}</div>
     {!info?<div className="ws-loading"><div className="loading-orbit"/><strong>{error?'加载失败':'正在读取人体模型'}</strong><p>{error}</p></div>:null}
-   </section>
-   <aside className="ws-right" inert={generationLockedUi}>
+   </Panel>
+   <Separator className="pane-resize"/>
+   <Panel id="ws-inspector" className="ws-right" defaultSize={272} minSize={220} maxSize={480} inert={generationLockedUi}>
     <section className="ws-card"><h2>选中关键帧 {sel?<small>@{sel.time.toFixed(2)}s</small>:null}</h2>
      {sel?<>
       <label className="ws-field"><span>标签</span><input value={sel.label} placeholder="阶段名，如 触球" onChange={e=>editSelected(k=>{k.label=e.target.value;})}/></label>
@@ -603,7 +579,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <Row label="右脚支撑锁定" detail="离地帧的脚位会作为摆动路径点" checked={sel.constraints.plantR} onChange={v=>editSelected(k=>{k.constraints.plantR=v;})}/>
        {(()=>{const ks=sortedKeys(d),si=ks.findIndex(k=>k.id===sel.id);
         return si===ks.length-1&&si>0&&((ks[si-1].constraints.plantL&&!sel.constraints.plantL)||(ks[si-1].constraints.plantR&&!sel.constraints.plantR))
-          ?<p className="ws-note" style={{color:'#c0392b'}}>此离地帧位于动作末尾：没有后续区间，脚始终停在接触点 —— 请在其后添加关键帧，抬升高度才会形成摆动轨迹。</p>:null;})()}
+          ?<p className="ws-note" style={{color:'var(--red)'}}>此离地帧位于动作末尾：没有后续区间，脚始终停在接触点 —— 请在其后添加关键帧，抬升高度才会形成摆动轨迹。</p>:null;})()}
        <Row label={d.gripSide==='L'?'左手握拍':'右手握拍'} checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>
        <Row label="触球 / 接触事件" detail="记录拍头位置为接触点" checked={sel.constraints.contact} onChange={v=>editSelected(k=>{k.constraints.contact=v;})}/>
       </div>
@@ -635,7 +611,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
          <Slider label={`${cn}脚抬升高度（脚底离地）`} value={liftOf(side,planted?owner:sel)} min={0} max={.8} step={.005} unit="m" disabled={planted} onChange={v=>setLift(side,v)}/>
          <Slider label={`${cn}脚俯仰`} value={foot.pitch} min={-40} max={40} step={1} onChange={v=>edit(()=>{foot.pitch=v;})}/>
          <Slider label={`${cn}脚朝向`} value={foot.yaw} min={-90} max={90} step={1} onChange={v=>edit(()=>{foot.yaw=v;})}/>
-         {owner!==sel?<p className="ws-note" style={{color:'#8a6d1f'}}>{cn}脚此帧由 {owner.time.toFixed(2)}s 的支撑开始帧锁定：俯仰与朝向的修改写入该帧。</p>:null}
+         {owner!==sel?<p className="ws-note" style={{color:'var(--amber)'}}>{cn}脚此帧由 {owner.time.toFixed(2)}s 的支撑开始帧锁定：俯仰与朝向的修改写入该帧。</p>:null}
         </div>;
        })}
       </div>
@@ -657,8 +633,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       {opts.onionMode==='step'?<label className="ws-field"><span>步长 s</span><input type="number" min={.02} max={1} step={.02} value={opts.onionStep} onChange={e=>{const v=Math.max(.02,Math.min(1,Number(e.target.value)||.1));setOpts(o=>({...o,onionStep:v}));engine.current?.setOptions({onionStep:v});}}/></label>:null}
      </>:null}
     </section>
-   </aside>
-  </main>
+   </Panel>
+  </Group>
   <footer className="ws-footer" inert={generationLockedUi}>
    <div className="ws-transport">
     <button className="ws-play" aria-label={frame.playing?'暂停':'播放'} onClick={()=>engine.current?.setPlaying(!frame.playing)} disabled={!info}>{frame.playing?<Pause size={21} fill="currentColor"/>:<Play size={21} fill="currentColor"/>}</button>
@@ -671,7 +647,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <div className="ws-actions">
     <button onClick={addKey}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>
-    {hint?<p className="ws-note" style={{color:'#c0392b'}}>{hint}</p>:null}
+    {hint?<p className="ws-note" style={{color:'var(--red)'}}>{hint}</p>:null}
    </div>
   </footer>
  </div>;

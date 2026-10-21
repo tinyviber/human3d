@@ -88,13 +88,19 @@ describe('semantic validator — rejects what it must',()=>{
  });
 });
 
-describe('semantic validator — documented pelvis-fold limitation',()=>{
- it('refuses the documented pelvis-fold motion with the root-acceleration check',()=>{
+describe('semantic validator — pelvis fold no longer jumps the root',()=>{
+ it('drops the root-acceleration failure and still rejects an unreachable planted foot',()=>{
   const req=JSON.parse(fs.readFileSync(path.resolve('spec/examples/rejected-pelvis-fold.request.json'),'utf8'));
   const r=handleRequest(ctx,'POST','/v1/motions',req,{});
-  // The solver emits a package; the validator is what refuses it.
+  // The argmin used to teleport the pelvis ~9 cm in one sample (root
+  // acceleration ~240 m/s²). The schedule holds across that basin gap, so
+  // the root limits pass. The left ankle target is still short of the leg
+  // — a vertical gap no posterior shift can close — and the closest foot
+  // point drifts, which the support-slip check correctly rejects.
   expect(r.status).toBe(422);
   const details=(r.body as {error:{details:string[]}}).error.details;
-  expect(details.some(d=>d.includes('root acceleration'))).toBe(true);
+  expect(details.some(d=>d.includes('root acceleration'))).toBe(false);
+  expect(details.some(d=>d.includes('root speed'))).toBe(false);
+  expect(details.some(d=>d.includes('support foot slips'))).toBe(true);
  });
 });

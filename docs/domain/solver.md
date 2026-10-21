@@ -5,6 +5,7 @@
 ## 求解路径
 
 - `frameAt → solveEffectiveFrame` 是唯一的真实求解路径：测试、质量探针（`quality-probe.ts`）、优化器（`generate.ts` 经 `probeFrames → analyzeProbeFrames → evalDetail`）、工作台渲染共用同一路径——测试/度量不得另写一套求解（learning [4]）。
+- 骨盆后移（`SERVICE_VERSION` 0.5.0）：`pelvisDorsiCorrection` 仍是逐帧 argmin。会断开可行集的文档由 `buildPelvisSchedule`（`pelvis-schedule.ts`）先持住盆地跳变，再按速度 / 加速度上限跟随；`solveEffectiveFrame` 的可选第三参是这一帧实际使用的后移。`passthrough === true` 时调用方必须省略该参数，以保持历史浮点路径。姿态包求解（`solveWorkshop`）、质量探针（`probeFrames`）、`DocumentSource` 与工作台 `WorkshopEngine` 都走这一条。竖直方向够不着的踝目标不是这条日程能修的，见 [../validation.md](../validation.md) 第 5 节。
 - IK 为双骨解析解（肩–肘–腕、髋–膝–踝定长链），含弯曲提示方向；不是迭代 CCD。
 - 求解是确定性的：同一文档 + 同一 rig 逐位重解（`property.test.ts`/`solver-baseline.test.ts` 钉死）。
 
