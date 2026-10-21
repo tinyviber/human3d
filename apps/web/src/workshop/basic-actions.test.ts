@@ -1,7 +1,7 @@
 import {beforeAll,describe,expect,it} from 'vitest';
 import fs from 'node:fs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {HumanRig,WORKSHOP_LIMITS,frameAt,keyAt,motionFileById,normalizeDoc,serializeDoc,validateDocShape,type WorkshopDoc} from '@human3d/motion-core';
+import {HumanRig,WORKSHOP_LIMITS,frameAt,keyAt,motionFileById,normalizeDoc,serializeDoc,solveEffectiveFrame,validateDocShape,type WorkshopDoc} from '@human3d/motion-core';
 import {basicInsertRefusal,insertBasicAction} from './basic-actions';
 import {BASIC_PRESETS,OTHER_PRESETS,RACKET_PRESETS} from './library';
 
@@ -122,9 +122,15 @@ describe('insertBasicAction',()=>{
   const doc=docOf('idle');
   const anchor=doc.keys[0];anchor.time=0;anchor.constraints.plantL=true;anchor.constraints.plantR=true;
   const original=structuredClone(anchor.constraints);
+  rig.reset();solveEffectiveFrame(rig,frameAt(doc,anchor.time,origin()));
+  const plantedFoot=rig.point('foot_L').clone();
   const ins=insertBasicAction(doc,basicOf('basic-lunge'),0,origin())!;
-  expect(ins.keyIds[0]).toBe(anchor.id);
   expect(keyAt(doc,anchor.id)!.constraints).toEqual(original);
+  const liftoff=keyAt(doc,ins.keyIds[0])!;
+  expect(liftoff.time).toBeGreaterThan(anchor.time);
+  expect(liftoff.constraints.plantL).toBe(false);
+  rig.reset();solveEffectiveFrame(rig,frameAt(doc,.8,origin()));
+  expect(rig.point('foot_L').distanceTo(plantedFoot)).toBeGreaterThan(.2);
   expect(validateDocShape(doc)).toEqual([]);
  });
 

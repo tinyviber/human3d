@@ -7,6 +7,9 @@ import type {Vector3} from 'three';
 /** Keys this close to the playhead are the same instant: the insertion reuses
  * that key as its first frame instead of stacking a duplicate timestamp. */
 export const BASIC_ANCHOR_EPS=.01;
+/** A distinct key just after an authored anchor can express liftoff without
+ * changing the support state at the user's original key. */
+const BASIC_BOUNDARY_EPS=.001;
 
 export interface BasicInsertion{keyIds:string[];time:number;span:number}
 
@@ -45,14 +48,25 @@ const ceilingOf=(doc:Pick<WorkshopDoc,'duration'|'loop'>)=>doc.duration-(doc.loo
 /** Why this basic action cannot be inserted at `time`, or undefined when it can.
  * Pure: the UI shows the message and leaves the document untouched. */
 export function basicInsertRefusal(doc:WorkshopDoc,basic:WorkshopDoc,time:number):string|undefined{
-  const {span}=sequenceOf(basic);
-  const reused=nearestKey(doc,Math.max(0,Math.min(ceilingOf(doc),time)),BASIC_ANCHOR_EPS)?1:0;
+  const {keys,span}=sequenceOf(basic);
+  const anchor=nearestKey(doc,Math.max(0,Math.min(ceilingOf(doc),time)),BASIC_ANCHOR_EPS);
+  const reused=anchor&&!needsConstraintBoundary(anchor,keys)?1:0;
   const added=basic.keys.length-reused;
   if(doc.keys.length+added>WORKSHOP_LIMITS.maxKeys)
    return `插入「${basic.name}」需要 ${added} 个关键帧，已达 ${WORKSHOP_LIMITS.maxKeys} 个上限，请先删除不需要的帧。`;
   if(doc.duration+span>WORKSHOP_LIMITS.maxDuration+EPS)
    return `插入「${basic.name}」后动作时长将超过 ${WORKSHOP_LIMITS.maxDuration}s 上限。`;
   return undefined;
+}
+
+function needsConstraintBoundary(anchor:WorkshopKey,seq:WorkshopKey[]):boolean{
+ const deltas=seq.map(k=>poseDelta(seq[0].pose,k.pose));
+ const movesFoot=(side:'L'|'R')=>deltas.some(d=>footMoves(side==='L'?d.footL:d.footR));
+ return (['L','R'] as const).some(side=>{
+  if(!movesFoot(side))return false;
+  const flag=side==='L'?'plantL':'plantR';
+  return anchor.constraints[flag]!==seq[0].constraints[flag];
+ });
 }
 
 function newKeyId(doc:WorkshopDoc){
@@ -63,8 +77,9 @@ function newKeyId(doc:WorkshopDoc){
 
 /** Insert a basic action at the playhead, starting from the state there.
  *
- * - The first inserted key is the state itself: an existing key within
- *   BASIC_ANCHOR_EPS is reused, otherwise a key is sampled from the live pose.
+ * - The action starts from the state at the playhead: an existing key within
+ *   BASIC_ANCHOR_EPS is reused when its support flags match the action start;
+ *   a distinct liftoff/plant boundary is added when they differ.
  * - Later keys are the state plus the action's offsets (root, spine, feet);
  *   hands are copied from the state, so the arms keep their pose.
  * - Keys after the insertion point move by the action's span and the
@@ -96,6 +111,7 @@ export function insertBasicAction(doc:WorkshopDoc,basic:WorkshopDoc,time:number,
   const consFor=(j:number):KeyConstraints=>({plantL:plant('L',j),plantR:plant('R',j),grip:baseCons.grip,contact:false});
 
   const keyIds:string[]=[];
+  const boundary=anchor&&needsConstraintBoundary(anchor,seq);
   const insertedFrom=anchor?1:0;
   // The insertion point is the boundary: even keys only a few milliseconds
   // later belong to the old timeline and must ripple with the rest.
@@ -103,8 +119,14 @@ export function insertBasicAction(doc:WorkshopDoc,basic:WorkshopDoc,time:number,
   for(const k of shifted)k.time+=span;
   doc.duration+=span;
   if(anchor){
-   // Reusing an existing key must not rewrite its authored support semantics.
-   keyIds.push(anchor.id);
+   if(boundary){
+    // The original anchor remains authored exactly as-is. This adjacent key
+    // starts the template's support state and gives contactPlan an explicit
+    // liftoff/plant boundary before the action moves the foot.
+    const key:WorkshopKey={id:newKeyId(doc),time:start+BASIC_BOUNDARY_EPS,
+     label:`${basic.name} · ${seq[0].label}`,pose:applyDelta(basePose,deltas[0]),constraints:consFor(0)};
+    doc.keys.push(key);keyIds.push(key.id);
+   }else keyIds.push(anchor.id);
   }
   for(let j=insertedFrom;j<seq.length;j++){
    const key:WorkshopKey={id:newKeyId(doc),time:start+seq[j].time-seq[0].time,label:`${basic.name} · ${seq[j].label}`,

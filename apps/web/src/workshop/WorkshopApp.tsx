@@ -770,7 +770,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       {Math.abs(frame.time-sel.time)>.001?<p className="ws-note">正在预览 {frame.time.toFixed(2)}s；修改时定位到选中帧 {sel.time.toFixed(2)}s。调整当前时刻请先添加关键帧。</p>:null}
       {adjustmentTab==='common'?<>
       <label className="ws-field"><span>动作名称</span><input data-testid="active-motion-name" aria-label="动作名称" value={d.name} onChange={e=>edit(doc=>{doc.name=e.target.value;})}/></label>
-      <Row label="自由手臂（全方向）" detail="允许肩、肘、腕超出人体参考范围；保存到整段动作" testId="free-arms" checked={d.freeArms===true} onChange={v=>edit(doc=>{if(v)doc.freeArms=true;else delete doc.freeArms;})}/>
+      <Row label="自由手臂（全方向）" detail="允许肩、肘、腕超出人体参考范围；肘屈曲超过 145° 的姿态无法导出姿态包" testId="free-arms" checked={d.freeArms===true} onChange={v=>edit(doc=>{if(v)doc.freeArms=true;else delete doc.freeArms;})}/>
       <div className="ws-sub"><h3>帧间过渡 <small>从当前关键帧到下一帧</small></h3>
        {nextTransitionKey&&transitionEndTime!==undefined?<>
         <p className="ws-note">{sel.time.toFixed(2)}s → {transitionEndTime.toFixed(2)}s{transitionIsLoop?' · 循环接缝':''}</p>

@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '@human3d/motion-core';
 import {buildManifestLocal,buildPosePackageLocal,subtleDigest,type PackageEnv} from '@human3d/motion-core';
-import {canonical,WORKSHOP_REVISION,type RigManifest} from '@human3d/motion-core';
+import {canonical,WORKSHOP_REVISION,solveWorkshop,workshopMeta,validatePosePackage,type RigManifest} from '@human3d/motion-core';
 import type {PosePackage} from '@human3d/motion-core';
 import {sha256} from './rig-manifest';
 import {createService,handleRequest,type ServiceContext} from './service';
@@ -69,16 +69,26 @@ describe('peer parity — document shapes',()=>{
   expect(bounded.served.status).toBe(200);
   expect((free.built.body as PosePackage).tracks).not.toEqual((bounded.built.body as PosePackage).tracks);
  });
- it('free elbows beyond the ordinary limit export under the explicit free-arm policy',async()=>{
+ it('free elbows beyond the ordinary limit remain rejected by the delivery gate',async()=>{
   const d=blankDocument(rig.rest,'自由肘','free-elbow');d.freeArms=true;
   solveEffectiveFrame(rig,frameAt(d,0,rig.rest.get('root')!));
   const shoulder=rig.point('upperarm01_R');
   d.keys.forEach(k=>{k.pose.handR.target={x:shoulder.x,y:shoulder.y-.08,z:shoulder.z};});
   const {built}=await parity(wire(d));
-  expect(built.status).toBe(200);
-  const pkg=built.body as PosePackage;
-  expect(pkg.action.parameters.presentation).toMatchObject({freeArms:true});
-  expect(pkg.quality.checks.find(c=>c.code==='elbow-flexion-R')?.value).toBeGreaterThan(145);
+  expect(built.status).toBe(422);
+  expect((built.body as {error:{details:string[]}}).error.details.some(e=>e.includes('elbow flexion'))).toBe(true);
+ });
+ it('rejects a free-arm elbow pose even if presentation metadata is added after solving',()=>{
+  const d=blankDocument(rig.rest,'自由肘','free-elbow');d.freeArms=true;
+  solveEffectiveFrame(rig,frameAt(d,0,rig.rest.get('root')!));
+  const shoulder=rig.point('upperarm01_R');
+  d.keys.forEach(k=>{k.pose.handR.target={x:shoulder.x,y:shoulder.y-.08,z:shoulder.z};});
+  const pkg=solveWorkshop(rig,d,40,workshopMeta({motionId:'mot_tampered-presentation',
+   manifestSHA256:manifest.manifestSHA256,bones:manifest.bones.length,actionId:'workshop-doc',
+   revision:WORKSHOP_REVISION,definitionSHA256:'test-definition',documentName:d.name,
+   source:'test',license:'test',requestFingerprint:'test',fps:40,duration:d.duration,keys:d.keys.length}));
+  pkg.action.parameters.presentation={freeArms:true};
+  expect(validatePosePackage(pkg,manifest).some(e=>e.includes('elbow flexion'))).toBe(true);
  });
  it('defaultDocument',()=>parity(wire(defaultDocument(rig.rest))));
  it('pelvis handFrames with rotated pelvis',()=>{

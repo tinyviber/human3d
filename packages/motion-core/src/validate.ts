@@ -186,13 +186,8 @@ export function validatePosePackage(pkg:PosePackage,manifest:RigManifest):string
   e.push(`semantic: root acceleration ${m.rootAccel.value.toFixed(1)} m/s² at t=${m.rootAccel.t.toFixed(2)}s exceeds ${L.rootAccelMPerS2} (pelvis step)`);
  if(m.knee.value>L.kneeFlexionDeg+L.angleToleranceDeg)
   e.push(`semantic: ${m.knee.at} knee flexion ${m.knee.value.toFixed(1)}° at t=${m.knee.t.toFixed(2)}s exceeds ${L.kneeFlexionDeg}°`);
- // Workshop free-arm documents carry an explicit presentation policy in the
- // action envelope. Keep the ordinary 145° semantic gate unchanged for every
- // other package; the opt-in authoring mode permits a straight 180° arm.
- const elbowLimit=pkg.action.parameters.presentation&&
-  (pkg.action.parameters.presentation as {freeArms?:unknown}).freeArms===true?180:L.elbowFlexionDeg;
- if(m.elbow.value>elbowLimit+L.angleToleranceDeg)
-  e.push(`semantic: ${m.elbow.at} elbow flexion ${m.elbow.value.toFixed(1)}° at t=${m.elbow.t.toFixed(2)}s exceeds ${elbowLimit}°`);
+ if(m.elbow.value>L.elbowFlexionDeg+L.angleToleranceDeg)
+  e.push(`semantic: ${m.elbow.at} elbow flexion ${m.elbow.value.toFixed(1)}° at t=${m.elbow.t.toFixed(2)}s exceeds ${L.elbowFlexionDeg}°`);
  if(m.slip&&m.slip.value>L.supportSlipM)
   e.push(`semantic: ${m.slip.at} support foot slips ${(m.slip.value*100).toFixed(1)} cm at t=${m.slip.t.toFixed(2)}s exceeds ${L.supportSlipM*100} cm`);
  return [...new Set(e)];
