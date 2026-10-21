@@ -467,8 +467,20 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  const capReach=(arm:TorsoArm,max:number):TorsoArm=>arm.reach>max?{...arm,reach:max}:arm;
  // Cap takeback/drop reach so Hermite ready→takeback and the trunk turn stay
  // clear of the chest (pose-validity arm–torso intersections). Contact uncapped.
- const offTake:TorsoArm=capReach(sem?.mapping?.offArms?.takeback?.arm ?? OFF_TAKE_UP, 0.94);
- const offDrop:TorsoArm=capReach(sem?.mapping?.offArms?.drop?.arm ?? OFF_TAKE_DROP, 0.92);
+ // Takeback raised 0.94→0.97 (~152° inner) so majority of video elbows (150–164°)
+ // land within |Δ|≤15°; drop stays lower because OFF_REACH_SCALE still clears the
+ // trunk turn. Chest-clearance gates unchanged.
+ const OFF_TAKEBACK_REACH_CAP=0.97;
+ const OFF_DROP_REACH_CAP=0.94;
+ // Extra reach soft-cap when the authored wrist points across the chest
+ // (out-component low): keeps pose-validity clear if a bad 2D az slips through.
+ const chestSafeCap=(arm:TorsoArm,max:number)=>{
+  const out=arm.wrist[0];
+  const safe=out<0.05?Math.min(max,0.90):out<0.15?Math.min(max,0.94):max;
+  return capReach(arm, safe);
+ };
+ const offTake:TorsoArm=chestSafeCap(sem?.mapping?.offArms?.takeback?.arm ?? OFF_TAKE_UP, OFF_TAKEBACK_REACH_CAP);
+ const offDrop:TorsoArm=capReach(sem?.mapping?.offArms?.drop?.arm ?? OFF_TAKE_DROP, OFF_DROP_REACH_CAP);
  const offHit:TorsoArm=sem?.mapping?.offArms?.contact?.arm ?? OFF_BALL;
  if(sem?.mapping?.offArms?.takeback)semanticsNotes.push(`非持拍手引拍 reach ${offTake.reach}（${sem.mapping.offArms.takeback.source}）`);
  // OFF_REACH_SCALE only on the trunk-turn keys (落拍/前挥) where a full-reach
@@ -485,7 +497,7 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  setHand(keys[1].pose.handR,racket(1,takeUp));
  setHand(keys[1].pose.handL,off(1,offTake,1));
  setHand(keys[2].pose.handR,racket(2,takeDrop));
- setHand(keys[2].pose.handL,off(2,offDrop,offDrop.reach>=0.92?CLEAR:1));
+ setHand(keys[2].pose.handL,off(2,offDrop,offDrop.reach>=0.90?CLEAR:1));
  // 前挥: a real mid key makes the long off arm follow the chest turn.
  const swingR=interpolateTorsoArm(takeDrop,ball,.35);
  const swingOff=interpolateTorsoArm(offDrop,offHit,.35);

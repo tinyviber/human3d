@@ -178,9 +178,25 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
   // deeper video knees get a wider base without trusting a single 2D frame.
   const stanceOverLeg = tb?.stanceOverLeg ?? (phaseOut.ready as any)?.stanceOverLeg ?? null;
   const hand = handStance[id] ?? 1.1;
-  const stanceBoost = stanceBoostForKnee(tb?.kneeFlex);
+  // Extension-at-depth: contact depth within 1 cm of (floored) takeback depth
+  // but contact knee ≥8° straighter → need wide stance to shed knee flex.
+  const tbDepth = tb?.pelvisDropCm, ctDepth = ct?.pelvisDropCm;
+  const loadFloor = Math.max(8, tbDepth ?? 0); // MIN_TAKEBACK_CM
+  const extensionNeedsWideStance = (
+    tb?.kneeFlex != null && ct?.kneeFlex != null
+    && ct.kneeFlex < tb.kneeFlex - 3
+    && ctDepth != null
+    && Math.abs(ctDepth - loadFloor) <= 1.5
+  );
+  const stanceBoost = stanceBoostForKnee(tb?.kneeFlex, {
+    contactKneeFlex: ct?.kneeFlex,
+    extensionNeedsWideStance,
+  });
   const stanceMap = stanceMultiplierFromWidth(null, hand); // force hand fallback
-  const stance = Math.min(1.45, Math.max(0.95, hand * stanceBoost));
+  // Cap raised so deep-squat / extension-at-depth players can clear |Δknee|≤10.
+  let stance = Math.min(1.58, Math.max(0.95, hand * stanceBoost));
+  // Extension-at-depth needs the wide end of the band even when hand×boost is mid.
+  if (extensionNeedsWideStance) stance = Math.min(1.58, Math.max(stance, 1.56));
   const pelvisRise = (tb?.pelvisDropCm != null && ct?.pelvisDropCm != null)
     ? tb.pelvisDropCm - ct.pelvisDropCm : null;
   const push = pushOffPitchFromExtension(rearKneeExtensionDeg, {pelvisRiseCm: pelvisRise});
@@ -206,10 +222,21 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
   }
   // Video consensus at takeback is near-straight (136–179°). A 2D reading
   // below 120° is almost always occlusion/swap noise — lift to the floor.
+  // Also force an *outward* direction: az≤10 (or negative) with a near-straight
+  // reach drives the wrist through the chest (Medvedev/ADF pose-validity).
   if (takeOffElbow < 120) {
     takeOffElbow = 150;
-    takeOffDir = {el: Math.max(takeOffDir.el, 0), az: takeOffDir.az || 25};
+    takeOffDir = {
+      el: Math.max(takeOffDir?.el ?? 0, 5),
+      az: (takeOffDir?.az ?? 0) > 10 ? takeOffDir.az : 25,
+    };
     fallback.push('takeback-off-straight-floor');
+  }
+  // Sanitize cross-body takeback dirs even when elbow was already "straight"
+  // enough to skip the floor (Alcaraz az≈−2 with reach 0.97 grazes ribs).
+  if (takeOffDir && takeOffDir.az < 10) {
+    takeOffDir = {el: Math.max(takeOffDir.el, 0), az: 25};
+    fallback.push('takeback-off-outward-dir');
   }
   const dropPhase = phaseOut.drop as any;
   const dropOffElbow = dropPhase?.offElbowDeg ?? takeOffElbow;

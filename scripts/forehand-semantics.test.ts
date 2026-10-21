@@ -125,6 +125,10 @@ describe('forehand semantics (pure analysis)', () => {
   it('boosts stance for deep video knees and leaves shallow ones alone', () => {
     expect(stanceBoostForKnee(52)).toBeGreaterThan(1.2);
     expect(stanceBoostForKnee(18)).toBe(1);
+    // Deep contact (Alcaraz) should push boost at least as high as takeback alone.
+    expect(stanceBoostForKnee(52, {contactKneeFlex: 70})).toBeGreaterThanOrEqual(stanceBoostForKnee(52));
+    // Extension-at-depth (Zverev): flag requests max wide stance to shed knee flex.
+    expect(stanceBoostForKnee(42, {contactKneeFlex: 30, extensionNeedsWideStance: true})).toBe(1.4);
   });
 
   it('scales push-off from rear-knee extension and pelvis-rise fallback', () => {

@@ -162,9 +162,9 @@
    "stanceOverLeg": 0.2977,
    "peakKneeFlexion": 70,
    "mapping": {
-    "stance": 1.45,
+    "stance": 1.568,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.35,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.12,
     "pushOffPitch": 12,
     "pushOffScale": 1,
@@ -176,9 +176,9 @@
       "source": "measured",
       "arm": {
        "wrist": [
-        -0.03099734120899638,
-        -0.42261826174069944,
-        0.9057775497776718
+        0.4226182617406995,
+        0,
+        0.90630778703665
        ],
        "reach": 0.9703,
        "hinge": [
@@ -242,7 +242,8 @@
    "fallback": [
     "bootstrap-from-depth-and-2d",
     "follow-depth",
-    "recover-depth"
+    "recover-depth",
+    "takeback-off-outward-dir"
    ]
   },
   "alexander-zverev-forehand": {
@@ -442,9 +443,9 @@
    "stanceOverLeg": 0.2084,
    "peakKneeFlexion": 57,
    "mapping": {
-    "stance": 1.351,
+    "stance": 1.56,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.275,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.06,
     "pushOffPitch": 6.6,
     "pushOffScale": 0.55,
@@ -713,9 +714,9 @@
    "stanceOverLeg": 0.1921,
    "peakKneeFlexion": 41,
    "mapping": {
-    "stance": 1.381,
+    "stance": 1.56,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.255,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.1,
     "pushOffPitch": 6.6,
     "pushOffScale": 0.55,
@@ -726,9 +727,9 @@
       "source": "measured",
       "arm": {
        "wrist": [
-        -0.6427876096865394,
-        0,
-        0.7660444431189781
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
        "reach": 0.9659,
        "hinge": [
@@ -977,9 +978,9 @@
    "stanceOverLeg": 0.3613,
    "peakKneeFlexion": 49,
    "mapping": {
-    "stance": 1.252,
+    "stance": 1.54,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.138,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.1,
     "pushOffPitch": 12,
     "pushOffScale": 1,
@@ -1255,9 +1256,9 @@
    "stanceOverLeg": 0.233,
    "peakKneeFlexion": 50,
    "mapping": {
-    "stance": 1.01,
+    "stance": 1.175,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1,
+    "stanceBoost": 1.163,
     "handStanceFallback": 1.01,
     "pushOffPitch": 12,
     "pushOffScale": 1,
@@ -1814,9 +1815,9 @@
    "stanceOverLeg": 0.3698,
    "peakKneeFlexion": 62,
    "mapping": {
-    "stance": 1.28,
+    "stance": 1.498,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.196,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.07,
     "pushOffPitch": 12,
     "pushOffScale": 1,
@@ -2092,9 +2093,9 @@
    "stanceOverLeg": 0.2634,
    "peakKneeFlexion": 42,
    "mapping": {
-    "stance": 1.049,
+    "stance": 1.292,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.039,
+    "stanceBoost": 1.279,
     "handStanceFallback": 1.01,
     "pushOffPitch": 12,
     "pushOffScale": 1,
@@ -2106,9 +2107,9 @@
       "source": "measured",
       "arm": {
        "wrist": [
-        0.08229854148170819,
-        -0.42261826174069944,
-        0.9025634353956807
+        0.4226182617406995,
+        0,
+        0.90630778703665
        ],
        "reach": 0.9304,
        "hinge": [
@@ -2171,6 +2172,7 @@
    },
    "fallback": [
     "bootstrap-from-depth-and-2d",
+    "takeback-off-outward-dir",
     "contact-off-tuck-heuristic"
    ]
   },
@@ -2383,9 +2385,9 @@
       "source": "measured",
       "arm": {
        "wrist": [
-        -0.404024312775192,
-        0,
-        0.9147482466157196
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
        "reach": 0.9659,
        "hinge": [
@@ -2649,9 +2651,9 @@
    "stanceOverLeg": 0.5334,
    "peakKneeFlexion": 58,
    "mapping": {
-    "stance": 1.05,
+    "stance": 1.124,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1,
+    "stanceBoost": 1.07,
     "handStanceFallback": 1.05,
     "pushOffPitch": 6.6,
     "pushOffScale": 0.55,
@@ -2663,9 +2665,9 @@
       "source": "measured",
       "arm": {
        "wrist": [
-        0.8728369164014821,
-        0,
-        0.4880120053510488
+        0.8695155084179046,
+        0.08715574274765817,
+        0.4861549723358354
        ],
        "reach": 0.9659,
        "hinge": [
@@ -3206,9 +3208,9 @@
    "stanceOverLeg": 0.1478,
    "peakKneeFlexion": 65,
    "mapping": {
-    "stance": 1.14,
+    "stance": 1.458,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1,
+    "stanceBoost": 1.279,
     "handStanceFallback": 1.14,
     "pushOffPitch": 12,
     "pushOffScale": 1,
@@ -3483,9 +3485,9 @@
    "stanceOverLeg": 0.2865,
    "peakKneeFlexion": 57,
    "mapping": {
-    "stance": 1.11,
+    "stance": 1.496,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1,
+    "stanceBoost": 1.348,
     "handStanceFallback": 1.11,
     "pushOffPitch": 12,
     "pushOffScale": 1,
@@ -3762,9 +3764,9 @@
    "stanceOverLeg": 0.1321,
    "peakKneeFlexion": 69,
    "mapping": {
-    "stance": 1.367,
+    "stance": 1.56,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.314,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.04,
     "pushOffPitch": 6.6,
     "pushOffScale": 0.55,
@@ -4041,9 +4043,9 @@
    "stanceOverLeg": 0.8022,
    "peakKneeFlexion": 72,
    "mapping": {
-    "stance": 1.45,
+    "stance": 1.568,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.35,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.12,
     "pushOffPitch": 8.4,
     "pushOffScale": 0.7,
@@ -4314,9 +4316,9 @@
    "stanceOverLeg": 0.2214,
    "peakKneeFlexion": 40,
    "mapping": {
-    "stance": 1.319,
+    "stance": 1.352,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.157,
+    "stanceBoost": 1.186,
     "handStanceFallback": 1.14,
     "pushOffPitch": 7.2,
     "pushOffScale": 0.6,
@@ -4584,9 +4586,9 @@
       "source": "measured",
       "arm": {
        "wrist": [
-        0.9005920059766607,
-        0.015358293574952919,
-        0.4343940165211764
+        0.8972708105937321,
+        0.08715574274765817,
+        0.432792062037384
        ],
        "reach": 0.9659,
        "hinge": [

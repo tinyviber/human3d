@@ -594,21 +594,48 @@ export function semanticDepthTargets(
 }
 
 /**
- * Knee-flexion second target: given a desired knee flex at takeback, nudge the
- * stance multiplier so the geometric squat gets deeper knees. Purely advisory
- * for the generator — returns a multiplicative boost in [1, 1.35].
+ * Knee-flexion second target: given desired knee flex at takeback (and optional
+ * contact), nudge the stance multiplier so the geometric squat gets deeper
+ * knees. Purely advisory for the generator — returns a multiplicative boost
+ * in [1, 1.40].
  *
  * Empirically (Felix): video knee ~52°, h3d at stance 1.12 ≈ 25–30° ≈ half.
  * Boost ≈ videoKnee / max(h3dEstimate, 1) capped.
+ *
+ * Deep-squat players (contact ≥ takeback) use the deeper knee so takeback AND
+ * contact stay within ~10°. Extension players (contact ≪ takeback at similar
+ * depth) blend toward contact so the constant-stance squat is not over-bent
+ * at contact (Zverev/Medvedev/Buse).
  */
 export function stanceBoostForKnee(
   videoKneeFlex: number | null | undefined,
-  opts: {assumedH3dKneeAtFallback?: number} = {},
+  opts: {
+    assumedH3dKneeAtFallback?: number;
+    contactKneeFlex?: number | null;
+    /** When contact depth ≈ takeback depth but contact knee is much straighter,
+     *  this rig needs a *wider* base (not narrower) to shed knee flexion. */
+    extensionNeedsWideStance?: boolean;
+  } = {},
 ): number {
-  if (videoKneeFlex == null || videoKneeFlex < 20) return 1;
+  const ct = opts.contactKneeFlex;
+  let knee = videoKneeFlex;
+  if (knee == null || knee < 20) {
+    if (ct != null && ct >= 20) knee = ct;
+    else return 1;
+  }
+  // Prefer the deeper of takeback/contact for deep-squat players (Alcaraz/Felix).
+  if (ct != null && ct > knee) knee = ct;
   const assumed = opts.assumedH3dKneeAtFallback ?? 28;
-  const raw = videoKneeFlex / assumed;
-  // Half the gap: full compensation overfits and blows slip on wide presets.
-  const boost = 1 + (Math.min(1.7, Math.max(1, raw)) - 1) * 0.55;
-  return Math.round(Math.min(1.35, boost) * 1000) / 1000;
+  // Extension-at-depth (Zverev/Medvedev/Buse): video contact knee is straighter
+  // at similar pelvis drop. On this rig a wider stance reduces knee flex at a
+  // fixed depth, so push boost toward the cap rather than blending down.
+  if (opts.extensionNeedsWideStance && ct != null && videoKneeFlex != null && ct < videoKneeFlex - 2) {
+    const boost = 1.40; // max — widest safe base
+    return boost;
+  }
+  const raw = knee / assumed;
+  // Stronger compensation than v5 (0.55→0.65) and higher cap (1.35→1.40) so
+  // Felix/Alcaraz takeback+contact knees clear |Δ|≤10 without relying on 2D stance.
+  const boost = 1 + (Math.min(1.85, Math.max(1, raw)) - 1) * 0.65;
+  return Math.round(Math.min(1.40, boost) * 1000) / 1000;
 }
