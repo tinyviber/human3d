@@ -1,0 +1,291 @@
+{
+  "label": "ready-2d",
+  "category": "Ready_Position",
+  "keypoint_names": [
+    "nose",
+    "left_eye",
+    "right_eye",
+    "left_ear",
+    "right_ear",
+    "left_shoulder",
+    "right_shoulder",
+    "left_elbow",
+    "right_elbow",
+    "left_wrist",
+    "right_wrist",
+    "left_hip",
+    "right_hip",
+    "left_knee",
+    "right_knee",
+    "left_ankle",
+    "right_ankle",
+    "neck"
+  ],
+  "n_images": 500,
+  "n_annotations_used": 500,
+  "image_wh": [
+    [
+      1280,
+      720
+    ]
+  ],
+  "keypoints_outside_frame": 1,
+  "visibility_counts": {
+    "0": 2,
+    "1": 2521,
+    "2": 6477
+  },
+  "missing_rate_per_joint": {
+    "nose": 0.0,
+    "left_eye": 0.0,
+    "right_eye": 0.002,
+    "left_ear": 0.0,
+    "right_ear": 0.0,
+    "left_shoulder": 0.0,
+    "right_shoulder": 0.0,
+    "left_elbow": 0.0,
+    "right_elbow": 0.0,
+    "left_wrist": 0.002,
+    "right_wrist": 0.0,
+    "left_hip": 0.0,
+    "right_hip": 0.0,
+    "left_knee": 0.0,
+    "right_knee": 0.0,
+    "left_ankle": 0.0,
+    "right_ankle": 0.0,
+    "neck": 0.0
+  },
+  "consecutive_median_jump_px": 30.45,
+  "consecutive_p90_jump_px": 245.11,
+  "cut_threshold_px": 80,
+  "n_cuts": 100,
+  "segment_count": 101,
+  "segment_length_min_median_max": [
+    1,
+    4.0,
+    14
+  ],
+  "segments_len_ge_10": [
+    {
+      "start": 95,
+      "length": 10,
+      "hip_y_range_px": 70.0,
+      "torso_px": 88.5,
+      "hip_y_range_over_torso": 0.791
+    },
+    {
+      "start": 147,
+      "length": 14,
+      "hip_y_range_px": 67.5,
+      "torso_px": 75.5,
+      "hip_y_range_over_torso": 0.894
+    },
+    {
+      "start": 161,
+      "length": 11,
+      "hip_y_range_px": 46.0,
+      "torso_px": 67.5,
+      "hip_y_range_over_torso": 0.681
+    },
+    {
+      "start": 174,
+      "length": 10,
+      "hip_y_range_px": 71.0,
+      "torso_px": 85.0,
+      "hip_y_range_over_torso": 0.835
+    },
+    {
+      "start": 184,
+      "length": 14,
+      "hip_y_range_px": 30.5,
+      "torso_px": 75.0,
+      "hip_y_range_over_torso": 0.407
+    },
+    {
+      "start": 224,
+      "length": 10,
+      "hip_y_range_px": 8.5,
+      "torso_px": 70.75,
+      "hip_y_range_over_torso": 0.12
+    },
+    {
+      "start": 237,
+      "length": 11,
+      "hip_y_range_px": 59.5,
+      "torso_px": 78.0,
+      "hip_y_range_over_torso": 0.763
+    },
+    {
+      "start": 264,
+      "length": 13,
+      "hip_y_range_px": 115.0,
+      "torso_px": 73.0,
+      "hip_y_range_over_torso": 1.575
+    },
+    {
+      "start": 326,
+      "length": 12,
+      "hip_y_range_px": 65.5,
+      "torso_px": 97.0,
+      "hip_y_range_over_torso": 0.675
+    },
+    {
+      "start": 369,
+      "length": 13,
+      "hip_y_range_px": 138.5,
+      "torso_px": 83.0,
+      "hip_y_range_over_torso": 1.669
+    },
+    {
+      "start": 391,
+      "length": 11,
+      "hip_y_range_px": 120.0,
+      "torso_px": 62.5,
+      "hip_y_range_over_torso": 1.92
+    },
+    {
+      "start": 461,
+      "length": 11,
+      "hip_y_range_px": 46.0,
+      "torso_px": 85.0,
+      "hip_y_range_over_torso": 0.541
+    }
+  ],
+  "hip_range_over_torso_median": 0.777,
+  "hip_range_over_torso_max": 1.92,
+  "longest_stable_segment": {
+    "start": 147,
+    "length": 14,
+    "hip_y_range_px": 67.5,
+    "torso_px": 75.5,
+    "hip_y_range_over_torso": 0.894
+  },
+  "jump_sensitivity": [
+    {
+      "threshold_px": 40,
+      "n_cuts": 167,
+      "segment_count": 168,
+      "segment_length_min_median_max": [
+        1,
+        2.0,
+        14
+      ],
+      "hip_range_over_torso_median": 0.541,
+      "n_segments_len_ge_10": 5
+    },
+    {
+      "threshold_px": 80,
+      "n_cuts": 100,
+      "segment_count": 101,
+      "segment_length_min_median_max": [
+        1,
+        4.0,
+        14
+      ],
+      "hip_range_over_torso_median": 0.777,
+      "n_segments_len_ge_10": 12
+    },
+    {
+      "threshold_px": 120,
+      "n_cuts": 86,
+      "segment_count": 87,
+      "segment_length_min_median_max": [
+        1,
+        4.0,
+        21
+      ],
+      "hip_range_over_torso_median": 0.839,
+      "n_segments_len_ge_10": 14
+    }
+  ],
+  "bones_px": [
+    {
+      "bone": "left_shoulder-left_elbow",
+      "n": 500,
+      "mean_px": 48.05,
+      "cv": 0.25,
+      "torso_normalized_cv": 0.152
+    },
+    {
+      "bone": "left_elbow-left_wrist",
+      "n": 499,
+      "mean_px": 24.63,
+      "cv": 0.369,
+      "torso_normalized_cv": 0.308
+    },
+    {
+      "bone": "right_shoulder-right_elbow",
+      "n": 500,
+      "mean_px": 49.76,
+      "cv": 0.24,
+      "torso_normalized_cv": 0.116
+    },
+    {
+      "bone": "right_elbow-right_wrist",
+      "n": 500,
+      "mean_px": 20.75,
+      "cv": 0.396,
+      "torso_normalized_cv": 0.409
+    },
+    {
+      "bone": "left_hip-left_knee",
+      "n": 500,
+      "mean_px": 51.31,
+      "cv": 0.285,
+      "torso_normalized_cv": 0.236
+    },
+    {
+      "bone": "left_knee-left_ankle",
+      "n": 500,
+      "mean_px": 62.08,
+      "cv": 0.26,
+      "torso_normalized_cv": 0.118
+    },
+    {
+      "bone": "right_hip-right_knee",
+      "n": 500,
+      "mean_px": 53.43,
+      "cv": 0.289,
+      "torso_normalized_cv": 0.211
+    },
+    {
+      "bone": "right_knee-right_ankle",
+      "n": 500,
+      "mean_px": 61.62,
+      "cv": 0.269,
+      "torso_normalized_cv": 0.121
+    },
+    {
+      "bone": "left_shoulder-right_shoulder",
+      "n": 500,
+      "mean_px": 50.86,
+      "cv": 0.235,
+      "torso_normalized_cv": 0.125
+    },
+    {
+      "bone": "left_hip-right_hip",
+      "n": 500,
+      "mean_px": 44.9,
+      "cv": 0.258,
+      "torso_normalized_cv": 0.109
+    },
+    {
+      "bone": "left_shoulder-neck",
+      "n": 500,
+      "mean_px": 25.6,
+      "cv": 0.25,
+      "torso_normalized_cv": 0.166
+    },
+    {
+      "bone": "neck-nose",
+      "n": 500,
+      "mean_px": 14.26,
+      "cv": 0.322,
+      "torso_normalized_cv": 0.161
+    }
+  ],
+  "fps_assumed": null,
+  "image_file_check": null,
+  "ground_plane": false,
+  "units": "pixels"
+}
