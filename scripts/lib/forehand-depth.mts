@@ -281,12 +281,20 @@ export const PRESET_KEYS = ['准备', '引拍', '落拍', '前挥', '击球', '�
  * load kept the whole finish crouched and overshot the rear ankle at the
  * follow-through release.
  */
+/** Overnight visual floor (Notion T1 temporary default): takeback crouch
+ * at least this many centimetres even when the MediaPipe median is shallower.
+ * Raised targets still go through the no-pelvis-lift ankle guard. */
+export const MIN_TAKEBACK_CM = 8;
+
 export function depthTargets(profile, medians) {
   if (!profile?.measurable) return null;
   const phase = name => phaseDepth(profile.phases[name]);
   const takeback = phase('takeback');
   if (takeback == null) return null;
-  const load = Math.max(0, takeback);
+  const measuredLoad = Math.max(0, takeback);
+  // Floor shallow measurements so every preset has a visible squat; keep any
+  // deeper MediaPipe takeback (Felix 13.3 cm) as-is.
+  const load = Math.max(MIN_TAKEBACK_CM, measuredLoad);
   const fallback = [];
   const clamp = (name, otherwise) => {
     const value = phase(name);
@@ -295,15 +303,29 @@ export function depthTargets(profile, medians) {
   };
   const ready = clamp('ready', load);
   const contact = clamp('contact', medians.contact);
-  const follow = clamp('follow', medians.follow);
-  const recover = clamp('recover', medians.recover);
+  let follow = clamp('follow', medians.follow);
+  let recover = clamp('recover', medians.recover);
+  // When the takeback was floored up to MIN_TAKEBACK_CM, a measured follow of
+  // ~1 cm is unreachable: the staggered deep stance cannot straighten that far
+  // (Medvedev solved 2.9 cm vs target 1.1). Keep a proportional release floor.
+  if (load > measuredLoad + 1e-9) {
+    const releaseFloor = Math.max(4, Math.min(load * 0.5, load));
+    follow = Math.max(follow, releaseFloor);
+    recover = Math.max(recover, Math.min(releaseFloor, load * 0.2));
+  }
+  // Cap the follow→recover rise. Mensik's measured follow is 14.4 cm (clamped
+  // to the 8 cm load) while recover reads ~0–2 cm; a 6+ cm pelvis rise on a
+  // planted lead foot slips 1.3 cm past the 10 mm gate. Keep at most 3.5 cm of
+  // extension across that last key.
+  const MAX_RECOVER_RISE_CM = 3.5;
+  if (follow - recover > MAX_RECOVER_RISE_CM) recover = follow - MAX_RECOVER_RISE_CM;
   const lerp = (from, to, u) => from + (to - from) * u;
   // 落拍 is 45 % of 引拍→击球, 前挥 35 % of 落拍→击球, 延伸 36 % and 折肘 70 % of 击球→随挥.
   const targets = [
     ready, load, lerp(load, contact, 0.45), lerp(load, contact, 0.45 + 0.55 * 0.35),
     contact, lerp(contact, follow, 0.36), lerp(contact, follow, 0.70), follow, recover,
   ];
-  return {targets, takeback, fallback};
+  return {targets, takeback: load, measuredTakeback: measuredLoad, floored: load > measuredLoad + 1e-9, fallback};
 }
 
 function countFlags(rows) {

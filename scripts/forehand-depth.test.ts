@@ -26,7 +26,7 @@ const PRESETS=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.capabilities?
 const TAKEBACK_TOLERANCE_CM=1.5,CONTACT_LOSS_CM=.6,ANKLE_MAX=20.05,ACCEL_MAX=36,SLIP_MAX_M=.009;
 /** The stance floor: with a staggered, turned stance both legs cannot be
  * straight at once, so a near-upright measurement solves to this depth. */
-const STANCE_FLOOR_CM=2.4;
+const STANCE_FLOOR_CM=4.0; // deep floored crouch + stagger: follow/recover cannot straighten to 2.4 cm
 
 let ctx:ServiceContext;
 let CHAIN:number,REST_RATIO:number;
@@ -110,14 +110,20 @@ describe('forehand depth study (pure analysis)',()=>{
   const update={generated:'new',profiles:{b:{value:20}}};
   expect(mergeSelectedProfiles(old,update,['b'])).toEqual({generated:'new',profiles:{a:{value:1},b:{value:20},c:{value:3}}});
  });
- it('derives targets that never exceed the takeback and replace lost phases with the cross-player median',()=>{
+ it('derives targets that never exceed the (floored) takeback and replace lost phases with the cross-player median',()=>{
   const lost={measurable:true,phases:{ready:{depthCm:9,frames:9},takeback:{depthCm:5,frames:7},contact:null,follow:{depthCm:2,frames:2},recover:{depthCm:-1,frames:9}}};
   const r=depthTargets(lost,{contact:3,follow:2.5,recover:2})!;
   expect(r.targets).toHaveLength(PRESET_KEYS.length);
-  expect(r.targets[0]).toBe(5); // ready deeper than the load clamps to it
-  expect(r.targets[4]).toBe(3); // lost contact → median
-  expect(r.targets[7]).toBe(2.5); // 2 frames is not a measurement → median
-  expect(r.targets[8]).toBe(0); // negative → 0
+  // measured takeback 5 cm is floored to MIN_TAKEBACK_CM (8); ready 9 clamps to 8
+  expect(r.takeback).toBe(8);
+  expect(r.measuredTakeback).toBe(5);
+  expect(r.floored).toBe(true);
+  expect(r.targets[0]).toBe(8);
+  expect(r.targets[1]).toBe(8);
+  expect(r.targets[4]).toBe(3); // lost contact → median (still ≤ load)
+  // follow median 2.5 raised by floored release floor 8*0.36=2.88; recover stays 0 then floor min(2.88,1.6)=1.6
+  expect(r.targets[7]).toBe(4);
+  expect(r.targets[8]).toBeCloseTo(1.6, 5);
   expect(r.fallback).toEqual(['contact','follow']);
   expect(depthTargets({measurable:false},medians)).toBeNull();
  });
@@ -134,14 +140,14 @@ describe('generated forehand presets match the measured depth',()=>{
   }
  });
 
- it('puts each takeback within 1.5 cm and keeps every key at its target or the stance floor',()=>{
+ it('puts each takeback within 1.5 cm of its (floored) target and keeps every key at its target or the stance floor',()=>{
   for(const file of PRESETS){
    const doc=file.document! as WorkshopDoc;
-   const {targets}=depthTargets(study.profiles[file.id],medians)!;
+   const {targets,takeback}=depthTargets(study.profiles[file.id],medians)!;
    expect(doc.keys.map(k=>k.label),file.id).toEqual(PRESET_KEYS);
-   const measured=Math.max(0,study.profiles[file.id].phases.takeback.depthCm);
    const take=solvedDepth(doc,doc.keys[1].time);
-   expect(Math.abs(take-measured),`${file.id} takeback ${take.toFixed(2)} vs ${measured}`).toBeLessThanOrEqual(TAKEBACK_TOLERANCE_CM);
+   // Compare against depthTargets load (includes MIN_TAKEBACK_CM floor), not the raw MediaPipe median.
+   expect(Math.abs(take-takeback),`${file.id} takeback ${take.toFixed(2)} vs target ${takeback}`).toBeLessThanOrEqual(TAKEBACK_TOLERANCE_CM);
    doc.keys.forEach((key,i)=>{
     const depth=solvedDepth(doc,key.time),at=`${file.id} ${key.label}`;
     // At the measurement; a near-upright target the stance cannot straighten

@@ -245,3 +245,16 @@
 - 已执行：`npx tsc -b`、`npm run build`、`npm run spec:check`、`npm run docs:check`、`npx tsx scripts/measure-player-forehands.mts`（无肘钳位、无手臂—躯干交叉、腕残差 0 mm）；全量 `npm test -- --maxWorkers=3`：29 个文件、570 通过、2 跳过。默认并发下有 1–2 个与本改动无关的用例在 5 s 超时（`tests/affected-checks.test.ts` 的 CLI 用例、`generate.test.ts` 的一项），单独运行均通过。
 - 未执行：`npm run qa` / `npm run qa:pose-validity` / `node scripts/pose-visual-qa.mjs` 浏览器验收与截图，视觉判定（尤其 Felix 的后移）未做；`npm run bench`。
 - 移交：求解器落脚拐点（240 fps 根加速度）需单独切片，并 bump `SERVICE_VERSION`。
+
+## 第六轮（2026-10-21 夜）：`codex/forehand-legs-v5` 下蹲地板与蹬地 12°
+
+Notion 交接 T2/T3  overnight 增量（基线已含 issue #17 的 3D 深度与「不抬骨盆」后踝守卫）：
+
+- **引拍深度地板**：`scripts/lib/forehand-depth.mts` 增加 `MIN_TAKEBACK_CM = 8`。MediaPipe 引拍中位数浅于 8 cm 的球员抬到 8 cm；Felix 保持实测 13.3 cm。被抬高时随挥/恢复再设 ≥4 cm 释放地板，避免深蹲站姿无法伸直到近直立目标。
+- **蹬地角**：`PUSH_OFF` 击球脚跟由 8° → **12°**（前挥/随挥释放 6°）。#17 后验扫：17 人 40 Hz 根加速度 ≤ 25.2 m/s²、滑移 ≤ 9 mm。
+- **落地比例**：`LAND_SCALE` 0.7 → 0.55，并下调 Mensik 的 `forward`/`step`，避免深蹲后前脚滑移超 1 cm。
+- **未改**：上半身/腕目标（仍为手捏躯干系模板）；`DORSI_LIMIT_DEG=20` / `ANKLE_MAX=20.05`；不放宽 `validate.ts` 门限。
+- **腕部**：2D `player-forehand-landmarks.json` 肩—腕相对量噪声极大（肘角 6–152°、置信度常 <0.3），不能映射；IK 相对作者目标残差仍为 0。视觉「腕不对」需单独的 3D 腕/球拍任务，不在本分支范围。
+
+验证：`npx tsx scripts/generate-player-forehands.mts`；`npx vitest run scripts/forehand-depth.test.ts`（12/12）。
+

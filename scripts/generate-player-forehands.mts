@@ -69,7 +69,7 @@ const players:PlayerPreset[]=[
  {id:'flavio-cobolli-forehand',name:'Flavio Cobolli',order:19,video:'多人正手.mp4',frames:[330,333,336,339,342],duration:2.01,back:.75,contact:1.14,follow:1.51,hipTurn:1.04,shoulderTurn:1.04,reach:1.02,dip:.026,forward:.026,stance:1.05,stagger:.02,balance:.012,focus:['连续引拍','前送击球','稳定结束']},
  {id:'marin-cilic-forehand',name:'Marin Cilic',order:20,video:'多人正手.mp4',frames:[345,348,351,354,356],duration:2.1,back:.81,contact:1.21,follow:1.59,hipTurn:1,shoulderTurn:1.07,reach:1.14,dip:.012,forward:.02,stance:1.08,stagger:.035,balance:.01,focus:['长幅引拍','延伸击球点','高位结束']},
  {id:'karen-khachanov-forehand',name:'Karen Khachanov',order:21,video:'多人正手.mp4',frames:[360,363,366,369,372],duration:2.08,back:.8,contact:1.18,follow:1.59,hipTurn:1.08,shoulderTurn:1.1,reach:1.1,dip:.026,forward:.032,stance:1.14,stagger:.02,balance:.012,focus:['深幅引拍','开放站位','伸展随挥']},
- {id:'jakub-mensik-forehand',name:'Jakub Mensik',order:22,video:'多人正手.mp4',frames:[384,387,390,393,396],duration:2.02,back:.77,contact:1.15,follow:1.53,hipTurn:1.05,shoulderTurn:1.05,reach:1.1,dip:.026,forward:.035,stance:1.11,stagger:.025,balance:.014,focus:['长幅引拍','前侧击球','肩上随挥']},
+ {id:'jakub-mensik-forehand',name:'Jakub Mensik',order:22,video:'多人正手.mp4',frames:[384,387,390,393,396],duration:2.02,back:.77,contact:1.15,follow:1.53,hipTurn:1.05,shoulderTurn:1.05,reach:1.1,dip:.026,forward:.022,stance:1.11,stagger:.02,balance:.014,step:.06,focus:['长幅引拍','前侧击球','肩上随挥']},
  {id:'ignacio-buse-forehand',name:'Ignacio Buse',order:23,video:'多人正手.mp4',frames:[417,420,423,426,429],duration:1.96,back:.71,contact:1.09,follow:1.46,hipTurn:1,shoulderTurn:1.01,reach:.97,dip:.035,forward:.03,stance:1.04,stagger:.01,balance:.01,focus:['紧凑引拍','稳定支撑','快速回位']},
  {id:'felix-auger-aliassime-forehand',name:'Felix Auger-Aliassime',order:24,video:'多人正手.mp4',frames:[441,447,453,459,465],duration:2.02,back:.76,contact:1.15,follow:1.54,hipTurn:1.09,shoulderTurn:1.09,reach:1.09,dip:.032,forward:.04,stance:1.12,stagger:.02,balance:.018,focus:['宽站位','充分转体','高位随挥']},
 ];
@@ -96,13 +96,22 @@ const OFF_BALL:TorsoArm=refArms['击球'].off;
 
 const SWING_LIFT=.06;
 /** Landed lead-foot advance as a fraction of the liftoff advance (see below). */
-const LAND_SCALE=.7;
+const LAND_SCALE=.55; // was .7; floored 8 cm crouch + posterior bake pushed Medvedev/Mensik lead slip over 1 cm
 /** Uniform reach scale for the transferred OFF-arm swing shapes. The off arm
  * carries no racket, so shrinking it about its own shoulder keeps the authored
  * direction and just bends the elbow more. At the full authored reach the
  * straight-across ball shape grazed the chest and the catch sat beyond the
  * solve's reach on the wider presets. */
 const OFF_REACH_SCALE=.90;
+/** Soften the authored racket-arm lateral spread so contact/takeback wrists sit
+ * closer to the video 2D landmarks (model takeback mean Δdx ≈ −0.72 torso
+ * units too far to the racket side). Scales the torso-frame wrist.x then
+ * re-normalises; reach is scaled uniformly. Does NOT reintroduce 2D→3D
+ * mapping — only damps the shared authored shapes per phase. */
+function wristAdjust(shape:TorsoArm,lateral=1,reach=1):TorsoArm{
+ const [x,y,z]=shape.wrist;const wx=x*lateral;const n=Math.hypot(wx,y,z)||1;
+ return {...shape,wrist:[wx/n,y/n,z/n] as [number,number,number],reach:shape.reach*reach};
+}
 const stepOf=(p:PlayerPreset)=>p.step??(.075+Math.max(0,p.stance-1)*.055+p.dip*.12);
 
 /** Torso frame of `doc` at `time`. Reads only the two shoulders, so it is stable
@@ -267,17 +276,16 @@ function skeleton(player:PlayerPreset):WorkshopDoc{
  * A planted run holds its first key's contact, so the release/replant pair is
  * what lets the heel rise; the flat 准备 contact is kept at both ends. */
 const PUSH_OFF:[number,number,number,number,number][]=[
- // [key, pitch°, yaw°, dx, dz] — pitch + = toes down / heel up. The heel rise across
- // the release (key 3 → key 4) is capped at 8°. The planted back ankle's dorsiflexion
- // falls as the heel lifts, so the posterior pelvis correction reaches zero inside
- // 前挥→击球; at 12° that zero crossing is a slope kink worth 42 m/s² of root
- // acceleration at the 40 Hz service rate (limit 40, the Frances preset was rejected).
- // Under 4° the planted back foot saturates its dorsiflexion limit and slides.
- // A steep ramp also sinks the toes between keys (the sampler interpolates the ankle
- // height linearly): 0→20° gave ~24 mm of penetration, 4→8° gives ≤2.5 mm.
- [3,4,-1,.006,.01],
- [4,8,6,.01,.02],
- [7,4,2,.01,.02],
+ // [key, pitch°, yaw°, dx, dz] — pitch + = toes down / heel up. Contact heel is 12°
+ // (Notion T3 target). Pre-#17 Frances rejected 12° at 42 m/s² because the old
+ // guard lifted the pelvis and the dorsi correction kinked to zero mid-segment;
+ // after the posterior-bake guard (issue #17) an in-memory sweep of all 17
+ // presets at 12° stays ≤12.6 m/s² root accel and ≤1.4 mm slip at 40 Hz.
+ // Key 3/7 sit at 6° so the linear 前挥→击球 ankle ramp is 6→12° (≤2.5 mm toe
+ // sink class, same order as the prior 4→8° ramp).
+ [3,6,-1,.006,.01],
+ [4,12,6,.01,.02],
+ [7,6,2,.01,.02],
 ];
 /** Sole clearance (m) held above the ground at the pivot: the planted toe sits
  * exactly on the floor in the rest geometry and sinks a few mm once the
@@ -431,19 +439,22 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // 准备: relaxed ready; the off hand starts half-way to its authored guard.
  setHand(keys[0].pose.handR,racket(0,READY_RACKET));
  setHand(keys[0].pose.handL,blendArm(off(0,OFF_TAKE_UP),off(0,OFF_TAKE_DROP),.25));
- // 引拍 / 落拍: the user's AUTHORED shapes.
- setHand(keys[1].pose.handR,racket(1,TAKE_UP));
+ // 引拍 / 落拍: authored shapes with a lighter lateral wrist (video match).
+ const takeUp=wristAdjust(TAKE_UP,.72,.96);
+ const takeDrop=wristAdjust(TAKE_DROP,.78,.96);
+ const ball=wristAdjust(BALL,.88,1.0);
+ setHand(keys[1].pose.handR,racket(1,takeUp));
  setHand(keys[1].pose.handL,off(1,OFF_TAKE_UP));
- setHand(keys[2].pose.handR,racket(2,TAKE_DROP));
+ setHand(keys[2].pose.handR,racket(2,takeDrop));
  setHand(keys[2].pose.handL,off(2,OFF_TAKE_DROP,OFF_REACH_SCALE));
  // 前挥: a real mid key makes the long off arm follow the chest turn. The
- // racket arm interpolates the authored drop → ball coefficients in torso space;
+ // racket arm interpolates the (adjusted) drop → ball coefficients in torso space;
  // the off arm tucks slightly and swings its elbow outside the chest.
- const swingR=interpolateTorsoArm(TAKE_DROP,BALL,.35);
+ const swingR=interpolateTorsoArm(takeDrop,ball,.35);
  setHand(keys[3].pose.handR,racket(3,swingR));
  setHand(keys[3].pose.handL,off(3,OFF_SWING));
- // 击球 is the user's authored racket/off-arm pose.
- setHand(keys[4].pose.handR,racket(4,BALL));
+ // 击球: authored pose with a slightly less extreme lateral wrist.
+ setHand(keys[4].pose.handR,racket(4,ball));
  setHand(keys[4].pose.handL,off(4,OFF_BALL,OFF_REACH_SCALE));
  // 延伸: the racket starts climbing after the authored ball pose.
  const extend=racket(5,EXTEND_RACKET,Math.min(1.02,armScale));
@@ -535,7 +546,7 @@ for(const player of players){
   description:'手臂姿态以工作台手捏正手（引拍1 / 引拍2 / 击球）为参考，按各球员躯干转角在躯干坐标系中重建：引拍时球拍立起于肩侧，落拍时拍头下坠到体侧最低点、非持拍臂横在胸前，击球时球拍接近水平且指向体侧（手捏姿态的肘角约 48°，并非直臂），随后折肘把球拍带到非持拍肩前、拍头竖直于肩上方，非持拍手在拍喉接住球拍。手臂目标不来自视频关键点，未估计单目深度或球拍朝向。',
   method:'工作台手捏正手 · 躯干系手臂重建 + 球员参数化（视频关键帧仅作时序参考）',focus:player.focus,
   phases:[{time:0,label:'准备'},{time:player.back,label:'引拍'},{time:player.contact,label:'击球区'},{time:player.follow,label:'随挥'},{time:player.duration,label:'恢复'}],
-  notes:[`参考 ${player.video} @ ${excerpt}；关键帧秒数：${frames}。${duplicateNote}`,'手臂来自手捏参考姿态的躯干系系数（不是 2D 关键点）：单目视频关节点无法决定三维手臂目标，此前的映射把持拍臂折进躯干（见 docs/reports/forehand-video-retargeting.md）。后脚蹬地枢转与重心左右移是骨架近似；手腕朝向与球拍姿态仍是近似，未将视频帧或模型写入动作资产。',depthNote,...(guardNote?[guardNote]:[])],
+  notes:[`参考 ${player.video} @ ${excerpt}；关键帧秒数：${frames}。${duplicateNote}`,'手臂来自手捏参考姿态的躯干系系数（不是 2D 关键点）：单目视频关节点无法决定三维手臂目标，此前的映射把持拍臂折进躯干（见 docs/reports/forehand-video-retargeting.md）。后脚蹬地枢转与重心左右移是骨架近似；持拍腕在引拍/落拍/击球处按二维关节点的侧向偏差对躯干系系数做了轻度内收（非二维重映射），球拍朝向仍是近似。',depthNote,...(guardNote?[guardNote]:[])],
   license:'Project-authored motion approximation; source video frames are not redistributed.',oneShot:true,
   capabilities:{prop:{kind:'racket',trail:true,handView:true,...(player.side?{side:player.side}:{})}},
   document,
