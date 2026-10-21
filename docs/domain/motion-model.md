@@ -10,14 +10,15 @@
 
 ## 插值
 
-- 标量通道：Hermite；内部键非均匀 Catmull-Rom 中心差分切线，限界 `|m| ≤ 2·min(相邻割线)`；loop 幽灵链每侧两个周期拷贝（[../decisions/0004-interpolation-tangent-cap-squad.md](../decisions/0004-interpolation-tangent-cap-squad.md)）。
-- 手部朝向（`hand.forward`/`hand.normal`）：corrected-slerp 形式 SO(3) 三次；过键逐位精确、键时刻角速度 C¹；整条链先做半球符号连续。
+- 每个关键帧的 `interpolation` 控制它到下一帧的区间，缺省为 `hermite`。Hermite 标量通道使用非均匀 Catmull-Rom 中心差分切线，限界 `|m| ≤ 2·min(相邻割线)`；loop 幽灵链每侧两个周期拷贝（[../decisions/0004-interpolation-tangent-cap-squad.md](../decisions/0004-interpolation-tangent-cap-squad.md)）。`linear` 使用标量线性插值；相邻区间选不同曲线时，关键帧处速度可以改变。
+- Hermite 区间的手部朝向（`hand.forward`/`hand.normal`）使用 corrected-slerp 形式 SO(3) 三次；过键逐位精确、Hermite 区间共享切线时角速度 C¹；线性区间使用最短弧 SLERP。整条四元数链先做半球符号连续。
 - release-swing 两段式有独立 chord/end 切线逻辑，不经 `tan()`，不做二次钳制。
 
 ## 坐标系与归一化
 
 - `handFrames`（`world`/`pelvis`）决定手部目标的插值坐标系；`frameAt(doc,t,origin)` 的 `origin` 是 pelvis 系原点——所有采样/写入口必须显式传与显示路径一致的值（`restRoot`），默认 `(0,0,0)` 会造成静默偏移（learning [16]，实测 ~4mm）。
 - `gripSide`：缺省 = 右手且为规范形态，显式 `'R'` 被 `normalizeDoc` 折叠回缺省（同义写法共享指纹与制品 id）；`'L'` 把指节包裹、腕锥限位、抬肩辅助、球拍挂载镜像到左手。侧别改变求解轨迹 → 属于文档并进入请求指纹。
+- 可选 `freeArms` 是整段动作的手臂限位策略：`true` 允许肘、腕完整旋转，缺省保留人体参考限位；随存储、镜像、编译快照与子采样保留，并进入文档指纹。
 - `mirrorDoc` 以 x=0 平面整档镜像：侧别字段 L↔R 对调，位置/方向向量 x→−x，yaw 类（骨盆 yaw、chest/side、脚 yaw）取反而 lean/脚 pitch 保持，`gripSide` 翻转、`handFrames` 随手换侧；id/name/english 用可回切后缀（`.mirrored` / `· 镜像` / `· MIRRORED`）。**不变量**：`mirror∘mirror` 对规范字段序文档逐字节相等；逐字段约定表见 history「WP-D(补)— 文档镜像」——新增文档字段必须在 `mirrorDoc` 显式裁决，防静默保留源值。
 
 ## 事件

@@ -86,17 +86,22 @@ export class HumanRig {
   rotate(n:string,x=0,y=0,z=0){this.bone(n).quaternion.setFromEuler(_rotEuler.set(x*DEG,y*DEG,z*DEG,'YXZ'));this.syncWorld();}
   worldRotation(n:string,q:Quaternion){const b=this.bone(n);const p=b.parent!.getWorldQuaternion(_wrParent);b.quaternion.copy(p.invert().multiply(q));this.syncWorld();}
   /** Split authored twist bones retain their local rest transform; only joint roots rotate. */
-  limb(side:'L'|'R',kind:'arm'|'leg',target:Vector3,pole:Vector3){
+  limb(side:'L'|'R',kind:'arm'|'leg',target:Vector3,pole:Vector3,maxFlex=kind==='arm'?145:135){
     const u=kind==='arm'?`upperarm01_${side}`:`upperleg01_${side}`;
     const l=kind==='arm'?`lowerarm01_${side}`:`lowerleg01_${side}`;
     const e=kind==='arm'?`wrist_${side}`:`foot_${side}`;
     const r0=this.rest.get(u)!,r1=this.rest.get(l)!,r2=this.rest.get(e)!;
     const a=_limbA.copy(r1).sub(r0),b=_limbB.copy(r2).sub(r1),normal=_limbNormal.crossVectors(a,b).normalize();
     const pu=this.point(u);
-    const solved=solveTwoBone(pu,target,pole,a.length(),b.length(),kind==='arm'?145:135);
+    const solved=solveTwoBone(pu,target,pole,a.length(),b.length(),maxFlex);
     const d0=_limbD0.copy(solved.mid).sub(pu),d1=_limbD1.copy(solved.end).sub(solved.mid);
     const n=_limbN.crossVectors(d0,d1).normalize();
-    if(n.lengthSq()<.1)n.copy(normal);
+    if(n.lengthSq()<.1){
+      // A straight or fully folded chain has no positional bend plane.
+      // Its off-axis pole still carries the authored upper-arm roll.
+      n.crossVectors(pole.clone().sub(pu),solved.end.clone().sub(pu)).normalize();
+      if(n.lengthSq()<.1)n.copy(normal);
+    }
     this.worldRotation(u,frameRotation(a,normal,d0,n));
     this.worldRotation(l,frameRotation(b,normal,d1,n));
     return solved;
@@ -122,12 +127,12 @@ export class HumanRig {
     align(l,l,e,solved.end.clone().sub(solved.mid));
     return solved;
   }
-  hand(side:'L'|'R',forward:Vector3,palmNormal:Vector3){
+  hand(side:'L'|'R',forward:Vector3,palmNormal:Vector3,bendLimit=WRIST_BEND_LIMIT_DEG){
     const {forward:f,normal}=handFrame(this.rest,side);
     const forearm=this.point(`wrist_${side}`).sub(this.point(`lowerarm01_${side}`)).normalize();
     let desired=_handDes.copy(forward).normalize();
     const bend=forearm.angleTo(desired);
-    if(bend>WRIST_BEND_LIMIT_DEG*DEG){_handAim.setFromUnitVectors(forearm,desired);_handAim.slerp(_QIDENT,1-WRIST_BEND_LIMIT_DEG*DEG/bend);desired=_handDes2.copy(forearm).applyQuaternion(_handAim);}
+    if(bend>bendLimit*DEG){_handAim.setFromUnitVectors(forearm,desired);_handAim.slerp(_QIDENT,1-bendLimit*DEG/bend);desired=_handDes2.copy(forearm).applyQuaternion(_handAim);}
     const targetQ=frameRotation(f,normal,desired,palmNormal);
     // Share pronation with the distal forearm twist bone to avoid wrist-only twist.
     // The twist is the swing-twist angle of the hand relative to the forearm about

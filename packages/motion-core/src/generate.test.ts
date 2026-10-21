@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
-import {attachRacket} from './racket';
+import {attachRacket} from './props/racket';
 import {motionFileById} from './motion-files';
 import {defaultDocument,validateDocShape,type WorkshopDoc} from './document';
 import {probeFrames,type Quat,type Vec3} from './quality-probe';
@@ -63,6 +63,17 @@ const detuneSquat=(doc:WorkshopDoc)=>{
  if(!damaged)throw new Error('expected the real phase move to detune sub2:trunk');
  return damaged;
 };
+
+describe('subsampled interval curves',()=>{
+ it('retains each sampled key’s governing outgoing interpolation',()=>{
+  const doc=defaultDocument(rig.rest);doc.keys[0].interpolation='linear';
+  const keys=doc.keys.slice().sort((a,b)=>a.time-b.time);
+  const sub=subsampleDoc(doc,[keys[0].time,(keys[0].time+keys[1].time)/2,(keys[1].time+keys[2].time)/2,keys.at(-1)!.time],rig.rest);
+  expect(sub.keys[0].interpolation).toBe('linear');
+  expect(sub.keys[1].interpolation).toBe('linear');
+  expect(sub.keys[2].interpolation).toBeUndefined();
+ });
+});
 
 describe('integrated jerk metrics use time-aware finite differences',()=>{
  const duration=1.037;

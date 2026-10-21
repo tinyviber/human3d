@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
-import {attachRacket} from './racket';
+import {attachRacket} from './props/racket';
 import {blankDocument,contactStartKey,flattenPose,frameAt,isReleaseKey,samplePose,validateDocShape,type WorkshopDoc,type WorkshopKey} from './document';
 import {ankleYForLift,footGeometry,footLift,type Side} from './foot';
 import {analyzePose,solveEffectiveFrame} from './solver';

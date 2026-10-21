@@ -1,17 +1,19 @@
 import {Quaternion,Vector3,MathUtils} from 'three';
 import {HumanRig} from './rig';
-import {blendGrip} from './racket';
+import {blendGrip} from './grip';
+import {PROPS} from './props';
 import {DEG,LIMITS,angleAt,pelvisDorsiCorrection,solveTwoBone,type DorsiLeg} from './kinematics';
 import type {EffectiveFrame,PoseParams,KeyConstraints,SupportWeights} from './document';
 import {toV} from './document';
 import {FOOT_CLEARANCE_M,footDepth,footGeometry,footRotation,type Side} from './foot';
+import {handFrame} from './hand-frame';
 
 /** Kinematic stage of the pipeline: task-space pose → skeleton, with joint
  * limits and foot contacts enforced geometrically. This replaces forward
  * dynamics for authoring — muscle control stays a later stage. */
 export const DORSI_LIMIT_DEG=20;
 
-export interface SolveState{support?:SupportWeights;gripAmount?:number;clavicleLift?:boolean;
+export interface SolveState{support?:SupportWeights;gripAmount?:number;clavicleLift?:boolean;freeArms?:boolean;
  /** Which hand grips (finger wrap + racket mount + clavicle assist). Absent
   * means 'R' — the pre-WP-D behaviour every existing caller relied on. */
  gripSide?:Side}
@@ -65,13 +67,13 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
     rig.rotate(`clavicle_${gripSide}`,0,0,s*lift*8);rig.rotate(`shoulder01_${gripSide}`,0,0,s*lift*5);
     rig.syncWorld();
   }
-  rig.limb('R','arm',toV(p.handR.target),toV(p.handR.pole));
-  rig.limb('L','arm',toV(p.handL.target),toV(p.handL.pole));
-  rig.hand('R',toV(p.handR.forward).normalize(),toV(p.handR.normal).normalize());
-  rig.hand('L',toV(p.handL.forward).normalize(),toV(p.handL.normal).normalize());
+  rig.limb('R','arm',toV(p.handR.target),toV(p.handR.pole),state.freeArms?180:145);
+  rig.limb('L','arm',toV(p.handL.target),toV(p.handL.pole),state.freeArms?180:145);
+  rig.hand('R',toV(p.handR.forward).normalize(),toV(p.handR.normal).normalize(),state.freeArms?180:undefined);
+  rig.hand('L',toV(p.handL.forward).normalize(),toV(p.handL.normal).normalize(),state.freeArms?180:undefined);
   // Grip ramp: relaxed fingers blend toward the wrap grip on the gripping
   // side; amount 1 is the full grip. The other hand always relaxes.
-  blendGrip(rig,gripSide,gripAmount);
+  blendGrip(rig,gripSide,gripAmount,PROPS.racket.handle);
   rig.relaxHand(gripSide==='R'?'L':'R');
   rig.syncWorld();
   return {pelvisShift:correction.shift,pelvisSaturated:correction.saturated};
@@ -81,7 +83,7 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
 /** The single solve entry for a sampled document frame: support fades, the
  * grip ramp and the clavicle assist all come from the frame, never re-derived. */
 export function solveEffectiveFrame(rig:HumanRig,f:EffectiveFrame){
-  return solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide});
+  return solvePose(rig,f.pose,f.constraints,{support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,freeArms:f.freeArms,gripSide:f.gripSide});
 }
 
 /** Ankle dorsiflexion (degrees) of the solved rig, from the shank direction
@@ -103,6 +105,40 @@ export function rotateHandFrame(h:{forward:{x:number;y:number;z:number};normal:{
   const nf=f.clone().applyQuaternion(q),nn=n.clone().applyQuaternion(q);
   nn.addScaledVector(nf,-nn.dot(nf)).normalize();
   h.forward={x:nf.x,y:nf.y,z:nf.z};h.normal={x:nn.x,y:nn.y,z:nn.z};
+}
+
+/** FK-style authoring, encoded back into the existing task-space targets.
+ * The rig must be solved at the edited key. Rotating the upper arm carries
+ * the elbow, forearm and hand; rotating the forearm keeps the elbow fixed.
+ * Unlike a pole edit, this moves the wrist target as well, so the shoulder
+ * can reach the whole sphere. The solver still owns all final bone writes. */
+export function rotateArmJoint(rig:HumanRig,p:PoseParams,side:Side,joint:'upper'|'forearm',kind:'lift'|'swing'|'twist',degrees:number){
+  const shoulder=rig.point(`upperarm01_${side}`),elbow=rig.point(`lowerarm01_${side}`),wrist=rig.point(`wrist_${side}`);
+  const pivot=joint==='upper'?shoulder:elbow;
+  const direction=joint==='upper'?elbow.clone().sub(shoulder):wrist.clone().sub(elbow);
+  const body=rig.bone(`upperarm01_${side}`).parent!.getWorldQuaternion(new Quaternion());
+  const axis=kind==='twist'?direction.normalize():new Vector3(kind==='lift'?1:0,kind==='swing'?1:0,0).applyQuaternion(body);
+  const turn=new Quaternion().setFromAxisAngle(axis.normalize(),degrees*DEG);
+  const end=wrist.sub(pivot).applyQuaternion(turn).add(pivot);
+  const mid=joint==='upper'?elbow.sub(pivot).applyQuaternion(turn).add(pivot):elbow;
+  const hand=side==='L'?p.handL:p.handR;
+  const store=(v:Vector3)=>({x:v.x,y:v.y,z:v.z});
+  hand.target=store(end);
+  if(joint==='upper'){
+    // The elbow itself lies ON the upper-arm twist axis. Storing it as the
+    // pole loses the roll reference when the chain is collinear, leaving
+    // only the hand-frame rotation visible. Carry the solved upper-arm
+    // plane through the turn and encode it in an off-axis pole instead.
+    const restUpper=rig.rest.get(`lowerarm01_${side}`)!.clone().sub(rig.rest.get(`upperarm01_${side}`)!);
+    const restLower=rig.rest.get(`wrist_${side}`)!.clone().sub(rig.rest.get(`lowerarm01_${side}`)!);
+    const upperWorld=rig.bone(`upperarm01_${side}`).getWorldQuaternion(new Quaternion());
+    const plane=new Vector3().crossVectors(restUpper,restLower).normalize().applyQuaternion(upperWorld).applyQuaternion(turn);
+    const bend=new Vector3().crossVectors(end.clone().sub(shoulder).normalize(),plane).normalize();
+    hand.pole=store(mid.clone().addScaledVector(bend,restUpper.length()));
+  }else hand.pole=store(mid);
+  const rest=handFrame(rig.rest,side),world=rig.bone(`wrist_${side}`).getWorldQuaternion(new Quaternion());
+  hand.forward=store(rest.forward.applyQuaternion(world).applyQuaternion(turn));
+  hand.normal=store(rest.normal.applyQuaternion(world).applyQuaternion(turn));
 }
 
 /** One check. `ok` is decided from `value` against `limit` in `unit`; the
@@ -223,6 +259,6 @@ export function analyzePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,racket?:{
   items.push({code:'com-support',ok:comStable,label:'重心投影',
     detail:!planted?'没有支撑脚':comStable?'在支撑多边形内':`距支撑多边形 ${((dist as number)*100).toFixed(1)}cm`,
     value:dist,limit:.02,unit:'m'});
-  const racketTip=racket?racket.localToWorld(new Vector3(0,.61,0)):new Vector3();
+  const racketTip=racket?racket.localToWorld(PROPS.racket.tipLocal.clone()):new Vector3();
   return {items,com,comStable,support,racketTip};
 }

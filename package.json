@@ -19,6 +19,7 @@
     "package-to-glb": "tsx scripts/package-to-glb.mts",
     "bench": "tsx scripts/bench-workshop.mts",
     "qa": "node scripts/browser-qa.mjs",
+    "qa:pose-validity": "node scripts/pose-validity-qa.mjs",
     "assets": "python3 scripts/build-human.py && tsx scripts/retarget-walk.mjs",
     "dynamics:validate": "python3 scripts/validate-action-spec.py",
     "dynamics:test": "python3 scripts/test-dynamics-records.py",

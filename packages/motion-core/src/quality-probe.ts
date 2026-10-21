@@ -14,6 +14,7 @@
  * per-step rotation independent of dt; a derivative kink shows a step series
  * whose slope changes abruptly. The report therefore carries (a) raw per-step
  * angles, (b) local outlier ratios vs neighbours and (c) angular-jerk peaks. */
+import {RACKET_TIP_LOCAL} from './props/racket';
 import {Quaternion,Vector3} from 'three';
 import type {HumanRig} from './rig';
 import {DEG,WRIST_BEND_LIMIT_DEG,solveTwoBone} from './kinematics';
@@ -250,7 +251,7 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
   const al=r1.clone().sub(r0).length(),bl=r2.clone().sub(r1).length();
   const root=rig.point(`upperarm01_${gs}`),gp=gs==='L'?f.pose.handL:f.pose.handR;
   const target=toV(gp.target),pole=toV(gp.pole);
-  const sv=solveTwoBone(root,target,pole,al,bl,145);
+  const sv=solveTwoBone(root,target,pole,al,bl,doc.freeArms?180:145);
   const dir=target.clone().sub(root).normalize();
   const bend=pole.clone().sub(root).addScaledVector(dir,-pole.clone().sub(root).dot(dir)).normalize();
   const forearm=rig.point(`wrist_${gs}`).sub(rig.point(`lowerarm01_${gs}`)).normalize();
@@ -258,7 +259,7 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
   frames.push({
    t,key:f.keyIndex,
    root:v3a(rig.point('root')),quat,pos,
-   tip:tip?v3a(tip.localToWorld(new Vector3(0,.61,0))):null,
+   tip:tip?v3a(tip.localToWorld(RACKET_TIP_LOCAL.clone())):null,
    lowestFootY:{L:Math.min(...geoL.names.map(nm=>rig.point(nm).y)),R:Math.min(...geoR.names.map(nm=>rig.point(nm).y))},
    plant:{L:f.constraints.plantL,R:f.constraints.plantR},
    footTarget:{L:v3a(toV(f.pose.footL.target)),R:v3a(toV(f.pose.footR.target))},
@@ -291,6 +292,7 @@ export interface AnalyzeProbeArgs{
  * metric below derives only from `frames`, `doc` and `rest`. */
 export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:AnalyzeProbeArgs):ProbeReport{
  const dt=1/fps;
+ const wristLimit=doc.freeArms?180:WRIST_BEND_LIMIT_DEG;
  const groundY={L:footGeometry(rest,'L').groundY,R:footGeometry(rest,'R').groundY};
  const keys=sortedKeys(doc);
  const keyTimes=keys.map(k=>k.time);
@@ -393,7 +395,7 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
    * and `transitions` below use the strict >limit edge so the deficit
    * accounting and switch counting are complete — the two series answer
    * different questions and are not meant to agree. */
-  if(f.arm.wristBend>WRIST_BEND_LIMIT_DEG+0.05)wristClampFrames++;
+  if(f.arm.wristBend>wristLimit+0.05)wristClampFrames++;
   if(f.arm.wristBend>wristBendMax.v)wristBendMax={v:f.arm.wristBend,t:f.t};
   if(i>0){
    const b0=frames[i-1].arm.bendDir,b1=f.arm.bendDir;
@@ -432,12 +434,12 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
  /* wrist bend clamp transitions + delivered-vs-authored hand-frame deficit */
  const clampTransitions:number[]=[];
  for(let i=1;i<frames.length;i++){
-  const a=frames[i-1].arm.wristBend>WRIST_BEND_LIMIT_DEG,b=frames[i].arm.wristBend>WRIST_BEND_LIMIT_DEG;
+  const a=frames[i-1].arm.wristBend>wristLimit,b=frames[i].arm.wristBend>wristLimit;
   if(a!==b)clampTransitions.push(frames[i].t);
  }
- const deficitSeries=frames.map(f=>Math.max(0,f.arm.wristBend-WRIST_BEND_LIMIT_DEG));
+ const deficitSeries=frames.map(f=>Math.max(0,f.arm.wristBend-wristLimit));
  const deficitMax=Math.max(0,...deficitSeries);
- const deficitFrames=frames.filter(f=>f.arm.wristBend>WRIST_BEND_LIMIT_DEG).length;
+ const deficitFrames=frames.filter(f=>f.arm.wristBend>wristLimit).length;
  const deficitMed=median(deficitSeries.filter(v=>v>0));
 
  /* [7] wrist + tip smoothness */
@@ -508,7 +510,7 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
   sole:{minY:{L:minYL,R:minYR},minYT:{L:penLt,R:penRt},penetration:{L:penL,R:penR}},
   gripSide:gs,
   ik:{armResidual:{...armRes,side:gs},legResidual:legRes,reachMax,poleBendFlip:bendFlip},
-  wristClamp:{limitDeg:WRIST_BEND_LIMIT_DEG,maxBend:wristBendMax.v,maxBendT:wristBendMax.t,
+  wristClamp:{limitDeg:wristLimit,maxBend:wristBendMax.v,maxBendT:wristBendMax.t,
    clampedFrames:wristClampFrames,transitions:clampTransitions,
    deficitMax,deficitFrames,deficitMedian:deficitMed},
   activeWindow:[active[0],active[1]],chain,
