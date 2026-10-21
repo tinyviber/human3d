@@ -64,6 +64,11 @@ describe('P1-1 pelvis correction is continuous and reports saturation',()=>{
   const dorsi=a.items.find(i=>i.code==='ankle-dorsiflexion-R');
   expect(dorsi?.ok).toBe(false);
  });
+ it('keeps the planted front ankle on its target when the rear dorsiflexion limit gives way',()=>{
+  const r=solveAt(lunge(),0);
+  const t=r.f.pose.footL.target;
+  expect(footPoint('L').distanceTo(new Vector3(t.x,t.y,t.z))).toBeLessThan(.001);
+ });
 });
 
 describe('P1-2 stepped mode uses the contact-rewritten key pose',()=>{

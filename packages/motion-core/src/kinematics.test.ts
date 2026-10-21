@@ -4,7 +4,7 @@ import {Vector3,Quaternion,AnimationClip,AnimationMixer,SkinnedMesh,Mesh} from '
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {handFrame} from './hand-frame';
 import {HumanRig,mapMyoSimThumbToSkin} from './rig';
-import {solveTwoBone,angleAt,frameRotation,clampJoint,hingedArmRotations,forearmTwist,DEG} from './kinematics';
+import {solveTwoBone,angleAt,frameRotation,clampJoint,hingedArmRotations,forearmTwist,pelvisDorsiCorrection,type DorsiLeg,DEG} from './kinematics';
 import {MOTION_FILES,motionFileById} from './motion-files';
 import {frameAt} from './document';
 import {solveEffectiveFrame} from './solver';
@@ -48,6 +48,39 @@ describe('constant-length IK',()=>{
   expect(local[0].angleTo(local[1])).toBeLessThan(1e-7);expect(local[1].angleTo(local[2])).toBeLessThan(1e-7);
  });
 });
+describe('pelvis correction keeps a loaded foot in reach',()=>{
+ // Synthetic legs (no rig): a planted front leg whose ankle sits just inside
+ // reach, and a rear leg that is out of reach until the pelvis moves back 7 cm.
+ const R=.45+.42-1e-4;
+ const front=(weight:number):DorsiLeg=>({hip:new Vector3(-.1,.9,0),target:new Vector3(-.1,.9-Math.sqrt(R*R-.0023),0),pole:new Vector3(-.1,.5,.3),upper:.45,lower:.42,footQ:new Quaternion(),weight});
+ const rear=(weight:number):DorsiLeg=>{const uy=Math.sqrt(R*R+.03-.0625);return {hip:new Vector3(.1,.9,0),target:new Vector3(.1,.9-uy,-.25),pole:new Vector3(.1,.5,.3),upper:.45,lower:.42,footQ:new Quaternion(),weight};};
+ const inReach=(l:DorsiLeg,s:number)=>new Vector3(l.hip.x,l.hip.y,l.hip.z-s).distanceTo(l.target)<=l.upper+l.lower;
+ it('stops the pelvis where the planted ankle leaves reach and reports the conflict',()=>{
+  const legs=[front(1),rear(1)];
+  const r=pelvisDorsiCorrection(legs,20,.15);
+  expect(r.shift).toBeGreaterThan(.046);expect(r.shift).toBeLessThan(.05);
+  expect(inReach(legs[0],r.shift)).toBe(true);
+  expect(r.saturated).toBe(true);
+ });
+ it('leaves the shift unchanged when no planted leg limits it',()=>{
+  const r=pelvisDorsiCorrection([rear(1)],20,.15);
+  expect(r.shift).toBeCloseTo(.0697,3);
+  expect(r.saturated).toBe(false);
+ });
+ it('does not cap the pelvis on a leg that is out of reach at every shift',()=>{
+  const alone=pelvisDorsiCorrection([rear(1)],20,.15).shift;
+  const r=pelvisDorsiCorrection([{...front(1),target:new Vector3(-.1,-1.5,0)},rear(1)],20,.15);
+  expect(r.shift).toBeCloseTo(alone,6);
+  expect(r.saturated).toBe(true);
+ });
+ it('relaxes the cap continuously as the planted weight fades out',()=>{
+  let prev=pelvisDorsiCorrection([front(1),rear(1)],20,.15).shift,maxStep=0;
+  for(let w=.99;w>=-1e-9;w-=.01){const s=pelvisDorsiCorrection([front(Math.max(0,w)),rear(1)],20,.15).shift;maxStep=Math.max(maxStep,Math.abs(s-prev));prev=s;}
+  expect(maxStep).toBeLessThan(.005);
+  expect(pelvisDorsiCorrection([front(0),rear(1)],20,.15).shift).toBeCloseTo(.0697,3);
+ });
+});
+
 describe('real authored asset and animation data',()=>{
  it('has a skinned continuous human surface, 163 bones and complete fingers',()=>{let mesh:SkinnedMesh|undefined;rig.model.traverse(o=>{if(o instanceof SkinnedMesh)mesh=o;});expect(mesh).toBeDefined();expect(mesh!.geometry.getAttribute('position').count).toBe(53514);expect(rig.bones.size).toBe(163);for(const side of ['L','R'])for(let f=1;f<=5;f++)for(let j=1;j<=3;j++)expect(rig.bones.has(`finger${f}-${j}_${side}`)).toBe(true);const w=mesh!.geometry.getAttribute('skinWeight');for(let i=0;i<w.count;i++)expect(w.getX(i)+w.getY(i)+w.getZ(i)+w.getW(i)).toBeCloseTo(1,5);});
  it('resolves all bundled motion files and drives every rig bone',()=>{

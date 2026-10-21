@@ -466,7 +466,8 @@ const sameFlat=(a:WorkshopKey,b:WorkshopKey)=>{const x=flattenPose(a.pose),y=fla
  return x.length===y.length&&x.every((v,i)=>v===y[i]);};
 const sameConstraints=(a:WorkshopKey,b:WorkshopKey)=>{
  const x=a.constraints,y=b.constraints;
- return x.plantL===y.plantL&&x.plantR===y.plantR&&x.grip===y.grip&&x.contact===y.contact;};
+ return x.plantL===y.plantL&&x.plantR===y.plantR&&!!x.toeStandL===!!y.toeStandL&&!!x.toeStandR===!!y.toeStandR
+  &&x.grip===y.grip&&x.contact===y.contact;};
 
 /** Doc-gates 1–5 — the per-move invariants, cheap enough to run before every
  * trial evaluation AND re-run at emit for the record. */
@@ -482,7 +483,7 @@ function docGates(ctx:GenMoveContext,src:WorkshopDoc,cand:WorkshopDoc):GenConstr
   &&src.handFrames.L===cand.handFrames.L&&src.handFrames.R===cand.handFrames.R,
   detail:'duration/inbetweens/loop/handFrames/gripSide/clavicleLift/freeArms 原样'});
  rows.push({code:'constraints-pattern',ok:sk.every((k,i)=>sameConstraints(k,ck[i])),
-  detail:'逐键 plantL/plantR/grip/contact 深比较'});
+  detail:'逐键 plantL/plantR/toeStandL/toeStandR/grip/contact 深比较'});
  const pinned=sk.every((k,i)=>{
   const c=ck[i];
   if(!(ctx.locked.has(k.id)||k.constraints.contact))return true;

@@ -27,6 +27,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 **2. 关键帧携带约束而不只是姿态。** 每个关键帧记录：
 
 - `plantL / plantR`：支撑脚锁定。连续的 `plant=true` 关键帧构成一个**接触区间**：整个区间内脚保持在区间起始帧的接触位置（后续锁定帧存储的脚位被忽略——接触是约束不是姿态采样）。移动支撑脚必须先经过一个 `plant=false` 关键帧（离地），再声明新的 `plant=true`（重新接触）。离地帧时刻脚仍位于上一接触点（保证连续），但**离地帧存储的脚位不会被忽略——它作为摆动路径点**：脚从接触点出发，在区间中点经过该存储姿态，再到落地帧接触点。默认平滑 Hermite 模式下切换处速度连续；选线性时速度可能在关键帧或摆动中点改变，但位置仍连续。
+- `toeStandL / toeStandR`（ADR-0010）：支撑脚以趾关节着地。只在对应 `plant` 为真时有效；被标记的键上，踝的 x、y、z、pitch 取该键自身的值，yaw 仍锁定到接触。缺省为假，显式假值归一化为缺省。弓步的后脚即此形态（pitch 20°）。
 - `grip`：握拍约束（侧别由文档级 `gripSide` 决定）→ `applyGrip` 包裹该侧指节、球拍挂载到该侧手腕。
 - `contact`：触球/接触事件 → 拍头在该帧的世界位置显示为黄色标记，直接拖动标记即调整该帧手部目标让拍头到达该点（写入握拍侧的手部目标）。
 
@@ -42,7 +43,7 @@ MuscleMimic（amathislab/musclemimic）已提供全身肌肉驱动模仿学习�
 - `packages/motion-core/src/solver.ts`：采样帧的唯一求解入口是 `solveEffectiveFrame`（支撑权重淡入淡出、握拍渐变、抬肩辅助随帧传入，不再单独推导），落到 `solvePose` 把参数写到骨架（复用 `rig.limb`/`rig.hand`/`applyGrip`，含支撑脚背屈超限时的骨盆后移二分修正）。`analyzePose` 输出运动学合理性：膝/肘/肩限位、支撑脚残差、分段质量近似质心在支撑多边形（锁定脚脚印凸包）内的投影。
 - `apps/web/src/workshop/engine.ts`：Three.js 场景、手柄拾取与拖拽平面、轨迹线（拍头/手腕）、触球标记、质心投影与地面支撑多边形。
 - `apps/web/src/workshop/WorkshopApp.tsx`：文档/视频/约束/检查面板 + 关键帧时间轴。
-- `mirrorDoc`（`document.ts`）整档镜像：以 x=0 平面（该骨架左=+X、右=−X）把同一动作换边——右手正手变左手正手。逐键约定：`root.x`、骨盆 `yaw`、`chest`/`side`（YXZ 中的 Y/Z 分量）与脚 `yaw` 取反，`lean`、脚 `pitch` 保持；`handL⇄handR`、`footL⇄footR` 对调且 target/pole/forward/normal 全部 x→−x（正交框架逐位保持）；`plantL⇄plantR` 对调使接触区间挪到另一侧脚（接触点、离地帧摆动中点经同一存储重写随动镜像）；`handFrames` 随手换侧（惯用的双手 pelvis 配置下等价于不变）；`gripSide` R↔L 翻转（镜像回右手时写回规范缺省形态）；`clavicleLift`、`loop`、`duration`、`inbetweens`、键时间/标签/`videoTime` 原样保留；`id`/`name`/`english` 追加可回切的镜像标记（`.mirrored` / ` · 镜像` / ` · MIRRORED`）——再镜像一次逐字节回到原文档。文档卡「镜像动作」按钮把镜像文档作为**新动作**入库并选中（原文档保留），且在新文档的撤销书上预存源文档快照：一步撤销即回到镜像前的文档（选择跟随恢复的 id；重做对称地回到镜像文档）。跨文档恢复是**指针语义**：只切换选中，快照内容绝不写回异 id 文档——否则镜像后对源文档的新编辑会被旧快照无提示抹掉。`mirror.test.ts` 在真实 `frameAt → solveEffectiveFrame` 路径上逐骨断言世界位置/朝向互为 x 镜像（实测位置残差 ≤2.8e-15 m、朝向 ≤6e-8 rad），随机文档与 shipped 资产同口径覆盖。
+- `mirrorDoc`（`document.ts`）整档镜像：以 x=0 平面（该骨架左=+X、右=−X）把同一动作换边——右手正手变左手正手。逐键约定：`root.x`、骨盆 `yaw`、`chest`/`side`（YXZ 中的 Y/Z 分量）与脚 `yaw` 取反，`lean`、脚 `pitch` 保持；`handL⇄handR`、`footL⇄footR` 对调且 target/pole/forward/normal 全部 x→−x（正交框架逐位保持）；`plantL⇄plantR` 对调使接触区间挪到另一侧脚（接触点、离地帧摆动中点经同一存储重写随动镜像）；`toeStandL⇄toeStandR` 随之对调（缺省为假）；`handFrames` 随手换侧（惯用的双手 pelvis 配置下等价于不变）；`gripSide` R↔L 翻转（镜像回右手时写回规范缺省形态）；`clavicleLift`、`loop`、`duration`、`inbetweens`、键时间/标签/`videoTime` 原样保留；`id`/`name`/`english` 追加可回切的镜像标记（`.mirrored` / ` · 镜像` / ` · MIRRORED`）——再镜像一次逐字节回到原文档。文档卡「镜像动作」按钮把镜像文档作为**新动作**入库并选中（原文档保留），且在新文档的撤销书上预存源文档快照：一步撤销即回到镜像前的文档（选择跟随恢复的 id；重做对称地回到镜像文档）。跨文档恢复是**指针语义**：只切换选中，快照内容绝不写回异 id 文档——否则镜像后对源文档的新编辑会被旧快照无提示抹掉。`mirror.test.ts` 在真实 `frameAt → solveEffectiveFrame` 路径上逐骨断言世界位置/朝向互为 x 镜像（实测位置残差 ≤2.8e-15 m、朝向 ≤6e-8 rad），随机文档与 shipped 资产同口径覆盖。
 
 ## 动作库与存储
 

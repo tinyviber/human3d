@@ -26,6 +26,11 @@ export interface PoseParams{
 export interface KeyConstraints{
   /** A planted foot's contact (target, yaw, pitch) is held across the interval that starts at this key. */
   plantL:boolean;plantR:boolean;
+  /** Toe-stand (per planted foot, ADR-0010): the foot rests on its toes, so
+   * its ankle x, y, z and pitch are this key's own authored values instead of
+   * the contact's (the generator compensates x/z so the toe stays on its spot).
+   * Yaw stays locked to the contact. Absent means false. */
+  toeStandL?:boolean;toeStandR?:boolean;
   /** The gripping hand (WorkshopDoc.gripSide) keeps the wrap fingers and shows the racket. */
   grip:boolean;
   /** Contact event: the racket head position at this key is a target point. */
@@ -177,18 +182,27 @@ interface SquadKey{q:Quaternion;T:Vector3;b?:Vector3}
  * Loops use cyclic adjacency; a fully planted loop anchors on key 0. */
 interface ContactPlan{override:(number[]|undefined)[];rest:boolean[]}
 function contactPlan(keys:WorkshopKey[],side:Side,loop:boolean,raw:number[][]):ContactPlan{
-  const n=keys.length,flag=side==='L'?'plantL':'plantR',chans=lockedChannels(FOOT_CH[side]);
+  const n=keys.length,flag=side==='L'?'plantL':'plantR',toeFlag=side==='L'?'toeStandL':'toeStandR',chans=lockedChannels(FOOT_CH[side]);
   const planted=keys.map(k=>k.constraints[flag]);
+  const toe=keys.map((k,j)=>planted[j]&&k.constraints[toeFlag]===true);
   const before=(j:number)=>loop?planted[(j-1+n)%n]:(j>0&&planted[j-1]);
   let start=0;
   if(loop){const s=planted.findIndex((p,j)=>p&&!planted[(j-1+n)%n]);start=s<0?0:s;}
   const override:(number[]|undefined)[]=new Array(n).fill(undefined);
   const rest=new Array<boolean>(n).fill(false);
+  // Toe-stand keys (ADR-0010) keep their own ankle target (x, y, z, pitch): the
+  // authored x/z puts the toe contact where the run planted it, so the ankle
+  // travels with the rocking foot. Only yaw still comes from the run's first key.
+  const holdAt=(contactVals:number[],j:number)=>{const v=contactVals.slice();for(const c of [0,1,2,4])v[c]=raw[j][chans[c]];return v;};
   let contact:number[]|undefined;
   for(let k=0;k<n;k++){
     const j=loop?(start+k)%n:k,p=before(j);
     if(planted[j]&&(!p||!contact))contact=chans.map(c=>raw[j][c]);
-    if(contact&&(planted[j]||p)){override[j]=contact;rest[j]=true;}
+    if(!contact||!(planted[j]||p))continue;
+    // A planted key contributes its own toe state; the first unplanted key after
+    // a run inherits the run's last toe state, so liftoff never teleports the foot.
+    const src=planted[j]?j:(loop?(j-1+n)%n:j-1);
+    override[j]=toe[src]?holdAt(contact,src):contact;rest[j]=true;
   }
   return {override,rest};
 }
@@ -664,6 +678,10 @@ export function validateDocShape(d:unknown):string[]{
   const c=k.constraints;
   if(!c||typeof c!=='object'){e.push(`keys[${idx}].constraints 缺失`);return;}
   for(const f of ['plantL','plantR','grip','contact']as const)if(typeof c[f]!=='boolean')e.push(`keys[${idx}].constraints.${f} 必须是布尔值`);
+  for(const [f,plant] of [['toeStandL','plantL'],['toeStandR','plantR']] as const){
+   if(c[f]!==undefined&&typeof c[f]!=='boolean')e.push(`keys[${idx}].constraints.${f} 必须是布尔值`);
+   else if(c[f]===true&&c[plant]!==true)e.push(`keys[${idx}].constraints.${f} 需要 ${plant} 为真`);
+  }
   if(k.videoTime!==undefined&&!Number.isFinite(k.videoTime))e.push(`keys[${idx}].videoTime 不是有限数`);
  });
  if(doc.loop===true&&doc.keys.every(k=>k&&typeof k.time==='number')){
@@ -690,7 +708,12 @@ export function normalizeDoc(raw:unknown):WorkshopDoc{
    * back to absent — documents that mean the same solve must serialize and
    * fingerprint identically (normalizedRequest embeds the parsed doc). */
   if(d.gripSide==='R')delete d.gripSide;
-  for(const k of d.keys)canonicalizeHands(k.pose);
+  for(const k of d.keys){
+   canonicalizeHands(k.pose);
+   // Absent toe-stand flags mean false: the explicit false folds back to absent.
+   if(k.constraints.toeStandL===false)delete k.constraints.toeStandL;
+   if(k.constraints.toeStandR===false)delete k.constraints.toeStandR;
+  }
   return d;
 }
 export function parseDoc(text:string):WorkshopDoc{return normalizeDoc(JSON.parse(text));}
@@ -720,6 +743,7 @@ export function parseDoc(text:string):WorkshopDoc{return normalizeDoc(JSON.parse
  *                                 release swings' mid-waypoints and landing
  *                                 contacts all mirror through the same
  *                                 stored-target rewrite the sampler applies
+ *   constraints.toeStandL ⇄ R     swapped with the plant flags (absent = false)
  *   constraints.grip / contact    kept (side-agnostic booleans)
  *   handFrames                    side-swapped {L←R, R←L}: the interpolation
  *                                 frame follows the hand — a right 'world'
@@ -760,13 +784,15 @@ export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
    *   WorkshopKey: id · time · label · pose · constraints · interpolation · videoTime
    *   PoseParams:  root · yaw · lean · chest · side · handL · handR ·
    *     footL · footR   (hand: target/pole/forward/normal; foot: +yaw/pitch)
-   *   KeyConstraints: plantL · plantR · grip · contact                       */
+   *   KeyConstraints: plantL · plantR · toeStandL · toeStandR · grip · contact */
   const keys=doc.keys.map(k=>{
     const c=k.constraints,p=k.pose;
     const key:WorkshopKey={id:k.id,time:k.time,label:k.label,
       pose:{root:mv(p.root),yaw:-p.yaw,lean:p.lean,chest:-p.chest,side:-p.side,
         handL:hand(p.handR),handR:hand(p.handL),footL:foot(p.footR),footR:foot(p.footL)},
-      constraints:{plantL:c.plantR,plantR:c.plantL,grip:c.grip,contact:c.contact}};
+      constraints:{plantL:c.plantR,plantR:c.plantL,
+        ...(c.toeStandR?{toeStandL:true as const}:{}),...(c.toeStandL?{toeStandR:true as const}:{}),
+        grip:c.grip,contact:c.contact}};
     if(k.interpolation!==undefined)key.interpolation=k.interpolation;
     if(k.videoTime!==undefined)key.videoTime=k.videoTime;
     return key;

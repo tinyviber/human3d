@@ -6,6 +6,7 @@
 
 - 支撑脚是**接触区间**：`plant=true` 连续 run **首帧**的存储脚位定义接触点，run 内后续锁定帧的存储脚位被采样器忽略（决策见 [../decisions/0001-contact-interval-swing-waypoint.md](../decisions/0001-contact-interval-swing-waypoint.md)）。
 - 离地帧（`plant=false` 紧跟支撑）时刻脚仍在接触点；其存储脚位是**后续区间的摆动中点**。贴地存储 = 有意拖步，不是抬脚。
+- **脚尖站立例外**（ADR-0010，`toeStandL/toeStandR`，仅 plant 为真时有效）：被标记的支撑键，踝的 x、y、z、pitch 取该键自身的值，不锁定到接触；只有 yaw 仍锁定到接触。接触点是 pitch 下最低的趾关节，不是踝。区间首帧定接触、离地摆动中点与释放键继承的规则不变；释放键继承趾键自身的值，离地不瞬移。
 - 「此帧存储是否生效」必须精确匹配采样器 override 条件（锁定 run 键与释放键两类）；近似的归属规则会把活数据误判成死数据（learning [15]）。
 
 ## 插值

@@ -146,20 +146,50 @@ function legShiftForLimit(l:DorsiLeg,limit:number,maxShift:number,step=.005){
   for(let s=start+step;s<=maxShift+1e-9;s+=step){const v=dorsi(s);if(v<bestValue){bestValue=v;best=s;}}
   return {shift:refineMin(dorsi,Math.max(start,best-step),Math.min(maxShift,best+step)),ok:false};
 }
+/** Largest posterior shift (metres) that keeps one leg's ankle target within
+ * reach. The hip moves along −z, so |hip − s·ẑ − target|² ≤ reach² is a
+ * quadratic in s whose upper root is c + √D, with c = (hip − target).z and
+ * D = c² − |hip − target|² + reach². Infinity when the target is out of reach
+ * at every shift (the leg's own check reports that) or is reachable only with
+ * the pelvis forward of its rest position: no bound on the shift can protect
+ * such a leg. */
+function legReachCap(l:DorsiLeg){
+  const reach=l.upper+l.lower-1e-4;
+  const ux=l.hip.x-l.target.x,uy=l.hip.y-l.target.y,uz=l.hip.z-l.target.z;
+  const disc=uz*uz-(ux*ux+uy*uy+uz*uz)+reach*reach;
+  if(disc<0)return Infinity;
+  const upper=uz+Math.sqrt(disc);
+  return upper<0?Infinity:upper;
+}
 /** Posterior pelvis shift (metres) keeping every weighted leg at or below
  * `limit` degrees of dorsiflexion. Each leg is solved on its own and the
  * results combine as max(weight·shift), so a leg fading into or out of
  * support moves the pelvis continuously instead of jumping when the support
- * set changes. `saturated` reports a weighted leg that cannot reach `limit`
- * within `maxShift`; callers surface it as a failed check, not a silent clamp. */
+ * set changes. A weighted leg's ankle target also caps the shift at the point
+ * where it leaves reach, so a planted foot keeps its place and the dorsiflexion
+ * limit gives way instead of pulling the foot out of reach. The cap relaxes
+ * linearly with the weight fading out, so it moves continuously too.
+ * `saturated` reports a weighted leg that is out of reach or above `limit` at
+ * the applied shift; callers surface it as a failed check, not a silent clamp. */
 export function pelvisDorsiCorrection(legs:DorsiLeg[],limit=20,maxShift=.15):PelvisCorrection{
-  let shift=0,saturated=false,worst=-Infinity;
+  let shift=0,saturated=false,worst=-Infinity,cap=Infinity;
   for(const l of legs){
     if(l.weight<=0)continue;
     worst=Math.max(worst,legDorsiflexion(l,0));
     const r=legShiftForLimit(l,limit,maxShift);
     if(!r.ok)saturated=true;
     shift=Math.max(shift,l.weight*r.shift);
+    const reachCap=legReachCap(l);
+    if(reachCap<Infinity)cap=Math.min(cap,reachCap+(1-Math.min(1,l.weight))*maxShift);
   }
-  return {shift,saturated,worstDorsiflexion:worst};
+  const applied=Math.min(shift,cap);
+  if(applied<shift){
+    // Conflict: the limit asks for more shift than a weighted leg's reach allows.
+    for(const l of legs){
+      if(l.weight<=0)continue;
+      const reach=l.upper+l.lower-1e-4;
+      if(_dh.set(l.hip.x+0,l.hip.y+0,l.hip.z-applied).distanceTo(l.target)>reach||legDorsiflexion(l,applied)>limit)saturated=true;
+    }
+  }
+  return {shift:applied,saturated,worstDorsiflexion:worst};
 }

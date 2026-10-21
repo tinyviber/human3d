@@ -104,3 +104,32 @@ describe('semantic validator — pelvis fold no longer jumps the root',()=>{
   expect(details.some(d=>d.includes('support foot slips'))).toBe(true);
  });
 });
+
+describe('semantic validator — basic leg geometry (ADR-0010)',()=>{
+ const basic=(id:string)=>JSON.parse(fs.readFileSync(path.resolve(`assets/motions/${id}.json`),'utf8')).document;
+ const post=(document:unknown,fps=40)=>handleRequest(ctx,'POST','/v1/motions',{action:{id:'workshop-doc',parameters:{document}},sample:{fps}},{});
+
+ it('accepts the basic squats, lunge and weight shift at 40 and 60 Hz',()=>{
+  for(const fps of [40,60])for(const id of ['basic-half-squat','basic-full-squat','basic-lunge','basic-weight-shift']){
+   const r=post(basic(id),fps);
+   expect(r.status,`${id} @${fps}`).toBe(200);
+   expect(validatePosePackage(r.body as PosePackage,ctx.manifest),`${id} @${fps}`).toEqual([]);
+  }
+ });
+
+ it('judges the toe-stand lunge by its rear toes: the ankle travels, the toes stay within the limit',()=>{
+  const m=measurePackage(post(basic('basic-lunge')).body as PosePackage,ctx.manifest);
+  expect(m.slip?.value??0).toBeLessThan(VALIDATION_LIMITS.supportSlipM);
+ });
+
+ it('rejects a toe-stand whose rear toes slide sideways off their planted spot',()=>{
+  const doc=clone(basic('basic-lunge'));
+  // Shift both toe-stand keys 3 cm across the body: the rear toes leave the
+  // spot the flat key planted, so the contact slips while the foot is planted.
+  for(const j of [1,2])doc.keys[j].pose.footR.target.x+=.03;
+  const r=post(doc);
+  expect(r.status).toBe(422);
+  const details=(r.body as {error:{details:string[]}}).error.details;
+  expect(details.some(d=>d.includes('support foot slips'))).toBe(true);
+ });
+});

@@ -23,6 +23,7 @@ import {buildPelvisSchedule} from './pelvis-schedule';
 import {compileMotion,frameAtCompiled,sortedKeys,toV,type WorkshopDoc} from './document';
 import {sampleTimes} from './pose-package';
 import {footGeometry,type Side} from './foot';
+import {supportDrift} from './support-contact';
 
 export type Vec3=[number,number,number];
 export type Quat=[number,number,number,number];
@@ -63,7 +64,7 @@ export interface ProbeFrame{
  root:Vec3;
  /** World quaternions (xyzw) for PROBE_QUAT_BONES. */
  quat:Record<string,Quat>;
- /** World positions for PROBE_POINTS. */
+ /** World positions for PROBE_POINTS and every foot joint (ankle + toes). */
  pos:Record<string,Vec3>;
  /** Racket tip world position — null when the probe ran without a tip object. */
  tip:Vec3|null;
@@ -94,8 +95,10 @@ export interface ProbeSpike{what:string;t:number;value:number;unit:string;extra?
 export interface ProbeInterval{side:'L'|'R';from:number;to:number}
 /** One support interval's planted-foot residuals (metres). `maxResidual` is
  * |ankle − effective contact target|; `maxDrift` is drift from the interval's
- * first solved ankle position. */
-export interface ProbeSlip extends ProbeInterval{samples:number;maxResidual:number;residualT:number;maxDrift:number}
+ * first solved ankle position. `contactDrift` is the slip the semantic
+ * validator gates (ADR-0010, support-contact.ts): horizontal drift of the
+ * floor contacts, `contactBone` the joint that drifted most. */
+export interface ProbeSlip extends ProbeInterval{samples:number;maxResidual:number;residualT:number;maxDrift:number;contactDrift:number;contactBone:string}
 /** Per-bone rotational stats: peak angular speed (rad/s), largest single
  * step (rad), worst local outlier ratio (a kink stands out from its ±5-step
  * neighbourhood; smooth fast motion does not) and peak angular jerk (rad/s²). */
@@ -243,7 +246,7 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
   const a=analyzePose(rig,f.pose,f.constraints);
   const quat:ProbeFrame['quat']={},pos:ProbeFrame['pos']={};
   for(const b of PROBE_QUAT_BONES)quat[b]=q4(rig.bone(b).getWorldQuaternion(new Quaternion()));
-  for(const p of PROBE_POINTS)pos[p]=v3a(rig.point(p));
+  for(const p of [...PROBE_POINTS,...geoL.names,...geoR.names])pos[p]=v3a(rig.point(p));
   const check:ProbeFrame['check']={};
   for(const it of a.items)check[it.code]={v:it.value,ok:it.ok,limit:it.limit};
   /* Gripping-arm (doc.gripSide — the hoisted `gs` above) two-bone internals
@@ -325,7 +328,8 @@ export function analyzeProbeFrames({doc,fps,frames,rest,name,activeWindow}:Analy
    if(s>worst){worst=s;wt=f.t;}
    if(anchor)drift=Math.max(drift,dist(f.pos[`foot_${iv.side}`],anchor));
   }
-  footSlip.push({...iv,samples:fl.length,maxResidual:worst,residualT:wt,maxDrift:drift});
+  const contact=supportDrift(iv.side,rest,fl.length,(k,b)=>new Vector3(...fl[k].pos[b]));
+  footSlip.push({...iv,samples:fl.length,maxResidual:worst,residualT:wt,maxDrift:drift,contactDrift:contact.value,contactBone:contact.bone});
   if(worst>0.001)push({what:`foot-slip-${iv.side}`,t:wt,value:worst*100,unit:'cm'});
  }
 
@@ -541,7 +545,7 @@ export function formatProbeReport(r:ProbeReport):string{
  const wriS=r.wrist,tipS=r.tip;
  lines.push(`\n=== ${r.name} @ ${r.fps}fps · ${r.frameCount} frames · ${r.keyCount} keys · ${r.duration}s ===`);
  lines.push(`支撑区间: ${r.supportIntervals.map(i=>`${i.side} ${i.from.toFixed(2)}–${i.to.toFixed(2)}s`).join(' · ')||'无'}   rest sole plane L ${(r.groundY.L*1000).toFixed(1)}mm R ${(r.groundY.R*1000).toFixed(1)}mm`);
- lines.push(`[1] foot slip\n${r.footSlip.map(iv=>`  foot_${iv.side} ${iv.from.toFixed(2)}–${iv.to.toFixed(2)}s n=${iv.samples}  |ankle−target| max ${(iv.maxResidual*1000).toFixed(2)}mm @${iv.residualT.toFixed(3)}s  | drift-from-first max ${(iv.maxDrift*1000).toFixed(2)}mm`).join('\n')||'  (no plant intervals)'}`);
+ lines.push(`[1] foot slip\n${r.footSlip.map(iv=>`  foot_${iv.side} ${iv.from.toFixed(2)}–${iv.to.toFixed(2)}s n=${iv.samples}  |ankle−target| max ${(iv.maxResidual*1000).toFixed(2)}mm @${iv.residualT.toFixed(3)}s  | ankle drift max ${(iv.maxDrift*1000).toFixed(2)}mm | contact drift max ${(iv.contactDrift*1000).toFixed(2)}mm (${iv.contactBone})`).join('\n')||'  (no plant intervals)'}`);
  const angTop=r.bones.slice(0,8).map(s=>`  ${s.bone.padEnd(13)} peak ${s.peakW.toFixed(1).padStart(6)} rad/s @${s.peakT.toFixed(3)}s  αmax ${s.peakAlpha.toFixed(1)} rad/s²@${s.alphaT.toFixed(3)}s  step ${(s.maxStep*180/Math.PI).toFixed(2)}°@${s.stepT.toFixed(3)}s`);
  lines.push(`[2] 骨角速度 / 角加速度 top:\n${angTop.join('\n')}`);
  lines.push(`    kink>4x 邻帧: ${r.kinked.length?r.kinked.slice(0,8).map(s=>`${s.bone} ${(s.maxStep*180/Math.PI).toFixed(1)}° x${s.kink.toFixed(0)} @${s.kinkT.toFixed(3)}s(keyΔ${(nearKey(s.kinkT)*1000).toFixed(0)}ms)`).join('  '):'无'}`);

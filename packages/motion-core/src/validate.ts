@@ -2,6 +2,7 @@ import {Quaternion,Vector3} from 'three';
 import {POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
 import type {PosePackage} from './pose-package';
 import type {RigManifest} from './protocol';
+import {supportDrift} from './support-contact';
 
 /** Semantic limits enforced by the validator. A package beyond one of them is
  * rejected, never warned about. Thresholds and the shipped-motion peaks they
@@ -21,7 +22,8 @@ export const VALIDATION_LIMITS={
  elbowFlexionDeg:145,
  /** FK-vs-solver residue allowed on the flexion limits (deg). */
  angleToleranceDeg:.5,
- /** Planted-foot drift between a support-start and its support-end (m). */
+ /** Planted-foot drift between a support-start and its support-end (m), measured
+  * on the floor contacts (support-contact.ts, ADR-0010). */
  supportSlipM:.01,
 } as const;
 
@@ -114,8 +116,10 @@ export function measurePackage(pkg:PosePackage,manifest:RigManifest):Measurement
   if(el>elbow.value)Object.assign(elbow,{value:el,at:side,t:timestamps[i]});
  }
 
- // Support slip: between each support-start and its matching support-end the
- // planted ankle must stay put. Worst drift over all intervals, both sides.
+ // Support slip (ADR-0010): between each support-start and its matching
+ // support-end the planted foot's floor contacts must stay put — see
+ // supportDrift. Worst drift over all intervals, both sides.
+ const rest=new Map(manifest.bones.map(b=>[b.name,headOf(b.name)]));
  let slip:Peak|null=null;
  for(const side of ['L','R']as const){
   const starts=pkg.events.filter(ev=>ev.type==='support-start'&&ev.side===side).map(ev=>ev.time);
@@ -124,11 +128,11 @@ export function measurePackage(pkg:PosePackage,manifest:RigManifest):Measurement
    const end=ends.filter(x=>x>s).sort((a,b)=>a-b)[0]??pkg.timeline.duration;
    const i0=timestamps.findIndex(x=>x>=s-1e-9);
    if(i0<0)continue;
-   const p0=at(i0,`foot_${side}`);
-   for(let i=i0;i<count&&timestamps[i]<=end+1e-9;i++){
-    const d=at(i,`foot_${side}`).distanceTo(p0);
-    if(!slip||d>slip.value)slip={value:d,at:side,t:timestamps[i]};
-   }
+   let n=0;
+   while(i0+n<count&&timestamps[i0+n]<=end+1e-9)n++;
+   if(n<1)continue;
+   const d=supportDrift(side,rest,n,(k,bone)=>at(i0+k,bone));
+   if(!slip||d.value>slip.value)slip={value:d.value,at:side,t:timestamps[i0+d.k]};
   }
  }
  return {angularSpeed:angular,rootSpeed:root,rootAccel,knee,elbow,slip,fkDriftM};

@@ -56,6 +56,16 @@ export function basicInsertRefusal(doc:WorkshopDoc,basic:WorkshopDoc,time:number
    return `插入「${basic.name}」需要 ${added} 个关键帧，已达 ${WORKSHOP_LIMITS.maxKeys} 个上限，请先删除不需要的帧。`;
   if(doc.duration+span>WORKSHOP_LIMITS.maxDuration+EPS)
    return `插入「${basic.name}」后动作时长将超过 ${WORKSHOP_LIMITS.maxDuration}s 上限。`;
+  // A basic action's foot pitch (the lunge's toe-stand) is offset from the
+  // state's pitch. That is exact only when the state's foot starts at the
+  // action's own starting pitch; otherwise the offsets would stack (a 40° foot).
+  const first=keys[0].pose,deltas=keys.map(k=>poseDelta(first,k.pose));
+  const state=anchor?anchor.pose:frameAt(doc,Math.max(0,Math.min(ceilingOf(doc),time))).pose;
+  const clash=(['L','R'] as const).find(side=>{
+   const foot=side==='L'?'footL':'footR';
+   return deltas.some(d=>Math.abs(d[foot].pitch)>EPS)&&Math.abs(state[foot].pitch-first[foot].pitch)>EPS;
+  });
+  if(clash)return `插入「${basic.name}」时${clash==='L'?'左':'右'}脚已处于不同的脚掌角度（例如脚尖支撑），请先把该脚放回平地再插入。`;
   return undefined;
 }
 
@@ -108,7 +118,15 @@ export function insertBasicAction(doc:WorkshopDoc,basic:WorkshopDoc,time:number,
    if(!movesFoot(side))return baseCons[flag];
    return j<last&&seq[j].constraints[flag];
   };
-  const consFor=(j:number):KeyConstraints=>({plantL:plant('L',j),plantR:plant('R',j),grip:baseCons.grip,contact:false});
+  // Toe-stand flags follow the plant rule: a moved foot takes the action's
+  // flag, an unmoved foot keeps the state's. Absent means false (ADR-0010).
+  const toe=(side:'L'|'R',j:number):boolean=>{
+   const flag=side==='L'?'toeStandL':'toeStandR';
+   if(!movesFoot(side))return baseCons[flag]===true;
+   return j<last&&seq[j].constraints[flag]===true;
+  };
+  const consFor=(j:number):KeyConstraints=>({plantL:plant('L',j),plantR:plant('R',j),
+   ...(toe('L',j)?{toeStandL:true}:{}),...(toe('R',j)?{toeStandR:true}:{}),grip:baseCons.grip,contact:false});
 
   const keyIds:string[]=[];
   const boundary=anchor&&needsConstraintBoundary(anchor,seq);

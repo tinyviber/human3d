@@ -112,9 +112,11 @@ describe('insertBasicAction',()=>{
   // The lunge drops the pelvis and shifts it forward by the amount in the asset (.02 m).
   const lungeRoot=basicOf('basic-lunge').keys;
   expect(k2.pose.root.z-k0.pose.root.z).toBeCloseTo(lungeRoot[2].pose.root.z-lungeRoot[0].pose.root.z,9);
-  // The trailing foot is not moved by the action: it keeps the state's contact.
+  // The trailing foot keeps the state's contact at the start. The lunge moves it
+  // onto its toes, so it follows the action's plant flags and is released at the
+  // last key like the lead foot (ADR-0010).
   expect(k0.constraints.plantR).toBe(rightBefore);
-  expect(k2.constraints.plantR).toBe(rightBefore);
+  expect(k2.constraints.plantR).toBe(false);
   expect(validateDocShape(doc)).toEqual([]);
  });
 
@@ -131,6 +133,43 @@ describe('insertBasicAction',()=>{
   expect(liftoff.constraints.plantL).toBe(false);
   rig.reset();solveEffectiveFrame(rig,frameAt(doc,.8,origin()));
   expect(rig.point('foot_L').distanceTo(plantedFoot)).toBeGreaterThan(.2);
+  expect(validateDocShape(doc)).toEqual([]);
+ });
+
+ it('lunge onto a flat rear foot: the toe keys carry the toe-stand flag and the action\'s pitch and height',()=>{
+  const doc=docOf('idle');
+  const ins=insertBasicAction(doc,basicOf('basic-lunge'),.5,origin())!;
+  const [k0,k1,k2]=ins.keyIds.map(id=>keyAt(doc,id)!);
+  const asset=basicOf('basic-lunge').keys;
+  expect(k0.pose.footR.pitch).toBeCloseTo(0,6);
+  expect(k1.constraints.toeStandR).toBe(true);
+  expect(k2.constraints.toeStandR).toBeUndefined();
+  expect(k1.pose.footR.pitch-k0.pose.footR.pitch).toBeCloseTo(asset[1].pose.footR.pitch-asset[0].pose.footR.pitch,6);
+  expect(k1.pose.footR.target.y-k0.pose.footR.target.y).toBeCloseTo(asset[1].pose.footR.target.y-asset[0].pose.footR.target.y,6);
+  expect(validateDocShape(doc)).toEqual([]);
+ });
+
+ it('refuses a second lunge onto a rear foot already on its toes, leaving the document untouched',()=>{
+  const doc=docOf('idle');
+  const first=insertBasicAction(doc,basicOf('basic-lunge'),.5,origin())!;
+  expect(first).toBeDefined();
+  const snapshot=serializeDoc(doc);
+  const hold=first.time+1;
+  expect(basicInsertRefusal(doc,basicOf('basic-lunge'),hold)).toMatch(/右脚/);
+  expect(insertBasicAction(doc,basicOf('basic-lunge'),hold,origin())).toBeUndefined();
+  expect(serializeDoc(doc)).toBe(snapshot);
+ });
+
+ it('a half squat inserted during a toe-stand keeps the rear foot on its toes',()=>{
+  const doc=docOf('idle');
+  insertBasicAction(doc,basicOf('basic-lunge'),.5,origin());
+  const squat=insertBasicAction(doc,basicOf('basic-half-squat'),1.8,origin())!;
+  expect(squat.keyIds.length).toBeGreaterThan(0);
+  for(const id of squat.keyIds){
+   const k=keyAt(doc,id)!;
+   expect(k.constraints.toeStandR,id).toBe(true);
+   expect(k.pose.footR.pitch,id).toBeCloseTo(20,6);
+  }
   expect(validateDocShape(doc)).toEqual([]);
  });
 
