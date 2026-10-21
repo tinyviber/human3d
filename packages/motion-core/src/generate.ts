@@ -19,6 +19,7 @@
  * Purity: three is used as a math library only; no DOM/node imports. The rig
  * is posed by the solver during evaluation — the same contract probeFrames
  * already has (it resets the rig when done). */
+import {RACKET_TIP_LOCAL} from './props/racket';
 import {Vector3} from 'three';
 import type {Object3D} from 'three';
 import type {HumanRig} from './rig';
@@ -545,7 +546,7 @@ function solveCleanGate(srcFailures:Map<string,CheckFailure>,candFrames:ProbeFra
  * tip.localToWorld(0,.61,0). The rig is left solved; callers reset after. */
 const tipPosAt=(rig:HumanRig,compiled:CompiledMotion,tip:ProbeTip,t:number)=>{
  solveEffectiveFrame(rig,frameAtCompiled(compiled,t));
- return tip.localToWorld(new Vector3(0,.61,0));
+ return tip.localToWorld(RACKET_TIP_LOCAL.clone());
 };
 
 /** Verify the exact Object3D returned by attachRacket is still mounted on

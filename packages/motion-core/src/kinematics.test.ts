@@ -8,7 +8,8 @@ import {solveTwoBone,angleAt,frameRotation,clampJoint,hingedArmRotations,forearm
 import {MOTION_FILES,motionFileById} from './motion-files';
 import {frameAt} from './document';
 import {solveEffectiveFrame} from './solver';
-import {attachRacket,gripFrame,blendGrip} from './racket';
+import {attachRacket,RACKET_HANDLE} from './props/racket';
+import {gripFrame,blendGrip} from './grip';
 import type {MotionId} from './types';
 let rig:HumanRig,walkClip:AnimationClip,racket:ReturnType<typeof attachRacket>;
 beforeAll(async()=>{
@@ -55,7 +56,8 @@ describe('real authored asset and animation data',()=>{
   // writing the skin rig through the document path.
   expect(MOTION_FILES.map(f=>f.id).sort()).toEqual([
    'alejandro-davidovich-fokina-forehand','alex-de-minaur-forehand','alexander-bublik-forehand','alexander-zverev-forehand',
-   'baseball-throw','ben-shelton-forehand','carlos-alcaraz-forehand','daniil-medvedev-forehand','felix-auger-aliassime-forehand',
+   'baseball-throw','basic-full-squat','basic-half-squat','basic-lunge','basic-push-turn','basic-weight-shift',
+   'ben-shelton-forehand','carlos-alcaraz-forehand','daniil-medvedev-forehand','felix-auger-aliassime-forehand',
    'flavio-cobolli-forehand','forehand','frances-tiafoe-forehand','holger-rune-forehand','idle','ignacio-buse-forehand',
    'jakub-mensik-forehand','karen-khachanov-forehand','marin-cilic-forehand','novak-djokovic-forehand','punch','reach','ready',
    'roger-federer-forehand','squat','walk',
@@ -73,7 +75,7 @@ describe('real authored asset and animation data',()=>{
  });
  it('preserves every local bone length and unit rotation at 31 times per motion',()=>{
   for(const f of MOTION_FILES.filter(f=>f.kind!=='dynamics-motion'))for(let i=0;i<=30;i++){const cleanup=setPose(f.id,i/31*durationOf(f.id));for(const [n,b]of rig.bones){if(n!=='root')expect(b.position.distanceTo(rig.restLocal.get(n)!)).toBeLessThan(1e-7);expect(b.scale.toArray()).toEqual([1,1,1]);expect(b.quaternion.length()).toBeCloseTo(1,4);}for(const side of ['L','R']){const knee=angleAt(rig.point(`upperleg01_${side}`),rig.point(`lowerleg01_${side}`),rig.point(`foot_${side}`));const elbow=angleAt(rig.point(`upperarm01_${side}`),rig.point(`lowerarm01_${side}`),rig.point(`wrist_${side}`));expect(knee).toBeLessThanOrEqual(135.1);expect(elbow).toBeLessThanOrEqual(145.1);}cleanup();}
- });
+ },60000);
  it('keeps hip, shoulder, ankle and wrist within engineering ranges at 80 times per motion',()=>{
   for(const f of MOTION_FILES.filter(f=>f.kind!=='dynamics-motion'))for(let i=0;i<80;i++){const cleanup=setPose(f.id,i/80*durationOf(f.id));
    for(const side of ['L','R']){
@@ -87,7 +89,7 @@ describe('real authored asset and animation data',()=>{
     expect(hand.angleTo(rig.point(`wrist_${side}`).sub(rig.point(`lowerarm01_${side}`)))*180/Math.PI).toBeLessThanOrEqual(60.1);
    }cleanup();
   }
- });
+ },60000);
  it('uses mirrored physical palm normals and flexion axes',()=>{
   const left=handFrame(rig.rest,'L'),right=handFrame(rig.rest,'R');
   const mirror=(v:Vector3)=>new Vector3(-v.x,v.y,v.z);
@@ -214,10 +216,10 @@ describe('real authored asset and animation data',()=>{
   }
  });
  it('keeps palm-to-handle transform fixed throughout the forehand',()=>{
-  for(let i=0;i<=100;i++){const cleanup=setPose('forehand',i/101*durationOf('forehand'));const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone());expect(racket.getWorldPosition(new Vector3()).distanceTo(expected)).toBeLessThan(1e-10);cleanup();}
+  for(let i=0;i<=100;i++){const cleanup=setPose('forehand',i/101*durationOf('forehand'));const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig,'R',RACKET_HANDLE).center.clone());expect(racket.getWorldPosition(new Vector3()).distanceTo(expected)).toBeLessThan(1e-10);cleanup();}
  });
  it('wraps every finger around the grip cylinder with contact and bounded distal flexion',()=>{
-  const cleanup=setPose('ready',0);const {center,axis,forward,normal}=gripFrame(rig);const wrist=rig.bone('wrist_R');
+  const cleanup=setPose('ready',0);const {center,axis,forward,normal}=gripFrame(rig,'R',RACKET_HANDLE);const wrist=rig.bone('wrist_R');
   for(let f=1;f<=5;f++){
    let min=Infinity;
    for(let j=1;j<=3;j++){
@@ -255,7 +257,7 @@ describe('forearm twist and grip blend are continuous',()=>{
   for(let a=0;a<=1+1e-9;a+=.01){
    // The solver resets the rig before every frame's blend; mirror that here so the
    // wrap is solved from the rest finger pose at each amount.
-   rig.reset();blendGrip(rig,'R',a);
+   rig.reset();blendGrip(rig,'R',a,RACKET_HANDLE);
    const now=names.map(n=>rig.bone(n).quaternion.clone());
    if(prev)now.forEach((q,i)=>{worst=Math.max(worst,q.angleTo(prev![i]));});
    prev=now;

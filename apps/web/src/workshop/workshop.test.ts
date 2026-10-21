@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {Matrix4,Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '@human3d/motion-core';
-import {attachRacket,gripFrame} from '@human3d/motion-core';
+import {attachRacket,gripFrame,RACKET_HANDLE} from '@human3d/motion-core';
 import {angleAt,DEG} from '@human3d/motion-core';
 import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,TANGENT_SECANT_CAP,toV,unflattenPose,validateDocShape,type PoseParams,type WorkshopDoc,type WorkshopKey} from '@human3d/motion-core';
 import {LIBRARY_KEY,MotionLibrary,WORKSHOP_PRESETS,type StorageLike} from './library';
@@ -328,7 +328,7 @@ describe('workshop solver',()=>{
   const doc=defaultDocument(rig.rest);
   for(let i=0;i<=40;i++){
    const f=frameAt(doc,i/40*doc.duration,origin());solveEffectiveFrame(rig,f);
-   const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone());
+   const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig,'R',RACKET_HANDLE).center.clone());
    expect(racket.getWorldPosition(new Vector3()).distanceTo(expected)).toBeLessThan(1e-10);
   }
  });

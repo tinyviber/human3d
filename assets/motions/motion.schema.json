@@ -28,6 +28,11 @@
     "order": {
       "type": "number"
     },
+    "category": {
+      "enum": [
+        "basic"
+      ]
+    },
     "name": {
       "type": "string"
     },

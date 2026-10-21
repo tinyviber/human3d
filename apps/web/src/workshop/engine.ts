@@ -1,8 +1,9 @@
 import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Float32BufferAttribute,Group,HemisphereLight,Line,LineBasicMaterial,LineDashedMaterial,LineLoop,LineSegments,Mesh,MeshBasicMaterial,MeshStandardMaterial,PerspectiveCamera,Plane,PlaneGeometry,Raycaster,RingGeometry,Scene,SkinnedMesh,SphereGeometry,Vector2,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,GridHelper} from 'three';
+import {RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
 import {HumanRig,skeletonSegments} from '@human3d/motion-core';
-import {attachRacket,mountRacket} from '@human3d/motion-core';
+import {attachProp,mountRacket} from '@human3d/motion-core';
 import type {RigInfo,ViewId} from '@human3d/motion-core';
 import type {CompiledMotion,EffectiveFrame,PoseParams,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
 import {compileMotion,contactStartKey,frameAtCompiled,isReleaseKey,parseDoc,serializeDoc,sortedKeys,toV} from '@human3d/motion-core';
@@ -185,7 +186,7 @@ export class WorkshopEngine{
       if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
       this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
-      this.racket=attachRacket(this.rig,this.getDoc().gripSide==='L'?'L':'R');this.racketSide=this.getDoc().gripSide==='L'?'L':'R';this.racket.visible=false;
+      this.racket=attachProp(this.rig,'racket',this.getDoc().gripSide==='L'?'L':'R');this.racketSide=this.getDoc().gripSide==='L'?'L':'R';this.racket.visible=false;
       this.footGeo={L:footGeometry(this.rig.rest,'L'),R:footGeometry(this.rig.rest,'R')};
       this.makeHandles();this.makeMarkers();this.makeOnion();
       this.ready=true;this.solveCurrent();this.setView('threeQuarter');this.onReady?.(info);
@@ -290,7 +291,7 @@ export class WorkshopEngine{
       case 'poleLeg':{(this.drag.h.side==='L'?k.footL:k.footR).pole={x:pos.x,y:pos.y,z:pos.z};break;}
       case 'tip':case 'contact':{
         if(!this.racket)break;this.solveCurrent();
-        const tip=this.racket.localToWorld(new Vector3(0,.61,0));
+        const tip=this.racket.localToWorld(RACKET_TIP_LOCAL.clone());
         const d=pos.clone().sub(tip),h=this.getDoc().gripSide==='L'?k.handL:k.handR;
         const t=h.target;h.target={x:t.x+d.x,y:t.y+d.y,z:t.z+d.z};break;}
     }
@@ -351,7 +352,7 @@ export class WorkshopEngine{
     put('foot','L',this.rig.point('foot_L'));put('foot','R',this.rig.point('foot_R'));
     put('poleArm','L',toV(p.handL.pole));put('poleArm','R',toV(p.handR.pole));
     put('poleLeg','L',toV(p.footL.pole));put('poleLeg','R',toV(p.footR.pole));
-    put('tip',undefined,this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3(),f.gripAmount>0);
+    put('tip',undefined,this.racket?this.racket.localToWorld(RACKET_TIP_LOCAL.clone()):new Vector3(),f.gripAmount>0);
     // Swing waypoint split: during a release interval the visible foot sits ON
     // the path contact→waypoint→landing, so the bone handle becomes display
     // only and the editable control is a separate handle bound to the release
@@ -378,7 +379,7 @@ export class WorkshopEngine{
       paths.wrist_R.push(this.rig.point('wrist_R'));paths.wrist_L.push(this.rig.point('wrist_L'));
       // No grip → no racket: skipping the sample keeps non-grip stretches out
       // of the tip line instead of writing the world origin into the path.
-      if(f.gripAmount>0&&this.racket)paths.tip.push(this.racket.localToWorld(new Vector3(0,.61,0)));
+      if(f.gripAmount>0&&this.racket)paths.tip.push(this.racket.localToWorld(RACKET_TIP_LOCAL.clone()));
     }
     for(const [id,line]of this.trajectories){
       const pts=paths[id]??[];
@@ -392,7 +393,7 @@ export class WorkshopEngine{
     this.contactMarkers=[];
     for(const k of keys.filter(k2=>k2.constraints.contact)){
       const f=this.frameAtTime(doc,k.time);this.solveFrame(f);
-      const at=this.racket?this.racket.localToWorld(new Vector3(0,.61,0)):new Vector3();
+      const at=this.racket?this.racket.localToWorld(RACKET_TIP_LOCAL.clone()):new Vector3();
       const ball=new Mesh(new SphereGeometry(.022,16,12),new MeshStandardMaterial({color:0xf0b429,depthTest:false,transparent:true,opacity:.95}));
       ball.position.copy(at);ball.renderOrder=21;
       const ring=new Mesh(new RingGeometry(.035,.042,28),new MeshBasicMaterial({color:0xf0b429,side:DoubleSide,depthTest:false,transparent:true,opacity:.8}));

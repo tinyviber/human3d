@@ -1,6 +1,6 @@
 # 领域不变量：求解器（FK/IK）与质量门
 
-改 `solver.ts`、`kinematics.ts`、`rig.ts`、`racket.ts`、`generate.ts` 或质量阈值前必读本文。历史证据见 [../history/investigate.md](../history/investigate.md)。
+改 `solver.ts`、`kinematics.ts`、`rig.ts`、`props/racket.ts`、`grip.ts`、`generate.ts` 或质量阈值前必读本文。历史证据见 [../history/investigate.md](../history/investigate.md)。
 
 ## 求解路径
 
@@ -14,6 +14,7 @@
 - `rotateArmJoint` 是关节旋转编辑器：围绕肩或肘旋转真实求解骨段，将肘、腕目标和手部方向写回既有任务空间字段，再由同一 FK/IK 路径重解。大臂旋转携带小臂与手部；小臂旋转保持肘位。肘部 pole 只是固定末端条件下的弯曲方向提示，不能代替肩关节自由旋转。
 - 大臂旋转将真实大臂骨的参考平面一同旋转，并存为偏离骨轴的 pole；肘点位于轴上，单存肘点不能保留共线状态下的轴向角度。共线链的骨骼朝向优先从 pole 与肩—腕轴恢复，避免只留下手腕朝向变化。
 - 求解器合理性检查与服务端语义校验（422 `motion_rejected`）的阈值与校准流程见 [../validation.md](../validation.md)；阈值用 `scripts/measure-motions.mts` / `measure-quality-probe.mts` 实测校准，不凭感觉调。
+- 骨盆后移修正（`pelvisDorsiCorrection`）对每条腿取 `weight × max(0, 所需位移)` 再求 max。所需位移经过零时在采样间隔内形成斜率拐点，根加速度尖峰随采样率变化：服务端默认 40 Hz 下正手 Frances 预设曾测得 42 m/s²（门限 40，`POST /v1/motions` 返回 422）。正手预设的后脚蹬地脚跟抬起因此限制在 8°（12° 时出现该拐点）。修改脚部目标或骨盆高度后，须用服务端默认采样率与 240 fps 两种口径复测根加速度，以及后脚踝背屈峰值（≤ 20.1°）。
 
 ## gripSide 与镜像求解
 

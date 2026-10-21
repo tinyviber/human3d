@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | 文档/索引/约定 | `docs/**`、各 `AGENTS.md`、README | L0 | diff + `npm run docs:check` | 触及代码注释里被引用的路径时按对应域升级 |
 | core 文档模型/采样 | `packages/motion-core/src/document.ts`、`motion-file*.ts`、`motions.ts` | L3 | `apps/web/src/workshop/workshop.test.ts`、`apps/web/src/workshop/mirror.test.ts`、`packages/motion-core/src/grip-side.test.ts`、`regressions.test.ts` + `tsc -b` | 求解输出变化 → `SERVICE_VERSION` bump + golden/探针全量 |
-| core 求解/几何 | `solver.ts`、`kinematics.ts`、`rig.ts`、`hand-frame.ts`、`foot.ts`、`racket.ts`、`limits.ts` | L3 | `kinematics.test.ts`、`solver-hints.test.ts`、`grip-side.test.ts`、`quality.test.ts`、`solver-baseline.test.ts` | 真实路径验证不可省（review-gates L3） |
+| core 求解/几何 | `solver.ts`、`kinematics.ts`、`rig.ts`、`hand-frame.ts`、`foot.ts`、`props/racket.ts`、`grip.ts`、`limits.ts` | L3 | `kinematics.test.ts`、`solver-hints.test.ts`、`grip-side.test.ts`、`quality.test.ts`、`solver-baseline.test.ts` | 真实路径验证不可省（review-gates L3） |
 | 协议/姿态包/导出 | `protocol.ts`、`pose-package.ts`、`package-const.ts`、`package-inspect.ts`、`package-export.ts`、`glb-export.ts`、`validate.ts`（core 内） | L3 | `package-export.test.ts`、`glb-export.test.ts`、`validate.test.ts`、`property.test.ts`、`compiled.test.ts` + `npm run spec:check` | 改 `spec/` 契约按「spec/协议」行 |
 | 生成器/质量度量 | `generate.ts`、`quality-probe.ts`、`random-document.ts`、`semantic-map.ts`、`muscle-action.ts` | L2–L3 | `generate.test.ts`、`compiled.test.ts`、`quality.test.ts`（低资源加 `--maxWorkers=1`） | 度量语义变化 → evidence 基线重生成 |
 | web 工作台 | `apps/web/src/workshop/` | L3（交互） | `workshop.test.ts`、`mirror.test.ts`；真实交互路径按 [../domain/workshop.md](../domain/workshop.md) 补 QA 断言 | 持久化/撤销/写路径 → 浏览器 QA |

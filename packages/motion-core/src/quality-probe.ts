@@ -14,6 +14,7 @@
  * per-step rotation independent of dt; a derivative kink shows a step series
  * whose slope changes abruptly. The report therefore carries (a) raw per-step
  * angles, (b) local outlier ratios vs neighbours and (c) angular-jerk peaks. */
+import {RACKET_TIP_LOCAL} from './props/racket';
 import {Quaternion,Vector3} from 'three';
 import type {HumanRig} from './rig';
 import {DEG,WRIST_BEND_LIMIT_DEG,solveTwoBone} from './kinematics';
@@ -258,7 +259,7 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
   frames.push({
    t,key:f.keyIndex,
    root:v3a(rig.point('root')),quat,pos,
-   tip:tip?v3a(tip.localToWorld(new Vector3(0,.61,0))):null,
+   tip:tip?v3a(tip.localToWorld(RACKET_TIP_LOCAL.clone())):null,
    lowestFootY:{L:Math.min(...geoL.names.map(nm=>rig.point(nm).y)),R:Math.min(...geoR.names.map(nm=>rig.point(nm).y))},
    plant:{L:f.constraints.plantL,R:f.constraints.plantR},
    footTarget:{L:v3a(toV(f.pose.footL.target)),R:v3a(toV(f.pose.footR.target))},

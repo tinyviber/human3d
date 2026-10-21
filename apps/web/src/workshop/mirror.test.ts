@@ -1,4 +1,5 @@
 import {describe,it,expect,beforeAll} from 'vitest';
+import {RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import fs from 'node:fs';
 import {Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -233,7 +234,7 @@ describe('mirrorDoc — grip side and parse boundary',()=>{
   const doc=shipDoc('forehand'),m=mirrorDoc(doc);
   expect(m.gripSide).toBe('L');
   const rR=attachRacket(rig,'R'),rL=attachRacket(rig,'L');
-  const world=(racket:typeof rR)=>({o:racket.getWorldPosition(new Vector3()),tip:racket.localToWorld(new Vector3(0,.61,0)),q:racket.getWorldQuaternion(new Quaternion())});
+  const world=(racket:typeof rR)=>({o:racket.getWorldPosition(new Vector3()),tip:racket.localToWorld(RACKET_TIP_LOCAL.clone()),q:racket.getWorldQuaternion(new Quaternion())});
   solved(doc,.5);const R=world(rR);
   solved(m,.5);const L=world(rL);
   expect(rL.parent?.name).toBe('wrist_L');

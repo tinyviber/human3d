@@ -17,6 +17,13 @@ export interface StorageLike{getItem(k:string):string|null;setItem(k:string,v:st
 export const LIBRARY_KEY='kinesis-workshop-library';
 /** Only bundled trajectories have editable workshop keys. */
 export const WORKSHOP_PRESETS=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.document);
+/** The library's lead group: reusable basic actions (≤3 keys each) that the
+ * workshop inserts at the playhead. */
+export const BASIC_PRESETS=WORKSHOP_PRESETS.filter(f=>f.category==='basic');
+/** Tennis motions that declare the racket prop; the racket is a plugin they opt into. */
+export const RACKET_PRESETS=WORKSHOP_PRESETS.filter(f=>f.capabilities?.prop?.kind==='racket');
+/** Older bundled motions without a basic or racket tag (idle, reach, squat, ready). */
+export const OTHER_PRESETS=WORKSHOP_PRESETS.filter(f=>f.category!=='basic'&&!f.capabilities?.prop);
 
 function docIdTaken(docs:WorkshopDoc[],id:string){return docs.some(d=>d.id===id);}
 const nameOf=(raw:unknown)=>{const n=raw&&typeof raw==='object'?(raw as {name?:unknown}).name:undefined;return typeof n==='string'?n:'';};

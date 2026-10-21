@@ -24,6 +24,11 @@ import karenKhachanovForehand from '../../../assets/motions/karen-khachanov-fore
 import jakubMensikForehand from '../../../assets/motions/jakub-mensik-forehand.json';
 import ignacioBuseForehand from '../../../assets/motions/ignacio-buse-forehand.json';
 import felixAugerAliassimeForehand from '../../../assets/motions/felix-auger-aliassime-forehand.json';
+import basicHalfSquat from '../../../assets/motions/basic-half-squat.json';
+import basicFullSquat from '../../../assets/motions/basic-full-squat.json';
+import basicLunge from '../../../assets/motions/basic-lunge.json';
+import basicWeightShift from '../../../assets/motions/basic-weight-shift.json';
+import basicPushTurn from '../../../assets/motions/basic-push-turn.json';
 
 /** The bundled motion envelopes, normalized once at module load and kept in
  * display order. Plain static imports — node-safe, so the service, the lab
@@ -34,7 +39,7 @@ export const MOTION_FILES:MotionFile[]=[idle,walk,reach,squat,ready,forehand,bas
  daniilMedvedevForehand,benSheltonForehand,alexanderBublikForehand,francesTiafoeForehand,
  holgerRuneForehand,alexDeMinaurForehand,alejandroDavidovichFokinaForehand,flavioCobolliForehand,
  marinCilicForehand,karenKhachanovForehand,jakubMensikForehand,ignacioBuseForehand,
- felixAugerAliassimeForehand]
+ felixAugerAliassimeForehand,basicHalfSquat,basicFullSquat,basicLunge,basicWeightShift,basicPushTurn]
  .map(f=>normalizeMotionFile(f))
  .sort((a,b)=>a.order-b.order);
 

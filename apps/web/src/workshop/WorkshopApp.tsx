@@ -6,7 +6,8 @@ import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human3d/motion-core';
 import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
-import {MotionLibrary,WORKSHOP_PRESETS} from './library';
+import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
+import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
 import {HistoryBook,RecordGate} from './history';
 import {copyKeyframe,keyframeInsertSlot,keyframeTimeProblem,moveKeyframe,removeKeyframe} from './keyframes';
 import {clampDuration,WORKSHOP_LIMITS} from '@human3d/motion-core';
@@ -116,7 +117,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const [,bump]=useState(0);
  const [selected,setSelected]=useState(()=>sortedKeys(lib.current!.active())[0]?.id??'');
  const [newName,setNewName]=useState('');
- const [presetId,setPresetId]=useState('forehand');
+ const [presetId,setPresetId]=useState(()=>BASIC_PRESETS[0]?.id??'');
+ const [basicId,setBasicId]=useState(()=>BASIC_PRESETS[0]?.id??'');
  const [adjustmentTab,setAdjustmentTab]=useState<'left'|'right'|'common'>('common');
  const [info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState('');
  const [frame,setFrame]=useState<WorkshopFrame>({time:0,duration:.8,playing:true,label:''});
@@ -356,6 +358,22 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  };
  const addKey=()=>insertAt(engine.current?.time??frame.time);
  const insertAfterKey=()=>{if(insertTime!==undefined)insertAt(insertTime,insertDuration);};
+ const basicFile=BASIC_PRESETS.find(p=>p.id===basicId);
+ const basicDoc=basicFile?.document;
+ const basicRefusal=basicDoc&&info?basicInsertRefusal(d,basicDoc,frame.time):undefined;
+ /** Insert the chosen basic action at the playhead state: one ripple edit, one undo step. */
+ const insertBasic=()=>{
+  const e=engine.current;
+  if(generationLocked.current||!info||!basicDoc||!e)return;
+  const time=e.time,refusal=basicInsertRefusal(d,basicDoc,time);
+  if(refusal){setHint(refusal);return;}
+  const box:{value?:BasicInsertion}={};
+  editKeyStructure(doc=>{box.value=insertBasicAction(doc,basicDoc,time,e.restRoot());});
+  const inserted=box.value;
+  if(!inserted){setHint('插入失败：请调整时刻后重试。');return;}
+  selectKey(inserted.keyIds[0]);
+  setHint(`已在 ${inserted.time.toFixed(2)}s 插入「${basicFile?.name??'基础动作'}」，后续关键帧后移 ${inserted.span.toFixed(2)}s。`);
+ };
  const duplicateKey=(id:string)=>{
   if(generationLocked.current)return;
   const source=keyAt(d,id);if(!source)return;
@@ -549,7 +567,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <aside className="ws-left">
     <section className="ws-card" inert={generationLockedUi}><h2>动作库 <small>{L.docs.length} 个动作</small></h2>
      <div className="ws-preset-entry">
-      <label className="ws-field"><span>动作预设</span><select aria-label="初始动作预设" value={presetId} onChange={e=>setPresetId(e.target.value)}>{WORKSHOP_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <label className="ws-field"><span>动作预设</span><select aria-label="初始动作预设" value={presetId} onChange={e=>setPresetId(e.target.value)}>
+       <optgroup label="基础动作">{BASIC_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+       <optgroup label="网球正手（球拍插件）">{RACKET_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+       <optgroup label="其他预设">{OTHER_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
+      </select></label>
       <button className="ws-preset-start" onClick={createFromPreset}><Plus size={14}/>从预设开始</button>
      </div>
      <div className="ws-lib">
@@ -590,6 +612,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button type="button" data-testid="keyframe-add-current" disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys} onClick={addKey}><Plus size={12}/>当前时刻添加</button>
       <button type="button" data-testid="keyframe-insert-after" disabled={!info||insertTime===undefined||d.keys.length>=WORKSHOP_LIMITS.maxKeys} title={insertTime===undefined?'选中帧后没有可用时间；可在前面的时间段添加':'在下一时间点前插入；末帧后可延长动作'} onClick={insertAfterKey}><Plus size={12}/>在选中帧后插入</button>
      </div>
+     <div className="ws-row ws-basic-insert">
+      <label className="ws-field"><span>基础动作</span><select aria-label="插入基础动作" data-testid="basic-insert-select" value={basicId} onChange={e=>setBasicId(e.target.value)} disabled={!info}>{BASIC_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
+      <button type="button" data-testid="basic-insert" disabled={!info||!basicDoc||!!basicRefusal} title={basicRefusal??'从播放头所在姿态开始插入；之后的关键帧整体后移，可撤销'} onClick={insertBasic}><Plus size={12}/>在当前帧插入</button>
+     </div>
+     {basicRefusal?<p className="ws-note" data-testid="basic-insert-refusal">{basicRefusal}</p>:null}
      <p className="ws-note">点击帧名，在右侧编辑名称、时间与姿态。上移 / 下移保留时间点，整帧换序。</p>
      {d.keys.length>=WORKSHOP_LIMITS.maxKeys?<p className="ws-note">已达关键帧数量上限，请先删除不需要的帧。</p>:null}
     </section>

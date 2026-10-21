@@ -1,6 +1,7 @@
 import {Quaternion,Vector3,MathUtils} from 'three';
 import {HumanRig} from './rig';
-import {blendGrip} from './racket';
+import {blendGrip} from './grip';
+import {PROPS} from './props';
 import {DEG,LIMITS,angleAt,pelvisDorsiCorrection,solveTwoBone,type DorsiLeg} from './kinematics';
 import type {EffectiveFrame,PoseParams,KeyConstraints,SupportWeights} from './document';
 import {toV} from './document';
@@ -72,7 +73,7 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   rig.hand('L',toV(p.handL.forward).normalize(),toV(p.handL.normal).normalize(),state.freeArms?180:undefined);
   // Grip ramp: relaxed fingers blend toward the wrap grip on the gripping
   // side; amount 1 is the full grip. The other hand always relaxes.
-  blendGrip(rig,gripSide,gripAmount);
+  blendGrip(rig,gripSide,gripAmount,PROPS.racket.handle);
   rig.relaxHand(gripSide==='R'?'L':'R');
   rig.syncWorld();
   return {pelvisShift:correction.shift,pelvisSaturated:correction.saturated};
@@ -258,6 +259,6 @@ export function analyzePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,racket?:{
   items.push({code:'com-support',ok:comStable,label:'重心投影',
     detail:!planted?'没有支撑脚':comStable?'在支撑多边形内':`距支撑多边形 ${((dist as number)*100).toFixed(1)}cm`,
     value:dist,limit:.02,unit:'m'});
-  const racketTip=racket?racket.localToWorld(new Vector3(0,.61,0)):new Vector3();
+  const racketTip=racket?racket.localToWorld(PROPS.racket.tipLocal.clone()):new Vector3();
   return {items,com,comStable,support,racketTip};
 }
