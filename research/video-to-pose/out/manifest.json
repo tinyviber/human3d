@@ -1,0 +1,136 @@
+{
+  "schema": "human3d.video-pose-benchmark-manifest.v1",
+  "generated_from_commit": "4eb191a06982b06a80802071c94dc5a49f09040d",
+  "python": "3.13.14",
+  "platform": "Linux-6.18.49-x86_64-with-glibc2.34",
+  "packages": {
+    "mediapipe": "1.1.1",
+    "rtmlib": "0.0.16",
+    "onnxruntime": "1.31.0",
+    "opencv-python-headless": "5.0.0.93",
+    "numpy": "2.5.4"
+  },
+  "ffmpeg": "ffmpeg version 7.0.2-static https://johnvansickle.com/ffmpeg/  Copyright (c) 2000-2024 the FFmpeg developers",
+  "clips": [
+    {
+      "name": "djokovic-0-8s",
+      "input": {
+        "file": "djokovic-0-8s.mp4",
+        "url": null,
+        "sha256": "3d3b4f779cf5015d4b9aa6a90e4ac1ca3313e051141e839920ad0bb6812c72a4",
+        "bytes": 2011828,
+        "width": 1280,
+        "height": 720,
+        "fps": 30.0,
+        "frame_count": 240,
+        "duration_s": 8.0
+      },
+      "parent_in_repo": "research/forehand-retargeting/videos/德约正手.mp4",
+      "reference_only": false,
+      "observations": [
+        "mediapipe-djokovic-0-8s.json",
+        "rtmpose-djokovic-0-8s.json"
+      ],
+      "metrics": "metrics/metrics-djokovic-0-8s.json"
+    },
+    {
+      "name": "federer-127-136s",
+      "input": {
+        "file": "federer-127-136s.mp4",
+        "url": null,
+        "sha256": "6165aeec64352d23c35de637acc440bff77afb8c33a3f6bb187a4d094b320138",
+        "bytes": 577956,
+        "width": 640,
+        "height": 360,
+        "fps": 30.0,
+        "frame_count": 254,
+        "duration_s": 8.4667
+      },
+      "parent_in_repo": "research/forehand-retargeting/videos/费德勒正手.mp4",
+      "reference_only": false,
+      "observations": [
+        "mediapipe-federer-127-136s.json",
+        "rtmpose-federer-127-136s.json"
+      ],
+      "metrics": "metrics/metrics-federer-127-136s.json"
+    },
+    {
+      "name": "tennis-gvhmr",
+      "input": {
+        "file": "gvhmr-tennis.mp4",
+        "url": "https://raw.githubusercontent.com/zju3dv/GVHMR/main/docs/example_video/tennis.mp4",
+        "sha256": "9fb3c7170b4b1afcf1750e5b6506d97745a16841f855a7cfb3ec869601cc5447",
+        "bytes": 2116761,
+        "width": 812,
+        "height": 720,
+        "fps": 29.827092092209053,
+        "frame_count": 312,
+        "duration_s": 10.4603
+      },
+      "parent_in_repo": null,
+      "reference_only": true,
+      "observations": [
+        "mediapipe-tennis-gvhmr.json",
+        "rtmpose-tennis-gvhmr.json"
+      ],
+      "metrics": "metrics/metrics-tennis-gvhmr.json"
+    },
+    {
+      "name": "zverev-131-141s",
+      "input": {
+        "file": "zverev-131-141s.mp4",
+        "url": null,
+        "sha256": "f1cb204c52da3a5f4b9126aac41398449f55e663538c0af552eda2676a88bc68",
+        "bytes": 1058792,
+        "width": 640,
+        "height": 360,
+        "fps": 25.0,
+        "frame_count": 250,
+        "duration_s": 10.0
+      },
+      "parent_in_repo": "research/forehand-retargeting/videos/多人正手.mp4",
+      "reference_only": false,
+      "observations": [
+        "mediapipe-zverev-131-141s.json",
+        "rtmpose-zverev-131-141s.json"
+      ],
+      "metrics": "metrics/metrics-zverev-131-141s.json"
+    }
+  ],
+  "models": [
+    {
+      "file": "~/.cache/human3d-pose/pose_landmarker_full.task",
+      "url": "https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_full/float16/latest/pose_landmarker_full.task",
+      "note": "MediaPipe Pose Landmarker Full (Tasks API); extract_mediapipe.py downloads it to this path when missing",
+      "bytes": 9398198,
+      "sha256": "4eaa5eb7a98365221087693fcc286334cf0858e2eb6e15b506aa4a7ecdcec4ad"
+    },
+    {
+      "file": "~/.cache/rtmlib/hub/checkpoints/yolox_m_8xb8-300e_humanart-c2c7a14a.onnx",
+      "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/yolox_m_8xb8-300e_humanart-c2c7a14a.zip",
+      "note": "rtmlib balanced-mode detector; rtmlib downloads the zip and extracts the ONNX",
+      "bytes": 101400344,
+      "sha256": "3dea6513388889f0fff4b77bf7a26013600321b9eb9ceb0e9a400a82572f5f23"
+    },
+    {
+      "file": "~/.cache/rtmlib/hub/checkpoints/rtmpose-m_simcc-body7_pt-body7-halpe26_700e-256x192-4d3e73dd_20230605.onnx",
+      "url": "https://download.openmmlab.com/mmpose/v1/projects/rtmposev1/onnx_sdk/rtmpose-m_simcc-body7_pt-body7-halpe26_700e-256x192-4d3e73dd_20230605.zip",
+      "note": "rtmlib balanced-mode pose model (Halpe-26); rtmlib downloads the zip and extracts the ONNX",
+      "bytes": 55685444,
+      "sha256": "26f3a19e61304a600dfb82d1001d41d24343b89fc70a33ffc84657e0b0bf2ecf"
+    }
+  ],
+  "commands": [
+    "bash research/video-to-pose/cut_segments.sh",
+    "PY=<venv>/bin/python bash research/video-to-pose/run_benchmark.sh <segment.mp4> <name> research/video-to-pose/out",
+    "<venv>/bin/python research/video-to-pose/summarize.py research/video-to-pose/out/metrics",
+    "<venv>/bin/python research/video-to-pose/write_manifest.py research/video-to-pose/out"
+  ],
+  "not_run": [
+    "GVHMR (no GPU; SMPL/SMPL-X not available)",
+    "WHAM",
+    "Pose2Sim",
+    "OpenCap",
+    "any accuracy comparison against ground truth (none available)"
+  ]
+}
