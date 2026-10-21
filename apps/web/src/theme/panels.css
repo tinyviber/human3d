@@ -1,0 +1,23 @@
+/* Desktop panes come from react-resizable-panels (inline flex). Narrow
+ * viewports keep the stacked layout the lab QA overflow check expects. */
+.workspace[data-group],.ws-main[data-group]{min-height:0}
+.pane-resize{flex:0 0 6px;width:6px;position:relative;z-index:2;background:transparent;border:0;padding:0}
+.pane-resize::after{content:'';position:absolute;top:0;bottom:0;left:2px;width:1px;background:var(--line)}
+.pane-resize:hover::after,.pane-resize[data-separator="active"]::after,.pane-resize:focus-visible::after{background:var(--accent);width:2px}
+.workspace[data-group] .viewport,.ws-main[data-group] .ws-viewport{min-width:0;min-height:0;height:100%}
+.workspace[data-group] .motion-panel,.workspace[data-group] .inspector,.ws-main[data-group] .ws-left,.ws-main[data-group] .ws-right{min-width:0;min-height:0;height:100%}
+@media(max-width:760px){
+ .workspace[data-group]{flex-direction:column !important;height:auto !important;overflow:visible !important}
+ .workspace[data-group]>[data-panel]{flex-basis:auto !important;flex-grow:0 !important;width:100% !important;height:auto !important}
+ .workspace[data-group]>[data-separator]{display:none !important}
+ .workspace[data-group] .viewport{height:65dvh;min-height:450px}
+ .workspace[data-group] .motion-panel,.workspace[data-group] .inspector{height:auto;max-height:none !important;overflow:visible !important}
+}
+@media(max-width:760px){
+ .ws-shell{height:auto;min-height:100dvh;overflow:visible;display:flex;flex-direction:column}
+ .ws-main[data-group]{flex-direction:column !important;height:auto !important;overflow:visible !important}
+ .ws-main[data-group]>[data-panel]{flex-basis:auto !important;flex-grow:0 !important;width:100% !important;height:auto !important}
+ .ws-main[data-group]>[data-separator]{display:none !important}
+ .ws-main[data-group] .ws-viewport{height:65dvh;min-height:420px}
+ .ws-main[data-group] .ws-left,.ws-main[data-group] .ws-right{height:auto;max-height:none !important}
+}

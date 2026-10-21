@@ -406,6 +406,16 @@ describe('motion library',()=>{
   const l=lib(memStorage());
   expect(l.docs.length).toBe(1);expect(l.active().id).toBe('forehand-workshop');
  });
+ it('reorders documents and persists the new order',()=>{
+  const store=memStorage(), l=lib(store);
+  const a=l.create('A'), b=l.create('B');
+  l.reorder(b.id, a.id);
+  expect(l.docs.map(d=>d.id)).toEqual(['forehand-workshop', b.id, a.id]);
+  const back=new MotionLibrary(rig.rest, store).load();
+  expect(back.docs.map(d=>d.id)).toEqual(['forehand-workshop', b.id, a.id]);
+  l.reorder('missing', a.id);
+  expect(l.docs.map(d=>d.id)).toEqual(['forehand-workshop', b.id, a.id]);
+ });
  it('creates named blank motions with unique ids and a valid stance',()=>{
   const l=lib(memStorage());
   const a=l.create('发球'),b=l.create('发球');

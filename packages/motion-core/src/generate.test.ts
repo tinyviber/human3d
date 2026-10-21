@@ -198,7 +198,9 @@ describe('real action inputs and the shared solve/probe path',()=>{
   const metrics=result.candidates[0].metrics;
   for(const key of ['tip.pathLen','tip.vmax','tip.jerkInt','contact.tipSpeed','contact.tipDevMm'])
    expect(key in metrics,key).toBe(false);
- });
+  // The 120 Hz pelvis schedule is extra real solves on every probe. Parallel
+  // vitest pushes this coarse search just past the default 5s budget.
+ },20000);
 
  it('rejects a valid-shaped request with no adjustable keys',()=>{
   const doc=squatSubsample(),before=clone(doc);

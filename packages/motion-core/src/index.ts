@@ -30,6 +30,7 @@ export * from './motions';
 export * from './validate';
 export * from './document';
 export * from './solver';
+export * from './pelvis-schedule';
 export * from './foot';
 export * from './limits';
 export * from './quality-probe';
