@@ -128,17 +128,17 @@ describe('Lab pose validity on the production skinned rig',()=>{
    const at=(t:number)=>{solveEffectiveFrame(rig,frameAt(doc,t,origin));rig.model.updateMatrixWorld(true);};
    const racketAxis=()=>{const o=racket.localToWorld(new Vector3());return {origin:o,axis:racket.localToWorld(new Vector3(0,1,0)).sub(o).normalize()};};
    const upperElevation=()=>{const s=rig.point(`upperarm01_${dominant}`),e=rig.point(`lowerarm01_${dominant}`);return Math.asin(Math.max(-1,Math.min(1,e.clone().sub(s).normalize().y)))/DEG;};
-   // 引拍 (= authored 引拍1): off arm guarding across the front of the chest.
-   // Authored: off elbow 113.5°, hand 0.22 m in front of its shoulder and level
-   // with it. A nearly-straight off arm here is the authored shape, not a bug —
-   // the old <110° bound described the previous generator, not the reference.
+   // 引拍: off arm from per-player video semantics (evidence/forehand-semantics.json).
+   // Video takeback is near-straight (inner elbow 136–179° ⇒ flexion ≈ 1–44°),
+   // pointing toward the oncoming ball at about shoulder height. The old
+   // authored Djokovic guard (flexion ≈ 113°) is the fallback only.
    at(phaseTime(file,'引拍'));
    const offShoulder=rig.point(`upperarm01_${off}`),offWrist=rig.point(`wrist_${off}`),racketShoulder=rig.point(`upperarm01_${dominant}`);
    const front=offShoulder.clone().sub(racketShoulder).setY(0).normalize().cross(new Vector3(0,1,0)).multiplyScalar(dominant==='R'?1:-1);
-   expect(elbowFlexion(off),`${file.id} guard elbow`).toBeGreaterThan(90);
-   expect(elbowFlexion(off),`${file.id} guard elbow`).toBeLessThan(LIMITS.elbowFlexion[1]-.5);
-   expect(offWrist.clone().sub(offShoulder).dot(front),`${file.id} guard hand forward of shoulder`).toBeGreaterThan(.12);
-   expect(offWrist.y-offShoulder.y,`${file.id} guard hand height`).toBeGreaterThan(-.30);
+   expect(elbowFlexion(off),`${file.id} guard elbow`).toBeGreaterThan(5);
+   expect(elbowFlexion(off),`${file.id} guard elbow`).toBeLessThan(90); // near-straight video takeback
+   expect(offWrist.clone().sub(offShoulder).dot(front),`${file.id} guard hand forward of shoulder`).toBeGreaterThan(.05);
+   expect(offWrist.y-offShoulder.y,`${file.id} guard hand height`).toBeGreaterThan(-.45);
    // 引拍 → 击球区: the shoulder takes the upper arm DOWN first (落拍, the
    // authored 引拍2 is the bottom of the C) and then UP into the ball. Authored
    // elevations: −19.9° (引拍1) → −42.9° (引拍2) → −23.2° (击球).

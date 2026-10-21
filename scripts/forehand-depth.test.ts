@@ -4,6 +4,7 @@ import {Quaternion,Vector3} from 'three';
 import {frameAt,measurePackage,MOTION_FILES,solveEffectiveFrame,validatePosePackage,type PosePackage,type WorkshopDoc} from '@human3d/motion-core';
 import {createService,handleRequest,type ServiceContext} from '../apps/server/src/service';
 import {analyzePlayer,depthTargets,phaseMedians,PRESET_KEYS,readFrame} from './lib/forehand-depth.mts';
+import {semanticDepthTargets} from './lib/forehand-semantics.mts';
 import {mergeSelectedProfiles} from './lib/forehand-depth-report.mts';
 
 /** Issue #17 contract for the 17 generated forehand presets, checked through
@@ -143,7 +144,7 @@ describe('generated forehand presets match the measured depth',()=>{
  it('puts each takeback within 1.5 cm of its (floored) target and keeps every key at its target or the stance floor',()=>{
   for(const file of PRESETS){
    const doc=file.document! as WorkshopDoc;
-   const {targets,takeback}=depthTargets(study.profiles[file.id],medians)!;
+   const {targets,takeback}=semanticDepthTargets(study.profiles[file.id],medians)!;
    expect(doc.keys.map(k=>k.label),file.id).toEqual(PRESET_KEYS);
    const take=solvedDepth(doc,doc.keys[1].time);
    // Compare against depthTargets load (includes MIN_TAKEBACK_CM floor), not the raw MediaPipe median.
@@ -162,7 +163,7 @@ describe('generated forehand presets match the measured depth',()=>{
  it('holds the contact-phase crouch through the ankle guard (no pelvis lift)',()=>{
   for(const file of PRESETS){
    const doc=file.document! as WorkshopDoc;
-   const {targets}=depthTargets(study.profiles[file.id],medians)!;
+   const {targets}=semanticDepthTargets(study.profiles[file.id],medians)!;
    // 前挥 → 击球 → 延伸: the segment the old guard raised by 6–24 mm.
    for(const i of [3,4,5]){
     const depth=solvedDepth(doc,doc.keys[i].time);

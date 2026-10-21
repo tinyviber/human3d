@@ -8,10 +8,11 @@ import {
 import {
  armLengths,blendArm,handAxis,interpolateTorsoArm,offCatch,offReach,offTransition,placeOffArm,placeRacketArm,
  readReference,setHand,torsoFrame,
- EXTEND_RACKET,FINISH_RACKET,FOLD_RACKET,OFF_SWING,READY_RACKET,SETTLE_RACKET,
+ EXTEND_RACKET,FINISH_RACKET,FOLD_RACKET,READY_RACKET,SETTLE_RACKET,
  type ArmPose,TorsoArm,
 } from './lib/forehand-arms.mts';
-import {depthTargets,phaseMedians} from './lib/forehand-depth.mts';
+import {phaseMedians} from './lib/forehand-depth.mts';
+import {semanticDepthTargets, SEMANTICS_KIND} from './lib/forehand-semantics.mts';
 
 /* Player forehand presets.
  *
@@ -160,12 +161,18 @@ const LEG_CHAIN=rig.rest.get('upperleg01_L')!.distanceTo(rig.rest.get('lowerleg0
 const REST_RATIO=((rig.rest.get('upperleg01_L')!.y+rig.rest.get('upperleg01_R')!.y)/2-rig.rest.get('foot_L')!.y)/LEG_CHAIN;
 const depthStudy=JSON.parse(fs.readFileSync(path.join(root,'evidence/forehand-depth.json'),'utf8'));
 if(depthStudy.kind!=='forehand-depth-study')throw new Error('evidence/forehand-depth.json 不是正手下肢深度研究的结果');
+const semanticsStudy=JSON.parse(fs.readFileSync(path.join(root,'evidence/forehand-semantics.json'),'utf8'));
+if(semanticsStudy.kind!==SEMANTICS_KIND)throw new Error('evidence/forehand-semantics.json 不是正手语义层结果');
 
-/** Per-key targets for one preset (scripts/lib/forehand-depth.mts derives
- * them, and the regression test re-derives them with the same function). */
+/** Per-key targets for one preset. Legs-v5 semantics drop the contact/follow
+ * ≤load clamp (see scripts/lib/forehand-semantics.mts); depth.json is still the
+ * measurement source. */
 const PHASE_MEDIAN=phaseMedians(depthStudy);
-const measuredTargets=(id:string):{targets:number[];takeback:number;fallback:string[]}|null=>
- depthTargets(depthStudy.profiles[id],PHASE_MEDIAN);
+const measuredTargets=(id:string)=>{
+ const r=semanticDepthTargets(depthStudy.profiles[id],PHASE_MEDIAN);
+ return r;
+};
+const semanticsOf=(id:string)=>semanticsStudy.profiles[id]??null;
 
 /** Per-key targets for a clip that cannot be measured at all: the previous
  * hand-set template, in cm. Kept as an explicit fallback so an unmeasurable
@@ -284,14 +291,11 @@ function skeleton(player:PlayerPreset):WorkshopDoc{
  * the net (the 蹬转 drive), released again through 随挥 and planted flat at 恢复.
  * A planted run holds its first key's contact, so the release/replant pair is
  * what lets the heel rise; the flat 准备 contact is kept at both ends. */
-const PUSH_OFF:[number,number,number,number,number][]=[
- // [key, pitch°, yaw°, dx, dz] — pitch + = toes down / heel up. Contact heel is 12°
- // (Notion T3 target). Pre-#17 Frances rejected 12° at 42 m/s² because the old
- // guard lifted the pelvis and the dorsi correction kinked to zero mid-segment;
- // after the posterior-bake guard (issue #17) an in-memory sweep of all 17
- // presets at 12° stays ≤12.6 m/s² root accel and ≤1.4 mm slip at 40 Hz.
- // Key 3/7 sit at 6° so the linear 前挥→击球 ankle ramp is 6→12° (≤2.5 mm toe
- // sink class, same order as the prior 4→8° ramp).
+/** Base push-off table at the Notion T3 12° contact heel. Per-player pitch is
+ * scaled from measured rear-knee extension / pelvis rise (semantics mapping)
+ * without changing the yaw/dx/dz footprint that the ankle guard was tuned for. */
+const PUSH_OFF_BASE:[number,number,number,number,number][]=[
+ // [key, pitch°, yaw°, dx, dz] — pitch + = toes down / heel up.
  [3,6,-1,.006,.01],
  [4,12,6,.01,.02],
  [7,6,2,.01,.02],
@@ -300,18 +304,18 @@ const PUSH_OFF:[number,number,number,number,number][]=[
  * exactly on the floor in the rest geometry and sinks a few mm once the
  * pelvis correction rises under it. */
 const PUSH_CLEARANCE=.004;
-function applyPushOff(keys:WorkshopKey[]){
+function applyPushOff(keys:WorkshopKey[],contactPitch=12){
+ const scale=contactPitch/12;
+ const table=PUSH_OFF_BASE.map(([i,pitch,yaw,dx,dz])=>[i,+(pitch*scale).toFixed(2),yaw,dx,dz] as [number,number,number,number,number]);
  const geo=footGeometry(rig.rest,'R');
  const flat=keys[0].pose.footR.target;
- for(const [i,pitch,yaw,dx,dz] of PUSH_OFF){
+ for(const [i,pitch,yaw,dx,dz] of table){
   const f=keys[i].pose.footR;
   f.pitch=pitch;f.yaw=yaw;
   f.target={x:flat.x+dx,y:ankleYForLift(geo,PUSH_CLEARANCE,yaw,pitch),z:flat.z+dz};
  }
  keys[3].constraints.plantR=false;keys[4].constraints.plantR=true;
  keys[7].constraints.plantR=false;keys[8].constraints.plantR=true;
- // 延伸 / 折肘 sit inside the planted run that starts at 击球: the sampler holds
- // 击球's contact there, so store that same contact on them.
  for(const i of [5,6])keys[i].pose.footR=structuredClone(keys[4].pose.footR);
 }
 
@@ -383,8 +387,18 @@ function guardDoc(input:WorkshopDoc):GuardResult{
 const guardShiftCm=(g:GuardResult)=>Math.max(...g.baked.map((b,i)=>b+g.extra[i]))*100;
 
 /** Build one preset in right-handed geometry; a left-hander is mirrored. */
-function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:{target:number;depth:number}[]}{
- const base=skeleton(player);
+function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:{target:number;depth:number}[];semanticsNotes:string[]}{
+ const sem=semanticsOf(player.id);
+ const semanticsNotes:string[]=[];
+ // Stance from semantics (hand × knee-flex boost); keep authored as absolute fallback.
+ const stance=sem?.mapping?.stance ?? player.stance;
+ if(sem?.mapping?.stance != null && Math.abs(stance-player.stance)>1e-3){
+  semanticsNotes.push(`站距 ${player.stance.toFixed(2)}→${stance.toFixed(2)}（膝屈曲增强 ${sem.mapping.stanceBoost ?? 1}）`);
+ }
+ const playerAdj={...player,stance};
+ const pushPitch=sem?.mapping?.pushOffPitch ?? 12;
+ if(Math.abs(pushPitch-12)>1e-3)semanticsNotes.push(`蹬地脚跟 ${pushPitch}°（语义层）`);
+ const base=skeleton(playerAdj);
  const racketArm=armLengths(rig,'R'),offArm=armLengths(rig,'L');
  const finishReach=Math.min(1.05,Math.max(.9,player.reach));
  // Amplitude the authored racket shapes may take per player. Damped hard
@@ -416,6 +430,7 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // Straight off-arm targets cross the chest during the quick torso turn from
  // 落拍 → 前挥 → 击球. Linear outgoing curves prevent Hermite tangent overshoot
  // from pushing the interpolated wrist beyond the shoulder-to-wrist reach.
+ keys[1].interpolation='linear';
  keys[2].interpolation='linear';
  keys[3].interpolation='linear';
  // Lead-foot step: planted through 引拍, released at 落拍 (that release key
@@ -438,37 +453,47 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // space while the chest turns, and a long Hermite interval swept the straight
  // authored arm through the chest on the fastest trunk turns.
  keys[2].interpolation='linear';keys[3].interpolation='linear';
- applyPushOff(keys);
+ applyPushOff(keys,pushPitch);
  const doc:WorkshopDoc={...base,keys};
  const torso=(i:number)=>torsoAt(doc,keys[i].time);
  const racket=(i:number,shape:TorsoArm & {lift?:number},scale=armScale):ArmPose=>
   placeRacketArm(torso(i),racketArm,shape,{reachScale:scale,lift:shape.lift??0});
  const off=(i:number,shape:TorsoArm,scale=1):ArmPose=>placeOffArm(torso(i),offArm,torso(i).offShoulder,
   {...shape,reach:shape.reach*scale});
- // 准备: relaxed ready; the off hand starts half-way to its authored guard.
+ // Per-player off-arm from semantics (video elbow + direction). Fall back to
+ // the authored Djokovic templates when a phase is unmeasured. OFF_REACH_SCALE
+ // is only applied as a local collision shrink when the measured reach ≥ 0.95
+ // would otherwise graze the chest on the fastest trunk turns.
+ const capReach=(arm:TorsoArm,max:number):TorsoArm=>arm.reach>max?{...arm,reach:max}:arm;
+ // Cap takeback/drop reach so Hermite ready→takeback and the trunk turn stay
+ // clear of the chest (pose-validity arm–torso intersections). Contact uncapped.
+ const offTake:TorsoArm=capReach(sem?.mapping?.offArms?.takeback?.arm ?? OFF_TAKE_UP, 0.94);
+ const offDrop:TorsoArm=capReach(sem?.mapping?.offArms?.drop?.arm ?? OFF_TAKE_DROP, 0.92);
+ const offHit:TorsoArm=sem?.mapping?.offArms?.contact?.arm ?? OFF_BALL;
+ if(sem?.mapping?.offArms?.takeback)semanticsNotes.push(`非持拍手引拍 reach ${offTake.reach}（${sem.mapping.offArms.takeback.source}）`);
+ // OFF_REACH_SCALE only on the trunk-turn keys (落拍/前挥) where a full-reach
+ // straight off arm grazes the chest — takeback and contact keep measured reach.
+ const CLEAR=OFF_REACH_SCALE;
+ // 准备: relaxed ready; the off hand starts half-way to its takeback guard.
  setHand(keys[0].pose.handR,racket(0,READY_RACKET));
- setHand(keys[0].pose.handL,blendArm(off(0,OFF_TAKE_UP),off(0,OFF_TAKE_DROP),.25));
- // 引拍 / 落拍 / 击球: authored shapes with per-phase wrist heuristics from
- // 2D landmark residuals (takeback too racket-side & high; drop too racket-side
- // & low; contact slightly too lead-side / short of forward reach).
- // Pose-validity: takeback changes lateral only (elevation must stay above
- // drop by ≥12°). Drop/contact get lateral + lift/forward for 2D residuals.
+ setHand(keys[0].pose.handL,blendArm(off(0,offTake),off(0,offDrop),.25));
+ // 引拍 / 落拍 / 击球: authored RACKET shapes with per-phase wrist heuristics;
+ // off arm is per-player semantics (hitting-hand + wristAdjust unchanged).
  const takeUp=wristAdjust(TAKE_UP,{lateral:.72,reach:.96}); // 677621d takeback — elevation locked for C-path
  const takeDrop=wristAdjust(TAKE_DROP,{lateral:.55,up:.98,forward:1.03,reach:.95,lift:.012});
  const ball=wristAdjust(BALL,{lateral:1.0,up:1.02,forward:1.06,reach:1.0,lift:.01});
  setHand(keys[1].pose.handR,racket(1,takeUp));
- setHand(keys[1].pose.handL,off(1,OFF_TAKE_UP));
+ setHand(keys[1].pose.handL,off(1,offTake,1));
  setHand(keys[2].pose.handR,racket(2,takeDrop));
- setHand(keys[2].pose.handL,off(2,OFF_TAKE_DROP,OFF_REACH_SCALE));
- // 前挥: a real mid key makes the long off arm follow the chest turn. The
- // racket arm interpolates the (adjusted) drop → ball coefficients in torso space;
- // the off arm tucks slightly and swings its elbow outside the chest.
+ setHand(keys[2].pose.handL,off(2,offDrop,offDrop.reach>=0.92?CLEAR:1));
+ // 前挥: a real mid key makes the long off arm follow the chest turn.
  const swingR=interpolateTorsoArm(takeDrop,ball,.35);
+ const swingOff=interpolateTorsoArm(offDrop,offHit,.35);
  setHand(keys[3].pose.handR,racket(3,{...swingR,lift:(takeDrop.lift+ball.lift)*.35}));
- setHand(keys[3].pose.handL,off(3,OFF_SWING));
- // 击球: authored pose with contact wrist raised / more forward (video match).
+ setHand(keys[3].pose.handL,off(3,swingOff,swingOff.reach>=0.85?CLEAR:1));
+ // 击球: authored racket pose; off arm from video (often retracting).
  setHand(keys[4].pose.handR,racket(4,ball));
- setHand(keys[4].pose.handL,off(4,OFF_BALL,OFF_REACH_SCALE));
+ setHand(keys[4].pose.handL,off(4,offHit,1));
  // 延伸: the racket starts climbing after the authored ball pose.
  const extend=racket(5,EXTEND_RACKET,Math.min(1.02,armScale));
  setHand(keys[5].pose.handR,extend);
@@ -522,7 +547,7 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // which breaks byte/strict equality between the shipped asset and the
  // rehydrated document. Doing it here makes every shipped key a fixed point.
  for(const key of finished.keys)canonicalizeHands(key.pose);
- return {doc:normalizeDoc(finished),guard,depth};
+ return {doc:normalizeDoc(finished),guard,depth,semanticsNotes};
 }
 
 /** Stored hand → ArmPose, for feeding an already-written key back into an
@@ -542,13 +567,14 @@ for(const player of players){
   :['Carlos Alcaraz','Alexander Zverev','Daniil Medvedev','Ben Shelton'].includes(player.name)
    ?'优先选用合辑中较长、全身较清楚的一段，开头另有短暂重复预览。'
    :'';
- const {doc:document,guard,depth}=buildDoc(player);
+ const {doc:document,guard,depth,semanticsNotes}=buildDoc(player);
  const measured=measuredTargets(player.id);
  const shift=guardShiftCm(guard);
- console.log(`  ${player.id}: takeback ${depth[1].depth} cm (target ${depth[1].target.toFixed(1)}), contact ${depth[4].depth} cm; ankle peak ${guard.peak.toFixed(2)}° ${guard.side} @ ${guard.time.toFixed(2)}s, pelvis back ≤ ${shift.toFixed(1)} cm`);
+ console.log(`  ${player.id}: takeback ${depth[1].depth} cm (target ${depth[1].target.toFixed(1)}), contact ${depth[4].depth} cm; ankle peak ${guard.peak.toFixed(2)}° ${guard.side} @ ${guard.time.toFixed(2)}s, pelvis back ≤ ${shift.toFixed(1)} cm${semanticsNotes.length?`; ${semanticsNotes.join('; ')}`:''}`);
  const phaseName:Record<string,string>={ready:'准备',contact:'击球',follow:'随挥',recover:'恢复'};
+ const capped=measured&&'capped'in measured&&Array.isArray((measured as {capped?:string[]}).capped)?(measured as {capped:string[]}).capped:[];
  const depthNote=measured
-  ?`下肢深度来自源视频 MediaPipe worldLandmarks 的三维测量（evidence/forehand-depth.json）：引拍髋部比站立参考下降 ${measured.takeback.toFixed(1)} cm，求解后 ${depth[1].depth.toFixed(1)} cm；各键实测/求解（cm）${depth.map(d=>`${d.target.toFixed(1)}/${d.depth.toFixed(1)}`).join('、')}。${measured.fallback.length?`${measured.fallback.map(n=>phaseName[n]).join('、')}窗口在视频中不可测（脚出画或遮挡），取各球员该阶段中位数（不超过引拍深度）。`:''}站姿下双腿无法完全伸直，浅于站姿下限（约 0.3–2 cm）的目标按下限求解。`
+  ?`下肢深度来自源视频 MediaPipe worldLandmarks（evidence/forehand-depth.json）经语义层映射（evidence/forehand-semantics.json）：引拍髋部比站立参考下降 ${measured.takeback.toFixed(1)} cm，求解后 ${depth[1].depth.toFixed(1)} cm；各键实测/求解（cm）${depth.map(d=>`${d.target.toFixed(1)}/${d.depth.toFixed(1)}`).join('、')}。${measured.fallback.length?`${measured.fallback.map(n=>phaseName[n]).join('、')}窗口在视频中不可测，取各球员该阶段中位数。`:''}${capped.length?`过深目标已回退（${capped.join('、')}），未放宽校验门限。`:''}站姿下双腿无法完全伸直，浅于站姿下限的目标按下限求解。${semanticsNotes.length?semanticsNotes.join('。')+'。':''}`
   :'源视频不可测（髋/膝/踝出画或遮挡，见 evidence/forehand-depth.json），下肢深度沿用手设模板，并非视频测量值。';
  const guardNote=shift>.05
   ?`背屈校准：把求解器的骨盆后移写入关键帧，并在支撑切换处最多再后移 ${GUARD_MAX_EXTRA*100} cm（本动作最大后移 ${shift.toFixed(1)} cm），骨盆高度不变，后脚踝背屈峰值 ≤ ${ANKLE_MAX}°（工程门限 20°）。`
