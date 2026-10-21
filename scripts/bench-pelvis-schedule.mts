@@ -14,6 +14,9 @@ const gltf=await new GLTFLoader().parseAsync(model.buffer.slice(model.byteOffset
 const rig=new HumanRig(gltf.scene,JSON.parse(fs.readFileSync('public/models/rig.json','utf8')));
 const now=()=>performance.now();
 const median=(xs:number[])=>[...xs].sort((a,b)=>a-b)[Math.floor(xs.length/2)];
+/* Keep one committed edit's synchronous rebuild + first solve under 50 ms,
+ * the responsiveness budget this benchmark uses for a single editor task. */
+const DRAG_END_BUDGET_MS=50;
 const docFor=(duration:number):WorkshopDoc=>{
  const doc=defaultDocument(rig.rest),scale=duration/doc.duration;
  doc.duration=duration;
@@ -39,8 +42,10 @@ for(const duration of [1,5,10]){
   solveEffectiveFrame(rig,frame,schedule.passthrough?undefined:schedule.at(Math.min(duration,.5)));
   dragEnd.push(now()-t);
  }
- rows.push({duration,firstBuildMs:+median(first).toFixed(2),editRebuildMs:+median(edit).toFixed(2),dragEndMs:+median(dragEnd).toFixed(2),reps:first.length});
+ const dragEndMs=+median(dragEnd).toFixed(2);
+ rows.push({duration,firstBuildMs:+median(first).toFixed(2),editRebuildMs:+median(edit).toFixed(2),dragEndMs,dragEndWithinBudget:dragEndMs<=DRAG_END_BUDGET_MS,reps:first.length});
 }
 const commit=execSync('git rev-parse --short HEAD',{stdio:['ignore','pipe','ignore']}).toString().trim();
 const dirty=execSync('git status --porcelain',{stdio:['ignore','pipe','ignore']}).toString().trim().length>0;
-console.log(JSON.stringify({commit,dirty,node:process.version,platform:process.platform,rows},null,2));
+console.log(JSON.stringify({commit,dirty,node:process.version,platform:process.platform,dragEndBudgetMs:DRAG_END_BUDGET_MS,rows},null,2));
+if(rows.some(row=>!row.dragEndWithinBudget))process.exitCode=1;

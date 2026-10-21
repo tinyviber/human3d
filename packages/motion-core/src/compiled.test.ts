@@ -12,6 +12,7 @@ import {WORKSHOP_REVISION,workshopMeta} from './protocol';
 import {compileMotion,defaultDocument,flattenPose,frameAt,frameAtCompiled,sampleMotion,samplePose,
  serializeDoc,sortedKeys,type WorkshopDoc} from './document';
 import {measurePelvisCorrection,solvePose} from './solver';
+import {VALIDATION_LIMITS} from './validate';
 import {mulberry32,randomDoc} from './random-document';
 
 /* PR-B (issue #10): the compiled sampling snapshot. compileMotion clones and
@@ -193,12 +194,16 @@ describe('package identity',()=>{
   expect(a).toBe(b);
  });
  it('keeps a compiled loop root track position and velocity continuous through the real schedule path',()=>{
-  const doc=defaultDocument(rig.rest),fps=120;
-  doc.loop=true;
-  doc.keys.at(-1)!.time=.76; // leave the required loop gap before duration .8
+  const doc=randomDoc(mulberry32(7),rig.rest),fps=120;
+  expect(doc.loop).toBe(true);
   const compiled=compileMotion(doc,origin());
   const schedule=buildPelvisSchedule(rig,compiled);
+  // Seed 7 produces a loop whose raw correction exceeds the admissible track
+  // limits. This assertion pins the integration test to followLoopShift.
+  expect(schedule.passthrough).toBe(false);
   expect(schedule.at(0)).toBeCloseTo(schedule.at(doc.duration),12);
+  const scheduledShifts=Array.from({length:13},(_,i)=>schedule.at(doc.duration*i/12));
+  expect(Math.max(...scheduledShifts)-Math.min(...scheduledShifts)).toBeGreaterThan(.005);
   const pkg=solveWorkshop(rig,doc,fps,meta(doc,fps));
   const {timestamps}=pkg.timeline,root=pkg.tracks.translation.values;
   const n=timestamps.length,dim=3,dt0=timestamps[1]-timestamps[0],dt1=timestamps[n-1]-timestamps[n-2];
@@ -208,7 +213,8 @@ describe('package identity',()=>{
   expect(timestamps[n-1]).toBe(doc.duration);
   for(let axis=0;axis<dim;axis++){
    expect(Math.abs(root[(n-1)*dim+axis]-root[axis])).toBeLessThan(1e-6);
-   expect(Math.abs(first[axis]/dt0-last[axis]/dt1)).toBeLessThan(0.5);
+   const seamAcceleration=Math.abs(first[axis]/dt0-last[axis]/dt1)/((dt0+dt1)/2);
+   expect(seamAcceleration).toBeLessThanOrEqual(VALIDATION_LIMITS.rootAccelMPerS2+1e-6);
   }
  });
 });
