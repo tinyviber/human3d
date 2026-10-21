@@ -78,10 +78,45 @@ export function followShift(times:number[],target:number[],maxSpeed=PELVIS_FOLLO
   const vTarget=err===0?0:Math.max(-cap,Math.min(cap,err/dt));
   const dvMax=maxAccel*dt;
   v+=Math.max(-dvMax,Math.min(dvMax,vTarget-v));
+  /* Keep the state inside the non-negative position envelope. A target can
+   * drop to zero while the follower still has negative velocity; cap that
+   * velocity by the discrete stopping distance so braking remains gradual. */
+  const stopSpeed=Math.sqrt((maxAccel*dt)**2+2*maxAccel*Math.max(0,s))-maxAccel*dt;
+  v=Math.max(v,-stopSpeed);
   s+=v*dt;
   out[i]=s;
  }
  return out;
+}
+
+/** Follow a closed target loop and remove the accumulated start/end drift with
+ * a zero-slope cubic correction. The correction is spread over the full cycle
+ * so it does not create a velocity or acceleration impulse at the seam. */
+export function followLoopShift(times:number[],target:number[],maxSpeed=PELVIS_FOLLOW_SPEED,maxAccel=PELVIS_FOLLOW_ACCEL):number[]{
+ const shifts=followShift(times,target,maxSpeed,maxAccel);
+ if(shifts.length<2)return shifts;
+ const duration=times[times.length-1]-times[0];
+ if(!(duration>0))return shifts;
+ const drift=shifts[shifts.length-1]-shifts[0];
+ const closed=shifts.map((shift,i)=>{
+  const u=(times[i]-times[0])/duration;
+  const smooth=u*u*(3-2*u);
+  return Math.max(0,shift-drift*smooth);
+ });
+ const peaks=scalarPeaks(times,closed);
+ const dtBefore=times[times.length-1]-times[times.length-2];
+ const dtAfter=times[1]-times[0];
+ if(dtBefore>0&&dtAfter>0){
+  const vBefore=(closed[closed.length-1]-closed[closed.length-2])/dtBefore;
+  const vAfter=(closed[1]-closed[0])/dtAfter;
+  peaks.accel=Math.max(peaks.accel,Math.abs(vAfter-vBefore)/((dtBefore+dtAfter)/2));
+ }
+ /* The endpoint correction can use more of the limits on short loops. Scale
+  * its excursion around the loop's non-negative starting value until both
+  * the ordinary and wraparound finite differences remain within the caps. */
+ const scale=Math.min(1,maxSpeed/Math.max(peaks.speed,1e-12),maxAccel/Math.max(peaks.accel,1e-12));
+ const base=shifts[0];
+ return closed.map(value=>Math.max(0,base+(value-base)*scale));
 }
 
 /** Sample count of the pelvis track for a document of `duration` seconds. */
@@ -111,7 +146,11 @@ export function buildPelvisSchedule(rig:HumanRig,compiled:CompiledMotion):Pelvis
  const passthrough=peaks.speed<=VALIDATION_LIMITS.rootSpeedMPerS&&peaks.accel<=VALIDATION_LIMITS.rootAccelMPerS2;
  // Hold first, so a basin teleport is never a ramp the foot has to cross,
  // then acceleration-limit whatever continuous change remains.
- const shifts=passthrough?desired:followShift(times,holdShift(times,desired));
+ let shifts=desired;
+ if(!passthrough){
+  const held=holdShift(times,desired);
+  shifts=compiled.loop?followLoopShift(times,held):followShift(times,held);
+ }
  const duration=compiled.duration;
  const at=(t:number)=>{
   const x=Math.max(0,Math.min(duration,t));

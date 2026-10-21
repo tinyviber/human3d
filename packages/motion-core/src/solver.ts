@@ -90,9 +90,10 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   const correction=pelvisDorsiCorrection(dorsiLegs,DORSI_LIMIT_DEG,.15);
   const override=state.pelvisShift;
   const useOverride=override!==undefined&&Math.abs(override-correction.shift)>1e-9;
+  const applied=useOverride?Math.max(0,override!):correction.shift;
   // The else branch is the historical statement, kept as its own statement so
   // an absent override subtracts `correction.shift` exactly as before.
-  if(useOverride){if(override!>0){root.position.z-=override!;rig.syncWorld();}}
+  if(useOverride){if(applied>0){root.position.z-=applied;rig.syncWorld();}}
   else if(correction.shift>0){root.position.z-=correction.shift;rig.syncWorld();}
   for(const l of legs){rig.limb(l.side,'leg',l.target,l.pole);rig.worldRotation(`foot_${l.side}`,l.footQ);}
 
@@ -116,7 +117,6 @@ export function solvePose(rig:HumanRig,p:PoseParams,c:KeyConstraints,state:Solve
   blendGrip(rig,gripSide,gripAmount,PROPS.racket.handle);
   rig.relaxHand(gripSide==='R'?'L':'R');
   rig.syncWorld();
-  const applied=useOverride?override!:correction.shift;
   return {pelvisShift:applied,pelvisSaturated:correction.saturated||applied+1e-9<correction.shift};
  });
 }

@@ -85,7 +85,7 @@ function KeyframeTimeInput({time,max,disabled,onCommit}:{time:number;max:number;
   onChange={e=>setDraft(e.target.value)} onBlur={e=>{if(!cancel.current)onCommit(e.currentTarget.valueAsNumber);cancel.current=false;setDraft(String(time));}}
   onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}else if(e.key==='Escape'){cancel.current=true;e.currentTarget.blur();}}}/>;
 }
-function Timeline({doc,time,selected,onSelect,onSeek,onRetime}:{doc:WorkshopDoc;time:number;selected:string;onSelect:(id:string)=>void;onSeek:(t:number)=>void;onRetime:(id:string,t:number)=>void}){
+function Timeline({doc,time,selected,onSelect,onSeek,onRetime,onBeginRetime,onEndRetime}:{doc:WorkshopDoc;time:number;selected:string;onSelect:(id:string)=>void;onSeek:(t:number)=>void;onRetime:(id:string,t:number)=>void;onBeginRetime:()=>void;onEndRetime:()=>void}){
  const track=useRef<HTMLDivElement>(null);
  const [dragKey,setDragKey]=useState<string|null>(null);
  const frac=(x:number)=>{const r=track.current!.getBoundingClientRect();return Math.max(0,Math.min(1,(x-r.left)/r.width));};
@@ -99,13 +99,13 @@ function Timeline({doc,time,selected,onSelect,onSeek,onRetime}:{doc:WorkshopDoc;
   onRetime(dragKey,Math.max(lo,Math.min(hi,frac(ev.clientX)*doc.duration)));
  };
  return <div className="ws-track-wrap">
-  <div ref={track} className="ws-track" onPointerDown={e=>{if(e.target===e.currentTarget)onSeek(frac(e.clientX)*doc.duration);}} onPointerMove={move} onPointerUp={()=>setDragKey(null)}>
+  <div ref={track} className="ws-track" onPointerDown={e=>{if(e.target===e.currentTarget)onSeek(frac(e.clientX)*doc.duration);}} onPointerMove={move} onPointerUp={()=>{setDragKey(null);onEndRetime();}} onPointerCancel={()=>{setDragKey(null);onEndRetime();}}>
    <div className="ws-progress" style={{width:`${time/doc.duration*100}%`}}/>
    <div className="ws-cursor" style={{left:`${time/doc.duration*100}%`}}/>
    {sortedKeys(doc).map(k=><button key={k.id} className={`ws-key ${k.id===selected?'sel':''} ${k.constraints.contact?'contact':''}`} style={{left:`${k.time/doc.duration*100}%`}}
      aria-label={`选择关键帧 ${k.label||fmt(k.time)}`} aria-pressed={k.id===selected}
      title={`${k.label||'关键帧'} · ${k.time.toFixed(2)}s`}
-     onPointerDown={e=>{e.stopPropagation();onSelect(k.id);setDragKey(k.id);(e.target as HTMLElement).setPointerCapture(e.pointerId);}}
+     onPointerDown={e=>{e.stopPropagation();onBeginRetime();onSelect(k.id);setDragKey(k.id);(e.target as HTMLElement).setPointerCapture(e.pointerId);}}
      onPointerMove={move} onPointerUp={()=>setDragKey(null)}
      onClick={()=>{onSelect(k.id);onSeek(k.time);}}/>)}
   </div>
@@ -878,7 +878,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     <button aria-label="重做" title="重做 (Ctrl+Shift+Z)" disabled={!books.current.of(d.id).canRedo()} onClick={redo}><Redo2 size={17}/></button>
     <span className="ws-time">{fmt(frame.time)}<i>/</i>{fmt(d.duration)}</span>
    </div>
-   <Timeline doc={displayDoc} time={frame.time} selected={sel?.id??''} onSelect={selectKey} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>changeKeyTime(id,t,false)}/>
+   <Timeline doc={displayDoc} time={frame.time} selected={sel?.id??''} onSelect={selectKey} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>changeKeyTime(id,t,false)} onBeginRetime={()=>engine.current?.beginInteractiveEdit()} onEndRetime={()=>engine.current?.endInteractiveEdit()}/>
    <div className="ws-actions">
     <button onClick={addKey} disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>

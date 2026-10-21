@@ -89,6 +89,16 @@ describe('compile once, sample many — batch consumers go through the snapshot'
   const state={support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide};
   expect(measurePelvisCorrection(rig,f.pose,f.constraints,state).shift).toBe(solvePose(rig,f.pose,f.constraints,state).pelvisShift);
  });
+ it('reports the applied non-negative pelvis override',()=>{
+  const doc=defaultDocument(rig.rest),f=frameAt(doc,doc.duration/2,origin());
+  const state={support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide};
+  const negative=solvePose(rig,f.pose,f.constraints,{...state,pelvisShift:-.01});
+  const negativeRoot=rig.point('root').clone();
+  const zero=solvePose(rig,f.pose,f.constraints,{...state,pelvisShift:0});
+  expect(negative.pelvisShift).toBe(0);
+  expect(negativeRoot.distanceTo(rig.point('root'))).toBe(0);
+  expect(zero.pelvisShift).toBe(0);
+ });
 });
 
 describe('compiled path is bit-identical to the compat path',()=>{

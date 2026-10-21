@@ -119,6 +119,7 @@ export class WorkshopEngine{
   private onionSig='';private onionStale=true;
   private raycaster=new Raycaster();private pointer=new Vector2();
   private drag?:{h:Handle;plane:Plane;offset:Vector3;key:WorkshopKey};private docDirty=true;
+  private deferPelvisSchedule=false;
   /* Compiled-snapshot cache (issue #10 PR-B): one slot, keyed by document
    * identity + content version + compile origin — all three must match.
    * `docVer` is a SEPARATE counter from docDirty: docDirty flags aux-overlay
@@ -308,7 +309,7 @@ export class WorkshopEngine{
     this.solveCurrent();this.docDirty=true;this.onDocChanged?.();
   };
   private onPointerUp=(ev:PointerEvent)=>{
-    if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}this.onEditEnd?.();}
+    if(this.drag){this.drag=undefined;this.controls.enabled=true;try{this.renderer.domElement.releasePointerCapture(ev.pointerId);}catch{/* released */}this.solveCurrent();this.onEditEnd?.();}
   };
   /* ---------- pose evaluation ---------- */
   /** Pelvis hand-frame origin: the rest root, the same origin the solver uses.
@@ -333,8 +334,10 @@ export class WorkshopEngine{
    * shift on a folding document. */
   private solveFrame(f:EffectiveFrame,t:number){
     if(!this.rig)return;
-    const schedule=this.scheduleFor(this.getDoc());
-    solveEffectiveFrame(this.rig,f,schedule.passthrough?undefined:schedule.at(t));
+    /* During a pointer transaction the current pose remains responsive, but
+     * the full 120 Hz schedule is rebuilt only once the edit is committed. */
+    const schedule=this.drag||this.deferPelvisSchedule?undefined:this.scheduleFor(this.getDoc());
+    solveEffectiveFrame(this.rig,f,schedule&&!schedule.passthrough?schedule.at(t):undefined);
     /* Remount on side change — the frame carries the doc's gripSide, and the
      * mount is a constant per document, so this fires at most once per edit
      * (here, the one place every solve path funnels through, trajectory and
@@ -472,6 +475,8 @@ export class WorkshopEngine{
   }
   /* ---------- transport / camera ---------- */
   seek(t:number){const d=this.getDoc().duration;this.time=Math.max(0,Math.min(d,t));this.solveCurrent();this.notify(true);}
+  beginInteractiveEdit(){this.deferPelvisSchedule=true;}
+  endInteractiveEdit(){if(!this.deferPelvisSchedule)return;this.deferPelvisSchedule=false;this.solveCurrent();}
   setPlaying(v:boolean){this.playing=v;this.notify(true);}
   setSpeed(v:number){this.speed=v;}
   /* Display flags only — NOT doc content, so deliberately no docVer bump:
