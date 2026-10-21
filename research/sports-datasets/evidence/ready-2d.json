@@ -55,149 +55,31 @@
     "right_ankle": 0.0,
     "neck": 0.0
   },
-  "consecutive_median_jump_px": 30.45,
-  "consecutive_p90_jump_px": 245.11,
-  "cut_threshold_px": 80,
-  "n_cuts": 100,
-  "segment_count": 101,
-  "segment_length_min_median_max": [
-    1,
-    4.0,
-    14
-  ],
-  "segments_len_ge_10": [
-    {
-      "start": 95,
-      "length": 10,
-      "hip_y_range_px": 70.0,
-      "torso_px": 88.5,
-      "hip_y_range_over_torso": 0.791
-    },
-    {
-      "start": 147,
-      "length": 14,
-      "hip_y_range_px": 67.5,
-      "torso_px": 75.5,
-      "hip_y_range_over_torso": 0.894
-    },
-    {
-      "start": 161,
-      "length": 11,
-      "hip_y_range_px": 46.0,
-      "torso_px": 67.5,
-      "hip_y_range_over_torso": 0.681
-    },
-    {
-      "start": 174,
-      "length": 10,
-      "hip_y_range_px": 71.0,
-      "torso_px": 85.0,
-      "hip_y_range_over_torso": 0.835
-    },
-    {
-      "start": 184,
-      "length": 14,
-      "hip_y_range_px": 30.5,
-      "torso_px": 75.0,
-      "hip_y_range_over_torso": 0.407
-    },
-    {
-      "start": 224,
-      "length": 10,
-      "hip_y_range_px": 8.5,
-      "torso_px": 70.75,
-      "hip_y_range_over_torso": 0.12
-    },
-    {
-      "start": 237,
-      "length": 11,
-      "hip_y_range_px": 59.5,
-      "torso_px": 78.0,
-      "hip_y_range_over_torso": 0.763
-    },
-    {
-      "start": 264,
-      "length": 13,
-      "hip_y_range_px": 115.0,
-      "torso_px": 73.0,
-      "hip_y_range_over_torso": 1.575
-    },
-    {
-      "start": 326,
-      "length": 12,
-      "hip_y_range_px": 65.5,
-      "torso_px": 97.0,
-      "hip_y_range_over_torso": 0.675
-    },
-    {
-      "start": 369,
-      "length": 13,
-      "hip_y_range_px": 138.5,
-      "torso_px": 83.0,
-      "hip_y_range_over_torso": 1.669
-    },
-    {
-      "start": 391,
-      "length": 11,
-      "hip_y_range_px": 120.0,
-      "torso_px": 62.5,
-      "hip_y_range_over_torso": 1.92
-    },
-    {
-      "start": 461,
-      "length": 11,
-      "hip_y_range_px": 46.0,
-      "torso_px": 85.0,
-      "hip_y_range_over_torso": 0.541
-    }
-  ],
-  "hip_range_over_torso_median": 0.777,
-  "hip_range_over_torso_max": 1.92,
-  "longest_stable_segment": {
-    "start": 147,
-    "length": 14,
-    "hip_y_range_px": 67.5,
-    "torso_px": 75.5,
-    "hip_y_range_over_torso": 0.894
+  "temporal_order_verified": false,
+  "order_basis": "file_name_natural_sort",
+  "order_note": "ordered by natural sort of file_name: labels only, not verified as video time; no motion continuity is computed",
+  "sorted_neighbor_jumps": {
+    "definition": "consecutive pairs in the order used; median over joints of xy step, px",
+    "threshold_px": 80,
+    "count_over_threshold": 100,
+    "median_px": 30.45,
+    "p90_px": 245.11,
+    "sensitivity": [
+      {
+        "threshold_px": 40,
+        "count_over_threshold": 167
+      },
+      {
+        "threshold_px": 80,
+        "count_over_threshold": 100
+      },
+      {
+        "threshold_px": 120,
+        "count_over_threshold": 86
+      }
+    ]
   },
-  "jump_sensitivity": [
-    {
-      "threshold_px": 40,
-      "n_cuts": 167,
-      "segment_count": 168,
-      "segment_length_min_median_max": [
-        1,
-        2.0,
-        14
-      ],
-      "hip_range_over_torso_median": 0.541,
-      "n_segments_len_ge_10": 5
-    },
-    {
-      "threshold_px": 80,
-      "n_cuts": 100,
-      "segment_count": 101,
-      "segment_length_min_median_max": [
-        1,
-        4.0,
-        14
-      ],
-      "hip_range_over_torso_median": 0.777,
-      "n_segments_len_ge_10": 12
-    },
-    {
-      "threshold_px": 120,
-      "n_cuts": 86,
-      "segment_count": 87,
-      "segment_length_min_median_max": [
-        1,
-        4.0,
-        21
-      ],
-      "hip_range_over_torso_median": 0.839,
-      "n_segments_len_ge_10": 14
-    }
-  ],
+  "continuous_motion": null,
   "bones_px": [
     {
       "bone": "left_shoulder-left_elbow",

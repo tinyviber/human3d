@@ -55,184 +55,31 @@
     "right_ankle": 0.0,
     "neck": 0.004
   },
-  "consecutive_median_jump_px": 9.67,
-  "consecutive_p90_jump_px": 30.82,
-  "cut_threshold_px": 80,
-  "n_cuts": 35,
-  "segment_count": 36,
-  "segment_length_min_median_max": [
-    1,
-    9.0,
-    75
-  ],
-  "segments_len_ge_10": [
-    {
-      "start": 0,
-      "length": 22,
-      "hip_y_range_px": 40.0,
-      "torso_px": 51.75,
-      "hip_y_range_over_torso": 0.773
-    },
-    {
-      "start": 22,
-      "length": 28,
-      "hip_y_range_px": 53.0,
-      "torso_px": 53.5,
-      "hip_y_range_over_torso": 0.991
-    },
-    {
-      "start": 50,
-      "length": 75,
-      "hip_y_range_px": 87.0,
-      "torso_px": 57.0,
-      "hip_y_range_over_torso": 1.526
-    },
-    {
-      "start": 125,
-      "length": 13,
-      "hip_y_range_px": 36.0,
-      "torso_px": 61.5,
-      "hip_y_range_over_torso": 0.585
-    },
-    {
-      "start": 184,
-      "length": 10,
-      "hip_y_range_px": 42.0,
-      "torso_px": 56.0,
-      "hip_y_range_over_torso": 0.75
-    },
-    {
-      "start": 205,
-      "length": 10,
-      "hip_y_range_px": 9.0,
-      "torso_px": 57.5,
-      "hip_y_range_over_torso": 0.157
-    },
-    {
-      "start": 216,
-      "length": 10,
-      "hip_y_range_px": 44.0,
-      "torso_px": 56.5,
-      "hip_y_range_over_torso": 0.779
-    },
-    {
-      "start": 237,
-      "length": 16,
-      "hip_y_range_px": 46.0,
-      "torso_px": 61.0,
-      "hip_y_range_over_torso": 0.754
-    },
-    {
-      "start": 253,
-      "length": 15,
-      "hip_y_range_px": 45.0,
-      "torso_px": 55.5,
-      "hip_y_range_over_torso": 0.811
-    },
-    {
-      "start": 268,
-      "length": 27,
-      "hip_y_range_px": 52.0,
-      "torso_px": 53.0,
-      "hip_y_range_over_torso": 0.981
-    },
-    {
-      "start": 295,
-      "length": 20,
-      "hip_y_range_px": 63.5,
-      "torso_px": 55.5,
-      "hip_y_range_over_torso": 1.144
-    },
-    {
-      "start": 315,
-      "length": 24,
-      "hip_y_range_px": 44.0,
-      "torso_px": 56.5,
-      "hip_y_range_over_torso": 0.779
-    },
-    {
-      "start": 339,
-      "length": 62,
-      "hip_y_range_px": 135.0,
-      "torso_px": 55.25,
-      "hip_y_range_over_torso": 2.443
-    },
-    {
-      "start": 401,
-      "length": 10,
-      "hip_y_range_px": 43.5,
-      "torso_px": 52.75,
-      "hip_y_range_over_torso": 0.825
-    },
-    {
-      "start": 411,
-      "length": 31,
-      "hip_y_range_px": 36.5,
-      "torso_px": 53.0,
-      "hip_y_range_over_torso": 0.689
-    },
-    {
-      "start": 442,
-      "length": 26,
-      "hip_y_range_px": 38.5,
-      "torso_px": 53.25,
-      "hip_y_range_over_torso": 0.723
-    },
-    {
-      "start": 468,
-      "length": 32,
-      "hip_y_range_px": 36.5,
-      "torso_px": 53.0,
-      "hip_y_range_over_torso": 0.689
-    }
-  ],
-  "hip_range_over_torso_median": 0.779,
-  "hip_range_over_torso_max": 2.443,
-  "longest_stable_segment": {
-    "start": 50,
-    "length": 75,
-    "hip_y_range_px": 87.0,
-    "torso_px": 57.0,
-    "hip_y_range_over_torso": 1.526
+  "temporal_order_verified": false,
+  "order_basis": "file_name_natural_sort",
+  "order_note": "ordered by natural sort of file_name: labels only, not verified as video time; no motion continuity is computed",
+  "sorted_neighbor_jumps": {
+    "definition": "consecutive pairs in the order used; median over joints of xy step, px",
+    "threshold_px": 80,
+    "count_over_threshold": 35,
+    "median_px": 9.67,
+    "p90_px": 30.82,
+    "sensitivity": [
+      {
+        "threshold_px": 40,
+        "count_over_threshold": 43
+      },
+      {
+        "threshold_px": 80,
+        "count_over_threshold": 35
+      },
+      {
+        "threshold_px": 120,
+        "count_over_threshold": 33
+      }
+    ]
   },
-  "jump_sensitivity": [
-    {
-      "threshold_px": 40,
-      "n_cuts": 43,
-      "segment_count": 44,
-      "segment_length_min_median_max": [
-        1,
-        9.5,
-        49
-      ],
-      "hip_range_over_torso_median": 0.778,
-      "n_segments_len_ge_10": 22
-    },
-    {
-      "threshold_px": 80,
-      "n_cuts": 35,
-      "segment_count": 36,
-      "segment_length_min_median_max": [
-        1,
-        9.0,
-        75
-      ],
-      "hip_range_over_torso_median": 0.779,
-      "n_segments_len_ge_10": 17
-    },
-    {
-      "threshold_px": 120,
-      "n_cuts": 33,
-      "segment_count": 34,
-      "segment_length_min_median_max": [
-        1,
-        9.5,
-        75
-      ],
-      "hip_range_over_torso_median": 0.779,
-      "n_segments_len_ge_10": 17
-    }
-  ],
+  "continuous_motion": null,
   "bones_px": [
     {
       "bone": "left_shoulder-left_elbow",

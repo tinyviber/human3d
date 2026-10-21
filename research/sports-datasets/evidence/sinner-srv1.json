@@ -12,6 +12,13 @@
   "duration_s": 1.4667,
   "topology": {
     "chosen": "h36m17",
+    "source": "auto",
+    "symmetry_confidence": "high",
+    "ambiguous": false,
+    "heuristic_pick": "h36m17",
+    "reason": null,
+    "warning": null,
+    "margin_logerr": 0.3011,
     "h36m_symmetry_logerr": 0.0541,
     "coco17_symmetry_logerr": 0.3551,
     "h36m_median_cv": 0.1688,

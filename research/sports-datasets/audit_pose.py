@@ -6,6 +6,15 @@ landing-point CSV. Writes summary JSON and, for pose inputs, an SVG stick
 figure. Does not download data, does not import human3d, and does not write
 runtime assets.
 
+Joint layouts: only H36M-17 and COCO-17 are implemented, and any other joint
+count is refused. For .npy input the layout is picked from bilateral bone
+symmetry. When that check is not decisive the run stops unless --skeleton names
+the layout; the report records symmetry_confidence and ambiguous either way. Use
+--skeleton only when the source documents its joint order. COCO files count as
+a temporal sequence only when each image has a numeric frame_index or
+timestamp_s. Otherwise the order is a natural sort of file_name, and no motion
+continuity is computed from it.
+
 Stdlib + numpy only.
 """
 
@@ -14,6 +23,7 @@ from __future__ import annotations
 import argparse
 import csv
 import json
+import re
 import struct
 import sys
 from pathlib import Path
@@ -51,6 +61,20 @@ COCO17_BONES = [
 ]
 COCO17_PAIRS = [("lsho-lelb", "rsho-relb"), ("lelb-lwri", "relb-rwri"),
                 ("lhip-lknee", "rhip-rknee"), ("lknee-lank", "rknee-rank")]
+
+
+# Joint layouts this script knows. Anything else is refused.
+SKELETON_CHOICES = ("auto", "h36m17", "coco17")
+# Symmetry gate for the auto pick, on mean |log(left/right)| over the L/R pairs.
+# Auto needs the best layout within SYM_MAX_ERR and a margin of SYM_MIN_MARGIN.
+# "high" confidence needs the stricter SYM_HIGH_* bars. These numbers were set by
+# looking at the three committed .npy samples; they are not a validity test.
+SYM_MAX_ERR = 0.15
+SYM_MIN_MARGIN = 0.20
+SYM_HIGH_ERR = 0.10
+SYM_HIGH_MARGIN = 0.25
+# Keys that make a COCO image order a verified temporal order.
+TEMPORAL_KEYS = ("frame_index", "timestamp_s")
 
 
 def _f(x) -> float:
@@ -117,24 +141,72 @@ def step_stats(seq, index):
     }
 
 
-def choose_topology(seq):
-    """Pick H36M vs COCO-17 by bilateral long-bone symmetry, then bone-length CV.
+def choose_topology(seq, requested: str = "auto"):
+    """Choose the joint layout for a (T, J, 3) array.
 
-    The publisher label is recorded separately. This choice is a measurement
-    on the array, not a claim that the file header names the joints.
+    Only the two 17-joint layouts are implemented. The heuristic compares each
+    layout's bilateral long-bone symmetry (mean |log(left/right)| over its L/R
+    pairs), then bone-length CV. It measures the array. It does not read the
+    file header and does not verify joint order. A layout passed by the caller
+    is recorded as source "caller" and skips the gate.
     """
-    if seq.shape[1] != 17:
-        return {"chosen": None, "reason": f"joint count {seq.shape[1]} is neither layout"}
+    if requested not in SKELETON_CHOICES:
+        raise SystemExit(f"unknown skeleton {requested!r}; choose from {SKELETON_CHOICES}")
+    joints = seq.shape[1]
+    if joints != 17:
+        return {
+            "chosen": None,
+            "source": None,
+            "symmetry_confidence": None,
+            "ambiguous": None,
+            "heuristic_pick": None,
+            "reason": f"{joints} joints: no layout is implemented (only H36M-17 and COCO-17 are)",
+            "warning": None,
+        }
     h_rows = bone_table(seq, H36M_BONES)
     c_rows = bone_table(seq, COCO17_BONES)
+
     def sym_err(rows, pairs):
         ratios = [abs(np.log(r["ratio"])) for r in symmetry(rows, pairs) if r["ratio"]]
         return float(np.mean(ratios)) if ratios else 99.0
+
     h_err, c_err = sym_err(h_rows, H36M_PAIRS), sym_err(c_rows, COCO17_PAIRS)
     h_cv, c_cv = median_cv(h_rows), median_cv(c_rows)
-    chosen = "h36m17" if (h_err, h_cv or 99) <= (c_err, c_cv or 99) else "coco17"
+    heuristic = "h36m17" if (h_err, h_cv or 99) <= (c_err, c_cv or 99) else "coco17"
+    best_err, margin = min(h_err, c_err), abs(h_err - c_err)
+    ambiguous = best_err > SYM_MAX_ERR or margin < SYM_MIN_MARGIN
+    if ambiguous:
+        confidence = "low"
+    elif margin >= SYM_HIGH_MARGIN and best_err <= SYM_HIGH_ERR:
+        confidence = "high"
+    else:
+        confidence = "medium"
+    warning = None
+    if requested != "auto":
+        chosen, source, reason = requested, "caller", "layout set by --skeleton"
+        notes = []
+        if ambiguous:
+            notes.append("symmetry check is ambiguous for this array")
+        elif requested != heuristic:
+            notes.append(f"symmetry check prefers {heuristic}")
+        warning = "; ".join(notes) or None
+    elif ambiguous:
+        chosen, source = None, None
+        reason = (
+            f"ambiguous joint layout (best symmetry error {best_err:.3f}, margin {margin:.3f}); "
+            "pass --skeleton h36m17 or coco17 only if the source documents its joint order"
+        )
+    else:
+        chosen, source, reason = heuristic, "auto", None
     return {
         "chosen": chosen,
+        "source": source,
+        "symmetry_confidence": confidence,
+        "ambiguous": ambiguous,
+        "heuristic_pick": heuristic,
+        "reason": reason,
+        "warning": warning,
+        "margin_logerr": _round(margin, 4),
         "h36m_symmetry_logerr": _round(h_err, 4),
         "coco17_symmetry_logerr": _round(c_err, 4),
         "h36m_median_cv": _round(h_cv, 4),
@@ -149,11 +221,16 @@ def up_axis(seq, head, ankle_a, ankle_b):
     return axis, sign, [_round(v, 4) for v in delta]
 
 
-def audit_npy(seq: np.ndarray, fps: float | None, height_cm: float | None, label: str):
+def audit_npy(seq: np.ndarray, fps: float | None, height_cm: float | None, label: str,
+              skeleton: str = "auto"):
     seq = np.asarray(seq, dtype=float)
     if seq.ndim != 3 or seq.shape[-1] != 3:
         raise SystemExit(f"{label}: expected (T, J, 3), got {seq.shape}")
-    topo = choose_topology(seq)
+    topo = choose_topology(seq, skeleton)
+    if topo["chosen"] is None:
+        raise SystemExit(f"{label}: {topo['reason']}")
+    if topo["warning"]:
+        print(f"{label}: warning: {topo['warning']}", file=sys.stderr)
     use_h36m = topo["chosen"] == "h36m17"
     bones = H36M_BONES if use_h36m else COCO17_BONES
     rows = bone_table(seq, bones)
@@ -165,8 +242,7 @@ def audit_npy(seq: np.ndarray, fps: float | None, height_cm: float | None, label
         ank = np.stack([seq[:, ank_a, axis], seq[:, ank_b, axis]], axis=1) * sign
     else:
         hip = 0.5 * (seq[:, 11] + seq[:, 12])
-        fake = seq.copy()
-        # up-axis from nose vs ankles, using a temporary stack
+        # up-axis from nose vs ankles
         delta_v = seq[:, 0].mean(0) - 0.5 * (seq[:, 15] + seq[:, 16]).mean(0)
         axis = int(np.argmax(np.abs(delta_v)))
         sign = 1.0 if delta_v[axis] >= 0 else -1.0
@@ -262,6 +338,27 @@ def jpeg_size(path: Path):
     return None
 
 
+def natural_key(text: str):
+    """Sort key that compares embedded digit runs by value, so T_2 sorts before T_10."""
+    return [int(t) if i % 2 else t for i, t in enumerate(re.split(r"(\d+)", text))]
+
+
+def order_images(images: list):
+    """Return (ordered, basis). basis is the temporal key used, or None.
+
+    A temporal order is used only when every image has a unique numeric
+    frame_index or timestamp_s. Otherwise the order is a natural sort of
+    file_name, which orders labels and nothing more.
+    """
+    for key in TEMPORAL_KEYS:
+        vals = [im.get(key) for im in images]
+        numeric = all(isinstance(v, (int, float)) and not isinstance(v, bool) for v in vals)
+        if images and numeric and len(set(vals)) == len(vals):
+            return sorted(images, key=lambda im: im[key]), key
+    ordered = sorted(images, key=lambda im: (natural_key(im.get("file_name") or ""), im.get("id", 0)))
+    return ordered, None
+
+
 def audit_coco(doc: dict, fps: float | None, label: str, image: Path | None, jump_px: float):
     cats = doc.get("categories") or []
     if not cats:
@@ -271,8 +368,8 @@ def audit_coco(doc: dict, fps: float | None, label: str, image: Path | None, jum
     anns = {}
     for ann in doc.get("annotations") or []:
         anns.setdefault(ann["image_id"], ann)
-    # Order by the numeric suffix of file_name when it looks like X_001.
-    ordered = sorted(images.values(), key=lambda im: im.get("file_name") or "")
+    ordered, order_key = order_images(list(images.values()))
+    temporal_verified = order_key is not None
     pts, vis, outside = [], [], 0
     wh = {(im.get("width"), im.get("height")) for im in ordered}
     for im in ordered:
@@ -288,34 +385,9 @@ def audit_coco(doc: dict, fps: float | None, label: str, image: Path | None, jum
             outside += int(((xy[:, 0] < 0) | (xy[:, 0] > w) | (xy[:, 1] < 0) | (xy[:, 1] > h)).sum())
     pts = np.stack(pts)
     vis = np.stack(vis)
-    jump = np.median(np.linalg.norm(np.diff(pts, axis=0), axis=-1), axis=1)
-
-    def cut_summary(thr):
-        cuts_at = np.where(jump > thr)[0]
-        bounds_at = [0] + (cuts_at + 1).tolist() + [pts.shape[0]]
-        lengths_at = np.diff(bounds_at)
-        ratios_at = []
-        for s, e in zip(bounds_at[:-1], bounds_at[1:]):
-            if e - s < 10:
-                continue
-            row = segment_pose(int(s), int(e))
-            if row and row["hip_y_range_over_torso"] is not None:
-                ratios_at.append(row["hip_y_range_over_torso"])
-        return {
-            "threshold_px": thr,
-            "n_cuts": int(cuts_at.size),
-            "segment_count": int(lengths_at.size),
-            "segment_length_min_median_max": [
-                int(lengths_at.min()), _round(np.median(lengths_at), 1), int(lengths_at.max()),
-            ],
-            "hip_range_over_torso_median": _round(np.median(ratios_at), 3) if ratios_at else None,
-            "n_segments_len_ge_10": len(ratios_at),
-        }
-
-    cuts = np.where(jump > jump_px)[0]
-    bounds = [0] + (cuts + 1).tolist() + [pts.shape[0]]
-    lengths = np.diff(bounds)
     idx = {n: i for i, n in enumerate(names)}
+    # Per consecutive pair in the order used: median over joints of the xy step.
+    jump = np.median(np.linalg.norm(np.diff(pts, axis=0), axis=-1), axis=1)
 
     def segment_pose(s, e):
         need = ["left_hip", "right_hip", "left_shoulder", "right_shoulder"]
@@ -332,13 +404,56 @@ def audit_coco(doc: dict, fps: float | None, label: str, image: Path | None, jum
             "hip_y_range_over_torso": _round((hip_y.max() - hip_y.min()) / torso, 3) if torso else None,
         }
 
-    segs = []
-    for s, e in zip(bounds[:-1], bounds[1:]):
-        if e - s >= 10:
-            row = segment_pose(int(s), int(e))
+    def split_segments(thr):
+        cuts_at = np.where(jump > thr)[0]
+        bounds_at = [0] + (cuts_at + 1).tolist() + [pts.shape[0]]
+        segs_at = []
+        for s, e in zip(bounds_at[:-1], bounds_at[1:]):
+            row = segment_pose(int(s), int(e)) if e - s >= 10 else None
             if row:
-                segs.append(row)
-    ratios = [s["hip_y_range_over_torso"] for s in segs if s["hip_y_range_over_torso"] is not None]
+                segs_at.append(row)
+        return cuts_at, np.diff(bounds_at), segs_at
+
+    def sensitivity_row(thr):
+        cuts_at, lengths, segs = split_segments(thr)
+        ratios = [s["hip_y_range_over_torso"] for s in segs if s["hip_y_range_over_torso"] is not None]
+        return {
+            "threshold_px": thr,
+            "n_cuts": int(cuts_at.size),
+            "segment_count": int(lengths.size),
+            "segment_length_min_median_max": [int(lengths.min()), _round(np.median(lengths), 1), int(lengths.max())],
+            "hip_range_over_torso_median": _round(np.median(ratios), 3) if ratios else None,
+            "n_segments_len_ge_10": len(segs),
+        }
+
+    # Motion claims need a verified frame order; otherwise this stays None.
+    continuous_motion = None
+    if temporal_verified:
+        cuts_at, lengths, segs = split_segments(jump_px)
+        ratios = [s["hip_y_range_over_torso"] for s in segs if s["hip_y_range_over_torso"] is not None]
+        continuous_motion = {
+            "cut_threshold_px": jump_px,
+            "n_cuts": int(cuts_at.size),
+            "segment_count": int(lengths.size),
+            "segment_length_min_median_max": [int(lengths.min()), _round(np.median(lengths), 1), int(lengths.max())],
+            "segments_len_ge_10": segs,
+            "hip_range_over_torso_median": _round(np.median(ratios), 3) if ratios else None,
+            "hip_range_over_torso_max": _round(np.max(ratios), 3) if ratios else None,
+            "longest_stable_segment": max(segs, key=lambda s: s["length"]) if segs else None,
+            "jump_sensitivity": [sensitivity_row(thr) for thr in (40, 80, 120)],
+        }
+    # Diagnostic for the order used. Large steps here are label jumps unless the order is verified.
+    sorted_neighbor_jumps = {
+        "definition": "consecutive pairs in the order used; median over joints of xy step, px",
+        "threshold_px": jump_px,
+        "count_over_threshold": int((jump > jump_px).sum()),
+        "median_px": _round(np.median(jump), 2) if jump.size else None,
+        "p90_px": _round(np.percentile(jump, 90), 2) if jump.size else None,
+        "sensitivity": [
+            {"threshold_px": thr, "count_over_threshold": int((jump > thr).sum())}
+            for thr in (40, 80, 120)
+        ],
+    }
     bones = []
     torso_len = None
     if all(n in idx for n in ("left_shoulder", "right_shoulder", "left_hip", "right_hip")):
@@ -374,7 +489,11 @@ def audit_coco(doc: dict, fps: float | None, label: str, image: Path | None, jum
     if image is not None:
         size = jpeg_size(image)
         image_check = {"path": image.name, "jpeg_wh": list(size) if size else None}
-    longest = max(segs, key=lambda s: s["length"]) if segs else None
+    order_note = (
+        f"ordered by {order_key} in the file" if temporal_verified else
+        "ordered by natural sort of file_name: labels only, not verified as video time; "
+        "no motion continuity is computed"
+    )
     return {
         "label": label,
         "category": cats[0].get("name"),
@@ -387,17 +506,11 @@ def audit_coco(doc: dict, fps: float | None, label: str, image: Path | None, jum
         "missing_rate_per_joint": {
             n: _round((vis[:, i] == 0).mean(), 4) for n, i in idx.items()
         },
-        "consecutive_median_jump_px": _round(np.median(jump), 2) if jump.size else None,
-        "consecutive_p90_jump_px": _round(np.percentile(jump, 90), 2) if jump.size else None,
-        "cut_threshold_px": jump_px,
-        "n_cuts": int(cuts.size),
-        "segment_count": int(lengths.size),
-        "segment_length_min_median_max": [int(lengths.min()), _round(np.median(lengths), 1), int(lengths.max())],
-        "segments_len_ge_10": segs,
-        "hip_range_over_torso_median": _round(np.median(ratios), 3) if ratios else None,
-        "hip_range_over_torso_max": _round(np.max(ratios), 3) if ratios else None,
-        "longest_stable_segment": longest,
-        "jump_sensitivity": [cut_summary(thr) for thr in (40, 80, 120)],
+        "temporal_order_verified": temporal_verified,
+        "order_basis": order_key or "file_name_natural_sort",
+        "order_note": order_note,
+        "sorted_neighbor_jumps": sorted_neighbor_jumps,
+        "continuous_motion": continuous_motion,
         "bones_px": bones,
         "fps_assumed": fps,
         "image_file_check": image_check,
@@ -427,7 +540,7 @@ def audit_csv(path: Path):
     }
 
 
-def stick_svg(frames, bones, project, title, path: Path):
+def stick_svg(frames, bones, project, title, path: Path, caption: str = "frame"):
     """frames: list of (J, D) arrays. project(frame) -> (J, 2) with y up.
 
     Each panel is scaled on its own so a player who translates across the
@@ -471,7 +584,7 @@ def stick_svg(frames, bones, project, title, path: Path):
             parts.append(f'<circle cx="{x:.1f}" cy="{y:.1f}" r="2.6" fill="#b4532a"/>')
         parts.append(
             f'<text x="{ox + 8}" y="{oy + 16}" font-family="ui-sans-serif,sans-serif" '
-            f'font-size="12" fill="#555">frame {n + 1}/{len(frames)} · own scale</text>'
+            f'font-size="12" fill="#555">{_xml(caption)} {n + 1}/{len(frames)} · own scale</text>'
         )
     parts.append("</svg>")
     path.write_text("\n".join(parts), encoding="utf-8")
@@ -526,7 +639,9 @@ def selftest():
     seq[:, :, 0] += np.linspace(0, 0.4, t)[:, None]
     seq += rng.normal(0, 0.0005, seq.shape)
     report, _, _, axis, sign = audit_npy(seq, fps=60, height_cm=178, label="rigid")
-    assert report["topology"]["chosen"] == "h36m17", report["topology"]
+    topo = report["topology"]
+    assert topo["chosen"] == "h36m17" and topo["source"] == "auto", topo
+    assert topo["symmetry_confidence"] == "high" and topo["ambiguous"] is False, topo
     assert axis == 2 and sign == 1
     assert report["bone_median_cv"] < 0.02, report["bone_median_cv"]
     assert report["lower_ankle_pinned_near_zero"] is False
@@ -541,34 +656,84 @@ def selftest():
     assert pinned_report["lower_ankle_pinned_near_zero"] is True
     assert pinned_report["joint0_xy_abs_max"] == 0
 
-    rubber = seq + rng.normal(0, 0.08, seq.shape)
-    rubber_report, _, _, _, _ = audit_npy(rubber, fps=60, height_cm=None, label="rubber")
-    assert rubber_report["bone_median_cv"] > 0.05
+    # Joint counts other than 17 are refused, whatever --skeleton says.
+    other = np.random.default_rng(1)
+    for joints in (16, 55, 86):
+        bad = other.normal(0, 0.5, (5, joints, 3))
+        for skeleton in ("auto", "h36m17", "coco17"):
+            topo = choose_topology(bad, skeleton)
+            assert topo["chosen"] is None and f"{joints} joints" in topo["reason"], topo
+            try:
+                audit_npy(bad, fps=60, height_cm=None, label="bad", skeleton=skeleton)
+            except SystemExit as exc:
+                assert f"{joints} joints" in str(exc), str(exc)
+            else:
+                raise AssertionError(f"{joints} joints accepted with skeleton={skeleton}")
 
-    # 2D continuity: two still clusters far apart must be cut.
-    doc = {
-        "categories": [{
-            "name": "toy",
-            "keypoints": [
-                "nose", "left_eye", "right_eye", "left_ear", "right_ear",
-                "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
-                "left_wrist", "right_wrist", "left_hip", "right_hip",
-                "left_knee", "right_knee", "left_ankle", "right_ankle", "neck",
-            ],
-        }],
-        "images": [],
-        "annotations": [],
-    }
-    for n in range(12):
-        base = 0 if n < 6 else 400
-        kpts = []
-        for j in range(18):
-            kpts += [100 + base + j, 80 + n + j * 3, 2]
-        doc["images"].append({"id": n, "file_name": f"T_{n:03d}.jpeg", "width": 1280, "height": 720})
-        doc["annotations"].append({"image_id": n, "keypoints": kpts, "num_keypoints": 18})
-    coco, _, _ = audit_coco(doc, fps=30, label="toy", image=None, jump_px=80)
-    assert coco["n_cuts"] >= 1, coco["n_cuts"]
-    assert coco["keypoints_outside_frame"] == 0
+    # Structureless joints: the L/R symmetry check cannot separate the layouts,
+    # so auto refuses and an explicit layout is recorded with low symmetry confidence.
+    noise = rng.normal(0, 1.0, (t, 17, 3))
+    topo = choose_topology(noise)
+    assert topo["chosen"] is None and topo["ambiguous"] is True, topo
+    assert topo["symmetry_confidence"] == "low", topo
+    forced, _, _, _, _ = audit_npy(noise, fps=60, height_cm=None, label="noise", skeleton="h36m17")
+    assert forced["topology"]["source"] == "caller" and forced["topology"]["ambiguous"] is True
+    assert forced["topology"]["symmetry_confidence"] == "low", forced["topology"]
+
+    # Per-frame jitter does not change the symmetry pick, but it shows in bone CV.
+    rubber = seq + rng.normal(0, 0.08, seq.shape)
+    rubber_report, _, _, _, _ = audit_npy(rubber, fps=60, height_cm=None, label="rubber", skeleton="h36m17")
+    assert rubber_report["bone_median_cv"] > 0.05, rubber_report["bone_median_cv"]
+
+    # Natural order by file_name; frame_index overrides it when present.
+    ordered, basis = order_images([
+        {"id": 0, "file_name": "T_10.jpeg"}, {"id": 1, "file_name": "T_2.jpeg"},
+        {"id": 2, "file_name": "T_1.jpeg"},
+    ])
+    assert [im["file_name"] for im in ordered] == ["T_1.jpeg", "T_2.jpeg", "T_10.jpeg"], ordered
+    assert basis is None
+    by_frame, basis = order_images([
+        {"id": 0, "file_name": "z.jpeg", "frame_index": 2},
+        {"id": 1, "file_name": "a.jpeg", "frame_index": 0},
+        {"id": 2, "file_name": "m.jpeg", "frame_index": 1},
+    ])
+    assert [im["id"] for im in by_frame] == [1, 2, 0] and basis == "frame_index"
+
+    # 2D: two still clusters far apart give a neighbour jump. Only a verified
+    # frame order turns that into a motion segmentation.
+    def toy_doc(timed: bool):
+        doc = {
+            "categories": [{
+                "name": "toy",
+                "keypoints": [
+                    "nose", "left_eye", "right_eye", "left_ear", "right_ear",
+                    "left_shoulder", "right_shoulder", "left_elbow", "right_elbow",
+                    "left_wrist", "right_wrist", "left_hip", "right_hip",
+                    "left_knee", "right_knee", "left_ankle", "right_ankle", "neck",
+                ],
+            }],
+            "images": [],
+            "annotations": [],
+        }
+        for n in range(12):
+            base = 0 if n < 6 else 400
+            kpts = []
+            for j in range(18):
+                kpts += [100 + base + j, 80 + n + j * 3, 2]
+            image = {"id": n, "file_name": f"T_{n:03d}.jpeg", "width": 1280, "height": 720}
+            if timed:
+                image["frame_index"] = n
+            doc["images"].append(image)
+            doc["annotations"].append({"image_id": n, "keypoints": kpts, "num_keypoints": 18})
+        return doc
+
+    untimed, _, _ = audit_coco(toy_doc(False), fps=30, label="toy", image=None, jump_px=80)
+    assert untimed["temporal_order_verified"] is False and untimed["continuous_motion"] is None, untimed
+    assert untimed["sorted_neighbor_jumps"]["count_over_threshold"] >= 1, untimed["sorted_neighbor_jumps"]
+    assert untimed["keypoints_outside_frame"] == 0
+    timed, _, _ = audit_coco(toy_doc(True), fps=30, label="toy_timed", image=None, jump_px=80)
+    assert timed["temporal_order_verified"] is True and timed["order_basis"] == "frame_index", timed
+    assert timed["continuous_motion"]["segment_count"] == 2, timed["continuous_motion"]
     print("selftest ok")
     return 0
 
@@ -591,6 +756,8 @@ def main(argv):
     n.add_argument("--height-cm", type=float, default=None)
     n.add_argument("--label", default=None)
     n.add_argument("--out", type=Path, required=True)
+    n.add_argument("--skeleton", choices=SKELETON_CHOICES, default="auto",
+                   help="joint layout; auto refuses arrays whose layout is ambiguous")
     n.set_defaults(func=cmd_npy)
 
     c = sub.add_parser("coco")
@@ -614,15 +781,16 @@ def main(argv):
 def cmd_npy(args):
     seq = np.load(args.path)
     label = args.label or args.path.stem
-    report, seq, bones, axis, sign = audit_npy(seq, args.fps, args.height_cm, label)
+    report, seq, bones, axis, sign = audit_npy(seq, args.fps, args.height_cm, label, args.skeleton)
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     write_json(out / f"{label}.json", report)
     frames = [seq[0], seq[len(seq) // 2], seq[-1]]
     pairs = bone_index_pairs(bones)
     stick_svg(frames, pairs, project_3d(axis, sign), label, out / f"{label}.svg")
-    print(f"wrote {label}: topology={report['topology']['chosen']} "
-          f"median_cv={report['bone_median_cv']} "
+    topo = report["topology"]
+    print(f"wrote {label}: topology={topo['chosen']} source={topo['source']} "
+          f"symmetry_confidence={topo['symmetry_confidence']} median_cv={report['bone_median_cv']} "
           f"pelvis_up_range={report['pelvis_up_range']} "
           f"pinned={report['lower_ankle_pinned_near_zero']}")
     return 0
@@ -635,20 +803,22 @@ def cmd_coco(args):
     out = args.out
     out.mkdir(parents=True, exist_ok=True)
     write_json(out / f"{label}.json", report)
-    # Draw the longest stable segment's first / mid / last frame.
-    seg = report["longest_stable_segment"]
+    # Motion frames only when the order is verified; otherwise a sorted sample.
+    cm = report["continuous_motion"]
+    seg = cm["longest_stable_segment"] if cm else None
     if seg:
         s = seg["start"]
         e = s + seg["length"] - 1
-        m = (s + e) // 2
-        frames = [pts[s], pts[m], pts[e]]
+        frames = [pts[s], pts[(s + e) // 2], pts[e]]
     else:
         frames = [pts[0], pts[len(pts) // 2], pts[-1]]
+    caption = "frame" if report["temporal_order_verified"] else "sorted sample"
     sk = doc["categories"][0].get("skeleton") or []
     pairs = [(a - 1, b - 1) for a, b in sk]
-    stick_svg(frames, pairs, project_2d(), label, out / f"{label}.svg")
-    print(f"wrote {label}: images={report['n_images']} cuts={report['n_cuts']} "
-          f"hip/torso median={report['hip_range_over_torso_median']}")
+    stick_svg(frames, pairs, project_2d(), label, out / f"{label}.svg", caption)
+    print(f"wrote {label}: images={report['n_images']} order={report['order_basis']} "
+          f"neighbor_jumps>{args.jump_px:g}px={report['sorted_neighbor_jumps']['count_over_threshold']} "
+          f"continuous_motion={'yes' if cm else 'no'}")
     return 0
 
 
