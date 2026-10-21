@@ -103,14 +103,23 @@ const LAND_SCALE=.55; // was .7; floored 8 cm crouch + posterior bake pushed Med
  * straight-across ball shape grazed the chest and the catch sat beyond the
  * solve's reach on the wider presets. */
 const OFF_REACH_SCALE=.90;
-/** Soften the authored racket-arm lateral spread so contact/takeback wrists sit
- * closer to the video 2D landmarks (model takeback mean Δdx ≈ −0.72 torso
- * units too far to the racket side). Scales the torso-frame wrist.x then
- * re-normalises; reach is scaled uniformly. Does NOT reintroduce 2D→3D
- * mapping — only damps the shared authored shapes per phase. */
-function wristAdjust(shape:TorsoArm,lateral=1,reach=1):TorsoArm{
- const [x,y,z]=shape.wrist;const wx=x*lateral;const n=Math.hypot(wx,y,z)||1;
- return {...shape,wrist:[wx/n,y/n,z/n] as [number,number,number],reach:shape.reach*reach};
+/** Soften / reshape the authored racket-arm torso coefficients so takeback,
+ * drop and contact wrists sit closer to video 2D landmarks (shoulder-normalized
+ * image residuals from scripts/player-forehand-landmarks.json via
+ * .out/analysis/wrist-compare). On 677621d (lateral-only .72/.78/.88) the
+ * 17-player means were takeback Δdx(racket+) ≈ −0.82, drop ≈ −0.60,
+ * contact ≈ +0.42; drop also sat ~0.17 torso-units too low.
+ *
+ * Scales torso-frame (out, up, front) then re-normalises; `reach` scales the
+ * chord. Does NOT reintroduce 2D→3D mapping — only shared phase heuristics on
+ * the authored shapes. `lift` is applied later via placeRacketArm. */
+type WristTune={lateral?:number;up?:number;forward?:number;reach?:number;lift?:number};
+function wristAdjust(shape:TorsoArm,tune:WristTune={}):TorsoArm & {lift:number}{
+ const lateral=tune.lateral??1,up=tune.up??1,forward=tune.forward??1,reach=tune.reach??1;
+ const [x,y,z]=shape.wrist;
+ const wx=x*lateral,wy=y*up,wz=z*forward;
+ const n=Math.hypot(wx,wy,wz)||1;
+ return {...shape,wrist:[wx/n,wy/n,wz/n] as [number,number,number],reach:shape.reach*reach,lift:tune.lift??0};
 }
 const stepOf=(p:PlayerPreset)=>p.step??(.075+Math.max(0,p.stance-1)*.055+p.dip*.12);
 
@@ -432,17 +441,21 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  applyPushOff(keys);
  const doc:WorkshopDoc={...base,keys};
  const torso=(i:number)=>torsoAt(doc,keys[i].time);
- const racket=(i:number,shape:TorsoArm,scale=armScale):ArmPose=>
-  placeRacketArm(torso(i),racketArm,shape,{reachScale:scale});
+ const racket=(i:number,shape:TorsoArm & {lift?:number},scale=armScale):ArmPose=>
+  placeRacketArm(torso(i),racketArm,shape,{reachScale:scale,lift:shape.lift??0});
  const off=(i:number,shape:TorsoArm,scale=1):ArmPose=>placeOffArm(torso(i),offArm,torso(i).offShoulder,
   {...shape,reach:shape.reach*scale});
  // 准备: relaxed ready; the off hand starts half-way to its authored guard.
  setHand(keys[0].pose.handR,racket(0,READY_RACKET));
  setHand(keys[0].pose.handL,blendArm(off(0,OFF_TAKE_UP),off(0,OFF_TAKE_DROP),.25));
- // 引拍 / 落拍: authored shapes with a lighter lateral wrist (video match).
- const takeUp=wristAdjust(TAKE_UP,.72,.96);
- const takeDrop=wristAdjust(TAKE_DROP,.78,.96);
- const ball=wristAdjust(BALL,.88,1.0);
+ // 引拍 / 落拍 / 击球: authored shapes with per-phase wrist heuristics from
+ // 2D landmark residuals (takeback too racket-side & high; drop too racket-side
+ // & low; contact slightly too lead-side / short of forward reach).
+ // Pose-validity safe: takeback stays near authored elevation (only mild
+ // lateral damp). Drop/contact get stronger lateral + slight lift/forward.
+ const takeUp=wristAdjust(TAKE_UP,{lateral:.85,reach:.98});
+ const takeDrop=wristAdjust(TAKE_DROP,{lateral:.60,up:.98,forward:1.02,reach:.95,lift:.015});
+ const ball=wristAdjust(BALL,{lateral:.88,up:1.01,forward:1.04,reach:1.0,lift:.008});
  setHand(keys[1].pose.handR,racket(1,takeUp));
  setHand(keys[1].pose.handL,off(1,OFF_TAKE_UP));
  setHand(keys[2].pose.handR,racket(2,takeDrop));
@@ -451,9 +464,9 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // racket arm interpolates the (adjusted) drop → ball coefficients in torso space;
  // the off arm tucks slightly and swings its elbow outside the chest.
  const swingR=interpolateTorsoArm(takeDrop,ball,.35);
- setHand(keys[3].pose.handR,racket(3,swingR));
+ setHand(keys[3].pose.handR,racket(3,{...swingR,lift:(takeDrop.lift+ball.lift)*.35}));
  setHand(keys[3].pose.handL,off(3,OFF_SWING));
- // 击球: authored pose with a slightly less extreme lateral wrist.
+ // 击球: authored pose with contact wrist raised / more forward (video match).
  setHand(keys[4].pose.handR,racket(4,ball));
  setHand(keys[4].pose.handL,off(4,OFF_BALL,OFF_REACH_SCALE));
  // 延伸: the racket starts climbing after the authored ball pose.
@@ -546,7 +559,7 @@ for(const player of players){
   description:'手臂姿态以工作台手捏正手（引拍1 / 引拍2 / 击球）为参考，按各球员躯干转角在躯干坐标系中重建：引拍时球拍立起于肩侧，落拍时拍头下坠到体侧最低点、非持拍臂横在胸前，击球时球拍接近水平且指向体侧（手捏姿态的肘角约 48°，并非直臂），随后折肘把球拍带到非持拍肩前、拍头竖直于肩上方，非持拍手在拍喉接住球拍。手臂目标不来自视频关键点，未估计单目深度或球拍朝向。',
   method:'工作台手捏正手 · 躯干系手臂重建 + 球员参数化（视频关键帧仅作时序参考）',focus:player.focus,
   phases:[{time:0,label:'准备'},{time:player.back,label:'引拍'},{time:player.contact,label:'击球区'},{time:player.follow,label:'随挥'},{time:player.duration,label:'恢复'}],
-  notes:[`参考 ${player.video} @ ${excerpt}；关键帧秒数：${frames}。${duplicateNote}`,'手臂来自手捏参考姿态的躯干系系数（不是 2D 关键点）：单目视频关节点无法决定三维手臂目标，此前的映射把持拍臂折进躯干（见 docs/reports/forehand-video-retargeting.md）。后脚蹬地枢转与重心左右移是骨架近似；持拍腕在引拍/落拍/击球处按二维关节点的侧向偏差对躯干系系数做了轻度内收（非二维重映射），球拍朝向仍是近似。',depthNote,...(guardNote?[guardNote]:[])],
+  notes:[`参考 ${player.video} @ ${excerpt}；关键帧秒数：${frames}。${duplicateNote}`,'手臂来自手捏参考姿态的躯干系系数（不是 2D 关键点）：单目视频关节点无法决定三维手臂目标，此前的映射把持拍臂折进躯干（见 docs/reports/forehand-video-retargeting.md）。后脚蹬地枢转与重心左右移是骨架近似；持拍腕在引拍/落拍/击球处按二维关节点相对肩的侧向/高度残差对躯干系系数做了分阶段启发式调整（内收/抬低/前送；非二维重映射），球拍朝向仍是近似。',depthNote,...(guardNote?[guardNote]:[])],
   license:'Project-authored motion approximation; source video frames are not redistributed.',oneShot:true,
   capabilities:{prop:{kind:'racket',trail:true,handView:true,...(player.side?{side:player.side}:{})}},
   document,

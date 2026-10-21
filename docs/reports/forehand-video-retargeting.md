@@ -246,15 +246,15 @@
 - 未执行：`npm run qa` / `npm run qa:pose-validity` / `node scripts/pose-visual-qa.mjs` 浏览器验收与截图，视觉判定（尤其 Felix 的后移）未做；`npm run bench`。
 - 移交：求解器落脚拐点（240 fps 根加速度）需单独切片，并 bump `SERVICE_VERSION`。
 
-## 第六轮（2026-10-21 夜）：`codex/forehand-legs-v5` 下蹲地板与蹬地 12°
+## 第六轮（2026-10-21 夜）：`codex/forehand-legs-v5` 下蹲地板、蹬地 12°、腕轻度内收
 
-Notion 交接 T2/T3  overnight 增量（基线已含 issue #17 的 3D 深度与「不抬骨盆」后踝守卫）：
+Notion overnight 验收（基线 tip = issue #17 的 3D 深度 + 「不抬骨盆」后踝守卫）：
 
-- **引拍深度地板**：`scripts/lib/forehand-depth.mts` 增加 `MIN_TAKEBACK_CM = 8`。MediaPipe 引拍中位数浅于 8 cm 的球员抬到 8 cm；Felix 保持实测 13.3 cm。被抬高时随挥/恢复再设 ≥4 cm 释放地板，避免深蹲站姿无法伸直到近直立目标。
-- **蹬地角**：`PUSH_OFF` 击球脚跟由 8° → **12°**（前挥/随挥释放 6°）。#17 后验扫：17 人 40 Hz 根加速度 ≤ 25.2 m/s²、滑移 ≤ 9 mm。
-- **落地比例**：`LAND_SCALE` 0.7 → 0.55，并下调 Mensik 的 `forward`/`step`，避免深蹲后前脚滑移超 1 cm。
-- **未改**：上半身/腕目标（仍为手捏躯干系模板）；`DORSI_LIMIT_DEG=20` / `ANKLE_MAX=20.05`；不放宽 `validate.ts` 门限。
-- **腕部**：2D `player-forehand-landmarks.json` 肩—腕相对量噪声极大（肘角 6–152°、置信度常 <0.3），不能映射；IK 相对作者目标残差仍为 0。视觉「腕不对」需单独的 3D 腕/球拍任务，不在本分支范围。
+- **引拍深度地板**：`MIN_TAKEBACK_CM = 8`。浅于 8 cm 的 MediaPipe 引拍抬到 8 cm（目视下蹲）；Felix 保持 13.3 cm。被抬高时随挥释放地板 ≥4 cm；**follow→recover 上升最多 3.5 cm**（Mensik 实测随挥 14.4 cm 钳到 8 后恢复段原差 6+ cm，导致前脚滑移 1.3 cm）。
+- **蹬地角**：`PUSH_OFF` 击球脚跟 **12°**（前挥/随挥释放 6°）。#17 后验骨盆后移写入关键帧后，Frances 12° 不再出现 42 m/s² 拐点。
+- **落地比例**：`LAND_SCALE` 0.7 → 0.55，配合恢复上升上限，17 预设 40 Hz 滑移 ≤ 9 mm。
+- **腕部（用户要求纳入范围）**：不对 2D 做重映射；对躯干系 `TAKE_UP` / `TAKE_DROP` / `BALL` 做 `wristAdjust`（lateral 0.85 / 0.60 / 0.88，落拍/击球略抬与前送）。引拍过强内收会破坏 pose-validity「上臂先下落后击球」门限，故引拍仅轻度侧向阻尼。IK 相对作者目标残差仍为 0；pose-validity 全过。
+- **未改**：`DORSI_LIMIT_DEG=20` / `ANKLE_MAX=20.05`；不放宽 `validate.ts`；不手改 `assets/motions/*-forehand.json`（均由生成器重写）。
 
-验证：`npx tsx scripts/generate-player-forehands.mts`；`npx vitest run scripts/forehand-depth.test.ts`（12/12）。
+验证：`npx tsx scripts/generate-player-forehands.mts`；17 预设 `POST /v1/motions` 40 Hz 全 200；`npx tsc -b`；全量 `vitest` 575 通过 / 3 跳过；`pose-validity` + `forehand-depth` 定向通过。报告：`/workspace/forehand-legs-v5-report.md`。
 
