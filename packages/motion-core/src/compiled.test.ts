@@ -6,7 +6,7 @@ import {HumanRig} from './rig';
 import {attachRacket} from './props/racket';
 import {motionFileById} from './motion-files';
 import {sampleTimes,solveWorkshop} from './pose-package';
-import {pelvisSampleCount} from './pelvis-schedule';
+import {buildPelvisSchedule,pelvisSampleCount} from './pelvis-schedule';
 import {probeFrames} from './quality-probe';
 import {WORKSHOP_REVISION,workshopMeta} from './protocol';
 import {compileMotion,defaultDocument,flattenPose,frameAt,frameAtCompiled,sampleMotion,samplePose,
@@ -191,5 +191,24 @@ describe('package identity',()=>{
   const a=JSON.stringify(solveWorkshop(rig,doc,fps,meta(doc,fps)));
   const b=JSON.stringify(solveWorkshop(rig,doc,fps,meta(doc,fps)));
   expect(a).toBe(b);
+ });
+ it('keeps a compiled loop root track position and velocity continuous through the real schedule path',()=>{
+  const doc=defaultDocument(rig.rest),fps=120;
+  doc.loop=true;
+  doc.keys.at(-1)!.time=.76; // leave the required loop gap before duration .8
+  const compiled=compileMotion(doc,origin());
+  const schedule=buildPelvisSchedule(rig,compiled);
+  expect(schedule.at(0)).toBeCloseTo(schedule.at(doc.duration),12);
+  const pkg=solveWorkshop(rig,doc,fps,meta(doc,fps));
+  const {timestamps}=pkg.timeline,root=pkg.tracks.translation.values;
+  const n=timestamps.length,dim=3,dt0=timestamps[1]-timestamps[0],dt1=timestamps[n-1]-timestamps[n-2];
+  const first=[0,1,2].map(axis=>root[dim+axis]-root[axis]);
+  const last=[0,1,2].map(axis=>root[(n-1)*dim+axis]-root[(n-2)*dim+axis]);
+  expect(timestamps[0]).toBe(0);
+  expect(timestamps[n-1]).toBe(doc.duration);
+  for(let axis=0;axis<dim;axis++){
+   expect(Math.abs(root[(n-1)*dim+axis]-root[axis])).toBeLessThan(1e-6);
+   expect(Math.abs(first[axis]/dt0-last[axis]/dt1)).toBeLessThan(0.5);
+  }
  });
 });

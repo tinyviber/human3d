@@ -335,8 +335,14 @@ export class WorkshopEngine{
   private solveFrame(f:EffectiveFrame,t:number){
     if(!this.rig)return;
     /* During a pointer transaction the current pose remains responsive, but
-     * the full 120 Hz schedule is rebuilt only once the edit is committed. */
-    const schedule=this.drag||this.deferPelvisSchedule?undefined:this.scheduleFor(this.getDoc());
+     * the full 120 Hz schedule is rebuilt only once the edit is committed.
+     * Keep using the last schedule for this same document while it is stale:
+     * dropping it mid-gesture would switch back to per-frame pelvis solving,
+     * then switch forward again on pointer-up. */
+    const doc=this.getDoc();
+    const schedule=this.drag||this.deferPelvisSchedule
+      ?(this.pelvis?.doc===doc?this.pelvis.schedule:undefined)
+      :this.scheduleFor(doc);
     solveEffectiveFrame(this.rig,f,schedule&&!schedule.passthrough?schedule.at(t):undefined);
     /* Remount on side change — the frame carries the doc's gripSide, and the
      * mount is a constant per document, so this fires at most once per edit
