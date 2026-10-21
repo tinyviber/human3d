@@ -1,9 +1,12 @@
 import {describe,it,expect,beforeAll} from 'vitest';
+import {RACKET_TIP_LOCAL} from './props/racket';
 import fs from 'node:fs';
 import {Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
-import {attachRacket,gripFrame} from './racket';
+import {attachRacket} from './props/racket';
+import {gripFrame} from './grip';
+import {RACKET_HANDLE} from './props/racket';
 import {blankDocument,frameAt,parseDoc,serializeDoc,validateDocShape,type FootTarget,type HandTarget,type V3,type WorkshopDoc} from './document';
 import {solveEffectiveFrame} from './solver';
 import {canonical,normalizedRequest} from './protocol';
@@ -158,7 +161,7 @@ describe('gripSide — mirrored solve',()=>{
 
 describe('gripSide — racket mount',()=>{
  it('derives the left grip frame as the mirror of the right',()=>{
-  const R=gripFrame(rig,'R'),L=gripFrame(rig,'L');
+  const R=gripFrame(rig,'R',RACKET_HANDLE),L=gripFrame(rig,'L',RACKET_HANDLE);
   // Polar vectors mirror x→−x; the handle axis is a cross product
   // (axial) so its mirror is (−x→x, y→−y, z→−z) — same line, opposite sense.
   for(const [a,b]of [[L.forward,R.forward],[L.normal,R.normal],[L.center,R.center]]as const){
@@ -171,7 +174,7 @@ describe('gripSide — racket mount',()=>{
   const rR=attachRacket(rig,'R'),rL=attachRacket(rig,'L');
   const world=(racket:typeof rR)=>({
    o:racket.getWorldPosition(new Vector3()),
-   tip:racket.localToWorld(new Vector3(0,.61,0)),
+   tip:racket.localToWorld(RACKET_TIP_LOCAL.clone()),
    face:racket.localToWorld(new Vector3(0,.45,.03)),
    q:racket.getWorldQuaternion(new Quaternion()),
   });

@@ -20,7 +20,14 @@ describe('capability catalog',()=>{
   expect(r.status).toBe(200);
   const c=r.body as {service:{version:string};actions:{id:string;kind:string}[];rigs:{id:string}[];limits:{maxFps:number}};
   expect(c.service.version).toBe(SERVICE_VERSION);
-  expect(c.actions.map(a=>a.id).sort()).toEqual(['forehand','idle','reach','ready','squat','workshop-doc']);
+  expect(c.actions.map(a=>a.id).sort()).toEqual([
+   'alejandro-davidovich-fokina-forehand','alex-de-minaur-forehand','alexander-bublik-forehand','alexander-zverev-forehand',
+   'basic-full-squat','basic-half-squat','basic-lunge','basic-push-turn','basic-weight-shift',
+   'ben-shelton-forehand','carlos-alcaraz-forehand','daniil-medvedev-forehand','felix-auger-aliassime-forehand',
+   'flavio-cobolli-forehand','forehand','frances-tiafoe-forehand','holger-rune-forehand','idle','ignacio-buse-forehand',
+   'jakub-mensik-forehand','karen-khachanov-forehand','marin-cilic-forehand','novak-djokovic-forehand',
+   'reach','ready','roger-federer-forehand','squat','workshop-doc',
+  ]);
   expect(c.rigs[0].id).toBe('makehuman-body');
   expect(c.limits.maxFps).toBe(60);
  });
@@ -31,7 +38,7 @@ describe('capability catalog',()=>{
  it('returns per-action descriptors and 404 for unknown ids',()=>{
   const ok=handleRequest(ctx,'GET','/v1/actions/forehand');
   expect(ok.status).toBe(200);
-  expect((ok.body as {notes:string[]}).notes[0]).toContain('documented-defect');
+  expect((ok.body as {notes:string[]}).notes[0]).toContain('research-reference');
   expect(handleRequest(ctx,'GET','/v1/actions/fly').status).toBe(404);
  });
 });
@@ -70,9 +77,12 @@ describe('POST /v1/motions — bundled actions',()=>{
   expect(pkg.events.map(e=>e.label)).toContain('最低点');
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
  });
- it('reports per-frame quality checks and the documented forehand defect',()=>{
+ it('reports per-frame quality checks and carries the envelope notes as warnings',()=>{
   const pkg=post({action:{id:'forehand'}}).body as PosePackage;
-  expect(pkg.quality.warnings[0]).toContain('穿插');
+  // Envelope notes land in warnings verbatim; the forehand is a research
+  // reference approximation, not a documented defect any more.
+  expect(pkg.quality.warnings[0]).toContain('research-reference');
+  expect(pkg.quality.warnings.some(w=>w.includes('穿插'))).toBe(false);
   const ids=pkg.quality.checks.map(c=>c.code);
   for(const s of ['L','R'])expect(ids).toEqual(expect.arrayContaining([`knee-flexion-${s}`,`elbow-flexion-${s}`,`shoulder-elevation-${s}`,`foot-depth-${s}`,`ankle-dorsiflexion-${s}`]));
   // Codes are stable machine identifiers: lower-case, hyphenated, side-suffixed.
@@ -110,6 +120,18 @@ describe('POST /v1/motions — workshop-doc action',()=>{
   expect(pkg.events.some(e=>e.type==='support-start')).toBe(true);
   expect(pkg.quality.checks.some(c=>c.code.startsWith('com-support'))).toBe(true);
   expect(validatePosePackage(pkg,ctx.manifest)).toEqual([]);
+ });
+ it('solves the selected linear curve and versions its artifact',()=>{
+  const doc=JSON.parse(JSON.stringify(motionFileById('forehand')!.document!));
+  const smooth=post({action:{id:'workshop-doc',parameters:{document:doc}},sample:{fps:10}});
+  const linearDoc=JSON.parse(JSON.stringify(doc));linearDoc.keys[0].interpolation='linear';
+  const linear=post({action:{id:'workshop-doc',parameters:{document:linearDoc}},sample:{fps:10}});
+  expect(smooth.status).toBe(200);expect(linear.status).toBe(200);
+  const a=smooth.body as PosePackage,b=linear.body as PosePackage;
+  expect(a.id).not.toBe(b.id);
+  expect(a.provenance.solverRevision).toBe(SERVICE_VERSION);
+  expect(b.provenance.solverRevision).toBe(SERVICE_VERSION);
+  expect(a.tracks).not.toEqual(b.tracks);
  });
  it('emits support events only at interval boundaries, one pair per contact',()=>{
   const doc=blankDocument(ctx.rig.rest,'换脚','support-events');

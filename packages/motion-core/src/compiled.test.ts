@@ -3,7 +3,7 @@ import fs from 'node:fs';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from './rig';
-import {attachRacket} from './racket';
+import {attachRacket} from './props/racket';
 import {motionFileById} from './motion-files';
 import {sampleTimes,solveWorkshop} from './pose-package';
 import {pelvisSampleCount} from './pelvis-schedule';

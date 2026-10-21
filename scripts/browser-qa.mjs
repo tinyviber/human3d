@@ -33,7 +33,7 @@ try {
 const page=await browser.newPage({viewport:{width:1536,height:1024},deviceScaleFactor:1});
 const errors=[],warnings=[];page.on('pageerror',e=>errors.push(e.message));page.on('console',m=>{if(m.type()==='error')errors.push(m.text());if(m.type()==='warning')warnings.push(m.text());});
 await page.goto(webUrl('/'));await page.waitForFunction(()=>window.__LAB__?.ready,{timeout:60000});await page.locator('.loading-state').waitFor({state:'hidden'});
-assert.match(await page.title(),/KINESIS/);assert.equal(await page.locator('.motion-row').count(),8);assert.equal(await page.locator('vite-error-overlay').count(),0);
+assert.match(await page.title(),/KINESIS/);const bundledMotionCount=await page.locator('.motion-row').count();assert(bundledMotionCount>=8,'expected the bundled motion library');assert.equal(await page.locator('vite-error-overlay').count(),0);
 const names={idle:'自然站立',walk:'行走',reach:'抬手与转身',squat:'下蹲',ready:'持拍准备',forehand:'正手挥拍'};
 async function choose(id,t=0,view='front'){
  // .first(): an opened bundled package reuses the envelope name, so the
@@ -118,8 +118,8 @@ const pkg=await pkgResponse.json();
 assert.equal(pkg.kind,'pose-package');assert.equal(pkg.rig.bones,163);
 await page.locator('input[type=file]').setInputFiles({name:'idle.pose.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(pkg))});
 await page.waitForTimeout(300);
-// The temp entry joins the list: 8 bundled motions + the opened package.
-assert.equal(await page.locator('.motion-row').count(),9);
+// Each opened package adds one temporary entry to the bundled motion list.
+assert.equal(await page.locator('.motion-row').count(),bundledMotionCount+1);
 // Envelope derivation: a bundled idle package restores the envelope display
 // name, not the bare action id.
 assert.equal(await page.locator('.viewport-heading h2').textContent(),'自然站立');
@@ -134,7 +134,7 @@ assert.equal(fhResponse.status,200,'POST /v1/motions {forehand} failed');
 const fhPkg=await fhResponse.json();
 await page.locator('input[type=file]').setInputFiles({name:'forehand.pose.json',mimeType:'application/json',buffer:Buffer.from(JSON.stringify(fhPkg))});
 await page.waitForTimeout(300);
-assert.equal(await page.locator('.motion-row').count(),10);
+assert.equal(await page.locator('.motion-row').count(),bundledMotionCount+2);
 assert.equal(await page.locator('.viewport-heading h2').textContent(),'正手挥拍');
 const fhState=await page.evaluate(()=>{const e=window.__LAB__;e.setPlaying(false);e.seek(2.55);return {racket:e.racket?.visible===true,prop:e.source?.kind==='pose-package'&&e.source.wantsProp()};});
 assert.equal(fhState.prop,true,'forehand package source does not want the prop');
@@ -284,6 +284,7 @@ await page.waitForTimeout(150); // let the React frame state flush before addKey
 await page.getByRole('button',{name:'添加关键帧',exact:true}).click();
 assert.equal(await page.locator('.ws-key').count(),3);
 await page.locator('.ws-key').nth(1).click();
+await page.getByTestId('adjustment-tab-left').click();
 const liftSlider=page.locator('.ws-slider').filter({hasText:'左脚抬升高度'}).locator('input');
 assert(await liftSlider.isDisabled(),'lift slider should be disabled while the foot is planted');
 await page.locator('.ws-check').filter({hasText:'左脚支撑锁定'}).locator('input').uncheck();

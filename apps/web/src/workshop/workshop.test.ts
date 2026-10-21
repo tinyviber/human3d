@@ -3,12 +3,13 @@ import fs from 'node:fs';
 import {Matrix4,Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {HumanRig} from '@human3d/motion-core';
-import {attachRacket,gripFrame} from '@human3d/motion-core';
+import {attachRacket,gripFrame,RACKET_HANDLE} from '@human3d/motion-core';
 import {angleAt,DEG} from '@human3d/motion-core';
 import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,TANGENT_SECANT_CAP,toV,unflattenPose,validateDocShape,type PoseParams,type WorkshopDoc,type WorkshopKey} from '@human3d/motion-core';
-import {LIBRARY_KEY,MotionLibrary,type StorageLike} from './library';
+import {LIBRARY_KEY,MotionLibrary,WORKSHOP_PRESETS,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from '@human3d/motion-core';
+import {MOTION_FILES} from '@human3d/motion-core';
 import {analyzePose,rotateHandFrame,solveEffectiveFrame,supportPolygon} from '@human3d/motion-core';
 import {CaptureMutex,onionTimes,SHEET_MAX_TILES,sheetTimes} from './engine';
 
@@ -35,10 +36,23 @@ describe('workshop document',()=>{
   for(const k of doc.keys)expect(unflattenPose(flattenPose(k.pose))).toEqual(k.pose);
  });
  it('round-trips through JSON',()=>{
-  const doc=defaultDocument(rig.rest),back=parseDoc(serializeDoc(doc));
+  const doc=defaultDocument(rig.rest);doc.keys[0].interpolation='linear';
+  const back=parseDoc(serializeDoc(doc));
   expect(back.keys.length).toBe(doc.keys.length);
   expect(back.keys[2].constraints.contact).toBe(true);
   expect(back.keys[2].pose.handR.target.x).toBeCloseTo(doc.keys[2].pose.handR.target.x,10);
+  expect(back.keys[0].interpolation).toBe('linear');
+ });
+ it('selects linear or smooth Hermite interpolation per outgoing key',()=>{
+  const doc=blankDocument(rig.rest,'曲线选择','curve-choice');
+  doc.keys[0].pose.root.x=0;doc.keys[1].pose.root.x=1;
+  expect(samplePose(doc,.25).root.x).toBeCloseTo(.15625,8); // bounded Hermite with zero endpoint tangents
+  doc.keys[0].interpolation='linear';
+  expect(samplePose(doc,.25).root.x).toBeCloseTo(.25,8);
+  expect(samplePose(doc,.75).root.x).toBeCloseTo(.75,8);
+  const raw=JSON.parse(serializeDoc(doc)) as {keys:{interpolation?:string}[]};
+  raw.keys[0].interpolation='ease';
+  expect(validateDocShape(raw).some(e=>e.includes('interpolation'))).toBe(true);
  });
  it('reproduces key poses at their exact times and stays finite between',()=>{
   const doc=defaultDocument(rig.rest),keys=sortedKeys(doc);
@@ -93,6 +107,19 @@ describe('workshop document',()=>{
   expect(at(2).distanceTo(toV(C))).toBeLessThan(1e-9);
   expect(at(1.5).distanceTo(toV(A))).toBeGreaterThan(.05);
   expect(at(1.5).distanceTo(toV(C))).toBeGreaterThan(.05);
+ });
+ it('uses a linear outgoing curve through the release key’s swing waypoint',()=>{
+  const doc=blankDocument(rig.rest,'线性摆动','linear-release'),A={x:.2,y:0,z:.3},B={x:.5,y:.12,z:.1},C={x:-.1,y:0,z:.4};
+  doc.duration=2;doc.keys[1].time=1;doc.keys[1].constraints.plantL=false;
+  doc.keys[1].pose.footL.target={...B};doc.keys[1].interpolation='linear';
+  doc.keys[0].pose.footL.target={...A};
+  doc.keys.push({id:'k3',time:2,label:'',pose:{...doc.keys[1].pose,footL:{...doc.keys[1].pose.footL,target:{...C}}},constraints:{...doc.keys[1].constraints,plantL:true}});
+  const at=(t:number)=>toV(samplePose(doc,t).footL.target);
+  expect(at(1).distanceTo(toV(A))).toBeLessThan(1e-9);
+  expect(at(1.25).distanceTo(toV(A).lerp(toV(B),.5))).toBeLessThan(1e-9);
+  expect(at(1.5).distanceTo(toV(B))).toBeLessThan(1e-9);
+  expect(at(1.75).distanceTo(toV(B).lerp(toV(C),.5))).toBeLessThan(1e-9);
+  expect(at(2).distanceTo(toV(C))).toBeLessThan(1e-9);
  });
  it('keeps foot position AND velocity continuous across support transitions',()=>{
   const doc=blankDocument(rig.rest,'换脚','boundary-continuity');
@@ -175,6 +202,13 @@ describe('workshop document',()=>{
   expect(doc.keys.length).toBe(6);expect(k.time).toBe(.35);
   for(let i=0;i<flattenPose(expected).length;i++)expect(flattenPose(k.pose)[i]).toBeCloseTo(flattenPose(expected)[i],6);
   expect(ensureKey(doc,.35,origin)!.id).toBe(k.id);
+ });
+ it('carries the interval curve onto both segments when inserting a key',()=>{
+  const doc=blankDocument(rig.rest,'线性拆分','linear-split');
+  doc.keys[0].interpolation='linear';
+  const inserted=ensureKey(doc,.5,origin())!;
+  expect(inserted.interpolation).toBe('linear');
+  expect(samplePose(doc,.25).root.x).toBeCloseTo(doc.keys[0].pose.root.x+(inserted.pose.root.x-doc.keys[0].pose.root.x)*.5,8);
  });
  it('auto-keyed poses land on the live pose — insertion must not shift the hands',()=>{
   // handFrames=pelvis + trunk rotation: sampling the insert pose with a
@@ -294,7 +328,7 @@ describe('workshop solver',()=>{
   const doc=defaultDocument(rig.rest);
   for(let i=0;i<=40;i++){
    const f=frameAt(doc,i/40*doc.duration,origin());solveEffectiveFrame(rig,f);
-   const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig).center.clone());
+   const expected=rig.bone('wrist_R').localToWorld(gripFrame(rig,'R',RACKET_HANDLE).center.clone());
    expect(racket.getWorldPosition(new Vector3()).distanceTo(expected)).toBeLessThan(1e-10);
   }
  });
@@ -396,6 +430,48 @@ describe('motion library',()=>{
   expect(copy.name).toBe(`${src.name} 副本`);expect(copy.keys.length).toBe(src.keys.length);
   copy.keys[0].pose.lean=44;copy.keys[0].constraints.grip=false;
   expect(src.keys[0].pose.lean).not.toBe(44);
+ });
+ it('creates independent editable copies of every bundled trajectory and preserves solved poses',()=>{
+  const store=memStorage(),l=lib(store),previous=serializeDoc(l.active());
+  expect(WORKSHOP_PRESETS.map(p=>p.id)).toEqual(MOTION_FILES.filter(p=>p.kind==='workshop-motion').map(p=>p.id));
+  expect(WORKSHOP_PRESETS.some(p=>p.id==='roger-federer-forehand')).toBe(true);
+  for(const preset of WORKSHOP_PRESETS){
+   const original=JSON.stringify(preset),source=preset.document!;
+   const copy=l.createFromPreset(preset.id),again=l.createFromPreset(preset.id,'  我的动作  ');
+   expect(copy.id).not.toBe(source.id);expect(again.id).not.toBe(copy.id);
+   expect(copy.name).toBe(`${preset.name} 副本`);expect(again.name).toBe('我的动作');
+   expect(l.active().id).toBe(again.id);
+   expect({...copy,id:source.id,name:source.name,keys:copy.keys.map((k,i)=>({...k,id:source.keys[i].id}))}).toEqual(source);
+   expect(copy.keys.every(k=>!source.keys.some(s=>s.id===k.id)&&!again.keys.some(a=>a.id===k.id))).toBe(true);
+   for(const time of [0,source.duration/2,source.duration]){
+    solveEffectiveFrame(rig,frameAt(source,time,origin()));
+    const expected=[...rig.bones.keys()].map(n=>rig.point(n).clone());
+    solveEffectiveFrame(rig,frameAt(copy,time,origin()));
+    [...rig.bones.keys()].forEach((n,i)=>expect(rig.point(n).distanceTo(expected[i])).toBeLessThan(1e-10));
+   }
+   copy.keys[0].pose.handR.target.x+=.05;copy.keys[0].constraints.grip=!copy.keys[0].constraints.grip;
+   expect(JSON.stringify(preset)).toBe(original);
+   expect(again.keys[0].pose).toEqual(source.keys[0].pose);
+  }
+  l.save();const restored=new MotionLibrary(rig.rest,store).load();
+  expect(restored.quarantine).toEqual([]);expect(restored.docs.length).toBe(l.docs.length);
+  restored.docs.forEach((doc,i)=>{
+   const saved=l.docs[i];
+   expect({...doc,keys:[]}).toEqual({...saved,keys:[]});
+   doc.keys.forEach((k,j)=>{
+    expect({...k,pose:undefined}).toEqual({...saved.keys[j],pose:undefined});
+    const expected=flattenPose(saved.keys[j].pose);
+    flattenPose(k.pose).forEach((v,n)=>expect(v).toBeCloseTo(expected[n],12));
+   });
+  });
+  expect(restored.activeId).toBe(l.activeId);expect(serializeDoc(l.docs[0])).toBe(previous);
+ });
+ it('rejects unsupported or unknown presets without changing the library or storage',()=>{
+  const store=memStorage(),l=lib(store),before=store.map.get(LIBRARY_KEY);
+  for(const id of [...MOTION_FILES.filter(p=>p.kind!=='workshop-motion').map(p=>p.id),'missing']){
+   expect(()=>l.createFromPreset(id)).toThrow('没有可编辑的工作台轨迹');
+   expect(store.map.get(LIBRARY_KEY)).toBe(before);expect(l.docs.length).toBe(1);
+  }
  });
  it('selects, removes and always keeps at least one motion',()=>{
   const l=lib(memStorage());

@@ -48,7 +48,7 @@ interface ActionDescriptor{
 const BUNDLED_PARAMS={type:'object',additionalProperties:false,properties:{}};
 const WORKSHOP_DOC_PARAMS={
  type:'object',additionalProperties:false,required:['document'],
- properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); optional document flags such as clavicleLift and gripSide ('R'|'L', default 'R' — which hand holds the racket and gets the grip solve). Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. schemaVersion must be 2 — older documents are refused (400 validation_failed), never silently upgraded.`}},
+ properties:{document:{type:'object',description:`WorkshopDoc v2 JSON: named keyframes with pose targets and constraints (plantL/plantR/grip/contact); each key may select its outgoing interpolation ('hermite' or 'linear', default 'hermite'); optional freeArms=true allows arm and wrist rotation beyond anatomical bend limits; optional document flags such as clavicleLift and gripSide ('R'|'L', default 'R' — which hand holds the racket and gets the grip solve). Solved by the kinematic FK/IK pipeline; at most ${WORKSHOP_LIMITS.maxDuration} s and ${WORKSHOP_LIMITS.maxKeys} keys. schemaVersion must be 2 — older documents are refused (400 validation_failed), never silently upgraded.`}},
 };
 const IDEMPOTENCY_KEY=new RegExp(`^[!-~]{1,${LIMITS_SVC.idempotencyKeyMaxLength}}$`);
 

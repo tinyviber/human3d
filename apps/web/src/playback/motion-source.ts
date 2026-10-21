@@ -1,5 +1,5 @@
 import {LoopOnce,LoopRepeat,Quaternion,Vector3,type AnimationAction,type AnimationMixer,type Bone,type Object3D} from 'three';
-import {angleAt,buildPelvisSchedule,checkPosePackageShape,compileMotion,frameAtCompiled,gripFrame,solveEffectiveFrame,HumanRig} from '@human3d/motion-core';
+import {angleAt,buildPelvisSchedule,checkPosePackageShape,compileMotion,frameAtCompiled,gripFrame,RACKET_HANDLE,solveEffectiveFrame,HumanRig} from '@human3d/motion-core';
 import type {CompiledMotion,DebugOptions,DynamicsRecords,MuscleActionFile,MotionCapabilities,PelvisSchedule,PosePackage,WorkshopDoc} from '@human3d/motion-core';
 import type {DynamicsCase,DynamicsReplay} from '../lab/dynamics';
 
@@ -43,7 +43,7 @@ function rigReadout(rig:HumanRig,racket?:{getWorldPosition(v:Vector3):Vector3},s
   rig.model.updateMatrixWorld(true);
   const p=(n:string)=>rig.point(n);
   let gripError=0;
-  if(racket)gripError=rig.bone(`wrist_${side}`).localToWorld(gripFrame(rig,side).center.clone()).distanceTo(racket.getWorldPosition(new Vector3()));
+  if(racket)gripError=rig.bone(`wrist_${side}`).localToWorld(gripFrame(rig,side,RACKET_HANDLE).center.clone()).distanceTo(racket.getWorldPosition(new Vector3()));
   return {knee:angleAt(p('upperleg01_R'),p('lowerleg01_R'),p('foot_R')),elbow:angleAt(p('upperarm01_R'),p('lowerarm01_R'),p('wrist_R')),gripError,footL:p('foot_L').toArray(),footR:p('foot_R').toArray(),root:p('root').toArray(),vertices:rig.info.vertices,bones:rig.bones.size,hand:p(`wrist_${side}`).toArray()};
 }
 

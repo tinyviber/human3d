@@ -6,7 +6,7 @@ import {MOTIONS,motionById,muscleActionById} from '@human3d/motion-core';
 import {MOTION_FILES} from '@human3d/motion-core';
 import {motionDefinitionPayload} from '@human3d/motion-core';
 import {canonical,rigManifestBody} from '@human3d/motion-core';
-import {attachRacket,mountRacket} from '@human3d/motion-core';
+import {attachProp,mountRacket,RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {checkPosePackageShape,posePackageSpec,rigMatches} from '@human3d/motion-core';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,createDynamicsSession,type DynamicsSession,type MotionSource} from '../playback/motion-source';
 import {bindSceneBackground} from '../theme/scene-background';
@@ -100,7 +100,7 @@ export class HumanEngine{
    for(const side of ['L','R']){
     const eye=this.rig.bone(`eye_${side}`);const sclera=new Mesh(new SphereGeometry(.0105,20,12),new MeshStandardMaterial({color:0xbdcbd2,roughness:.5}));eye.add(sclera);
    }
-   this.racket=attachRacket(this.rig);this.racket.visible=false;
+   this.racket=attachProp(this.rig,'racket');this.racket.visible=false;
    this.mixer=new AnimationMixer(this.model);
    this.dynSession=createDynamicsSession(this.rig,this.scene);
    const clips=new Map(clipAssets.map(c=>[c.id,c]));
@@ -299,7 +299,7 @@ export class HumanEngine{
   if(!this.rig||!this.model)return;this.model.updateMatrixWorld(true);
   if(this.skeletonLines&&this.debug.skeleton){const a=this.skeletonLines.geometry.getAttribute('position');const seg=this.skeletonLines.userData.segments as {name:string;parent:string}[];seg.forEach((b,i)=>{const p=this.rig!.point(b.name),q=this.rig!.point(b.parent);a.setXYZ(i*2,p.x,p.y,p.z);a.setXYZ(i*2+1,q.x,q.y,q.z);});a.needsUpdate=true;}
   for(const group of [this.jointGroup,this.axesGroup,this.targetGroup])if(group.visible)group.children.forEach(o=>{o.position.copy(this.rig!.point(o.userData.bone));if(o instanceof AxesHelper)o.quaternion.copy(this.rig!.bone(o.userData.bone).getWorldQuaternion(new Quaternion()));});
-  if(this.trail){this.trail.visible=this.debug.trail&&!!this.specOf(this.activeId).capabilities?.prop?.trail&&!!this.racket?.visible;if(this.trail.visible&&this.playing&&this.racket){const tip=this.racket.localToWorld(new Vector3(0,.61,0));if(!this.trailPoints.length||tip.distanceTo(this.trailPoints.at(-1)!)>.005){this.trailPoints.push(tip);if(this.trailPoints.length>200)this.trailPoints.shift();this.trail.geometry.dispose();this.trail.geometry=new BufferGeometry().setFromPoints(this.trailPoints);}}}
+  if(this.trail){this.trail.visible=this.debug.trail&&!!this.specOf(this.activeId).capabilities?.prop?.trail&&!!this.racket?.visible;if(this.trail.visible&&this.playing&&this.racket){const tip=this.racket.localToWorld(RACKET_TIP_LOCAL.clone());if(!this.trailPoints.length||tip.distanceTo(this.trailPoints.at(-1)!)>.005){this.trailPoints.push(tip);if(this.trailPoints.length>200)this.trailPoints.shift();this.trail.geometry.dispose();this.trail.geometry=new BufferGeometry().setFromPoints(this.trailPoints);}}}
  }
  private makeDebug(){
   if(!this.rig)return;

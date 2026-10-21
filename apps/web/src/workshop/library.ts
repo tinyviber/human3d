@@ -1,5 +1,5 @@
 import type {WorkshopDoc} from '@human3d/motion-core';
-import {blankDocument,canonicalizeHands,defaultDocument,newDocId,normalizeDoc,parseDoc} from '@human3d/motion-core';
+import {blankDocument,canonicalizeHands,defaultDocument,MOTION_FILES,newDocId,normalizeDoc,parseDoc} from '@human3d/motion-core';
 import type {Vector3} from 'three';
 
 /** Motion library: the workshop's persistent store. Multiple named documents
@@ -15,6 +15,15 @@ export interface QuarantineEntry{id:string;name:string;reason:string;raw:unknown
 export interface LibraryFile{schemaVersion:2;activeId:string;docs:WorkshopDoc[];quarantine:QuarantineEntry[]}
 export interface StorageLike{getItem(k:string):string|null;setItem(k:string,v:string):void;removeItem?(k:string):void}
 export const LIBRARY_KEY='kinesis-workshop-library';
+/** Only bundled trajectories have editable workshop keys. */
+export const WORKSHOP_PRESETS=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.document);
+/** The library's lead group: reusable basic actions (≤3 keys each) that the
+ * workshop inserts at the playhead. */
+export const BASIC_PRESETS=WORKSHOP_PRESETS.filter(f=>f.category==='basic');
+/** Tennis motions that declare the racket prop; the racket is a plugin they opt into. */
+export const RACKET_PRESETS=WORKSHOP_PRESETS.filter(f=>f.capabilities?.prop?.kind==='racket');
+/** Older bundled motions without a basic or racket tag (idle, reach, squat, ready). */
+export const OTHER_PRESETS=WORKSHOP_PRESETS.filter(f=>f.category!=='basic'&&!f.capabilities?.prop);
 
 function docIdTaken(docs:WorkshopDoc[],id:string){return docs.some(d=>d.id===id);}
 const nameOf=(raw:unknown)=>{const n=raw&&typeof raw==='object'?(raw as {name?:unknown}).name:undefined;return typeof n==='string'?n:'';};
@@ -77,6 +86,16 @@ export class MotionLibrary{
     let id=newDocId(trimmed);while(docIdTaken(this.docs,id))id=newDocId(trimmed);
     const doc=blankDocument(this.rest,trimmed,id);
     this.docs.push(doc);this.activeId=id;this.save();return doc;
+  }
+  /** Start an independent manual motion without mutating the bundled preset. */
+  createFromPreset(presetId:string,name=''){
+    const preset=WORKSHOP_PRESETS.find(f=>f.id===presetId);
+    if(!preset?.document)throw new Error('该预设没有可编辑的工作台轨迹，请选择关键帧动作。');
+    const copy=structuredClone(preset.document);
+    copy.name=name.trim()||`${preset.name} 副本`;
+    do{copy.id=newDocId(copy.name);}while(docIdTaken(this.docs,copy.id));
+    copy.keys.forEach((k,i)=>{k.id=`${copy.id}-k${i}`;});
+    this.docs.push(copy);this.activeId=copy.id;this.save();return copy;
   }
   duplicate(id:string){
     const src=this.docs.find(d=>d.id===id);if(!src)return undefined;

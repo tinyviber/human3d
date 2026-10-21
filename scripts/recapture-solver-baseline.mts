@@ -41,13 +41,15 @@ for(const id of IDS){
  // Keep the golden's own instant grid so pre/post files stay comparable.
  const old=JSON.parse(fs.readFileSync(sourceFile,'utf8')) as GoldenFile;
  const doc=motionFileById(id)!.document!;
- const root:number[][]=[],quats:number[][][]=[];
+ // `root` is the repo root above; the captured root track needs its own name
+ // (the block-scoped shadow made assertTrackedWriteAllowed hit the TDZ).
+ const rootTrack:number[][]=[],quats:number[][][]=[];
  for(const t of old.times){
   solveEffectiveFrame(rig,frameAt(doc,t,origin));
-  root.push(rig.bone('root').position.toArray());
+  rootTrack.push(rig.bone('root').position.toArray());
   quats.push(bones.map(n=>rig.bone(n).quaternion.toArray() as number[]));
  }
- const next:GoldenFile={schema:old.schema,id,times:old.times,root,bones,quats};
+ const next:GoldenFile={schema:old.schema,id,times:old.times,root:rootTrack,bones,quats};
  atomicWriteFile(file,JSON.stringify(next,null,2)+'\n');
  console.log(`${id}: recaptured ${old.times.length} instants × ${bones.length} bones from the current solver`);
 }

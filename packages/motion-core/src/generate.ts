@@ -19,6 +19,7 @@
  * Purity: three is used as a math library only; no DOM/node imports. The rig
  * is posed by the solver during evaluation — the same contract probeFrames
  * already has (it resets the rig when done). */
+import {RACKET_TIP_LOCAL} from './props/racket';
 import {Vector3} from 'three';
 import type {Object3D} from 'three';
 import type {HumanRig} from './rig';
@@ -101,8 +102,8 @@ const cloneDoc=(d:WorkshopDoc):WorkshopDoc=>JSON.parse(JSON.stringify(d));
 
 /** Deterministic subsample: sample the source trajectory at `times` and
  * rebuild a document whose keys carry the sampled pose plus the GOVERNING
- * key's constraints (constraintsAt) and label. Doc-level fields carry over
- * verbatim; validateDocShape is asserted on the result — a bad instant list
+ * key's constraints (constraintsAt) and label. Doc-level fields and each
+ * sample's governing outgoing interpolation carry over; validateDocShape is asserted on the result — a bad instant list
  * throws instead of emitting a document the loader would quarantine. */
 export function subsampleDoc(doc:WorkshopDoc,times:number[],rest:ReadonlyMap<string,Vector3>):WorkshopDoc{
  const origin=rest.get('root')!;
@@ -111,10 +112,14 @@ export function subsampleDoc(doc:WorkshopDoc,times:number[],rest:ReadonlyMap<str
  const compiled=compileMotion(doc,origin);
  const out:WorkshopDoc={schemaVersion:2,id:`${doc.id}-sub`,name:`${doc.name} · 子采样`,
   english:`${doc.english} SUBSAMPLED`,duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
-  handFrames:{...doc.handFrames},keys:ts.map((t,i)=>({
-   id:`sub${i}`,time:t,label:keys[constraintsAt(keys,t).keyIndex].label??'',
-   pose:sampleMotion(compiled,t),constraints:{...constraintsAt(keys,t).constraints}}))};
+  handFrames:{...doc.handFrames},keys:ts.map((t,i)=>{
+   const sourceIndex=constraintsAt(keys,t).keyIndex,mode=keys[sourceIndex].interpolation;
+   return {id:`sub${i}`,time:t,label:keys[sourceIndex].label??'',
+    pose:sampleMotion(compiled,t),constraints:{...constraintsAt(keys,t).constraints},
+    ...(mode!==undefined?{interpolation:mode}:{})};
+  })};
  if(doc.clavicleLift!==undefined)out.clavicleLift=doc.clavicleLift;
+ if(doc.freeArms!==undefined)out.freeArms=doc.freeArms;
  if(doc.gripSide!==undefined)out.gripSide=doc.gripSide;
  const problems=validateDocShape(out);
  if(problems.length)throw new Error(`subsampleDoc 产出非法文档: ${problems.join('；')}`);
@@ -473,9 +478,9 @@ function docGates(ctx:GenMoveContext,src:WorkshopDoc,cand:WorkshopDoc):GenConstr
  rows.push({code:'key-set',ok:sk.length===ck.length&&sk.every((k,i)=>k.id===ck[i].id),
   detail:'关键帧 id 集合与排序一致'});
  rows.push({code:'doc-fields',ok:src.duration===cand.duration&&src.inbetweens===cand.inbetweens
-  &&src.loop===cand.loop&&src.gripSide===cand.gripSide&&src.clavicleLift===cand.clavicleLift
+  &&src.loop===cand.loop&&src.gripSide===cand.gripSide&&src.clavicleLift===cand.clavicleLift&&src.freeArms===cand.freeArms
   &&src.handFrames.L===cand.handFrames.L&&src.handFrames.R===cand.handFrames.R,
-  detail:'duration/inbetweens/loop/handFrames/gripSide/clavicleLift 原样'});
+  detail:'duration/inbetweens/loop/handFrames/gripSide/clavicleLift/freeArms 原样'});
  rows.push({code:'constraints-pattern',ok:sk.every((k,i)=>sameConstraints(k,ck[i])),
   detail:'逐键 plantL/plantR/grip/contact 深比较'});
  const pinned=sk.every((k,i)=>{
@@ -541,7 +546,7 @@ function solveCleanGate(srcFailures:Map<string,CheckFailure>,candFrames:ProbeFra
  * tip.localToWorld(0,.61,0). The rig is left solved; callers reset after. */
 const tipPosAt=(rig:HumanRig,compiled:CompiledMotion,tip:ProbeTip,t:number)=>{
  solveEffectiveFrame(rig,frameAtCompiled(compiled,t));
- return tip.localToWorld(new Vector3(0,.61,0));
+ return tip.localToWorld(RACKET_TIP_LOCAL.clone());
 };
 
 /** Verify the exact Object3D returned by attachRacket is still mounted on

@@ -1,4 +1,5 @@
 import {describe,it,expect,beforeAll} from 'vitest';
+import {RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import fs from 'node:fs';
 import {Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -92,6 +93,9 @@ describe('mirrorDoc — round-trip involution',()=>{
   const {keys,...head}=base;                       // keys is the last field — rebuild in canonical order
   const lDoc=parseDoc(JSON.stringify({...head,gripSide:'L',keys}));
   expect(lDoc.gripSide).toBe('L');
+  expect(serializeDoc(mirrorDoc(mirrorDoc(lDoc)))).toBe(serializeDoc(lDoc));
+  lDoc.keys[1].interpolation='linear';
+  expect(mirrorDoc(lDoc).keys[1].interpolation).toBe('linear');
   expect(serializeDoc(mirrorDoc(mirrorDoc(lDoc)))).toBe(serializeDoc(lDoc));
   for(const seed of [7,42,1234]){
    const d=randomDoc(mulberry32(seed),rig.rest);    // seeded sweep: loops, mixed handFrames, some 'L'
@@ -230,7 +234,7 @@ describe('mirrorDoc — grip side and parse boundary',()=>{
   const doc=shipDoc('forehand'),m=mirrorDoc(doc);
   expect(m.gripSide).toBe('L');
   const rR=attachRacket(rig,'R'),rL=attachRacket(rig,'L');
-  const world=(racket:typeof rR)=>({o:racket.getWorldPosition(new Vector3()),tip:racket.localToWorld(new Vector3(0,.61,0)),q:racket.getWorldQuaternion(new Quaternion())});
+  const world=(racket:typeof rR)=>({o:racket.getWorldPosition(new Vector3()),tip:racket.localToWorld(RACKET_TIP_LOCAL.clone()),q:racket.getWorldQuaternion(new Quaternion())});
   solved(doc,.5);const R=world(rR);
   solved(m,.5);const L=world(rL);
   expect(rL.parent?.name).toBe('wrist_L');

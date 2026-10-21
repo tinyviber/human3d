@@ -176,7 +176,9 @@ components:
                 (`parameters` in GET /v1/actions/{actionId}). Bundled actions
                 accept only `{}`. `workshop-doc` requires `document`: WorkshopDoc
                 JSON (named keyframes with pose targets and plant/grip/contact
-                constraints; optional document flags such as `clavicleLift` and
+                constraints; each key may set `interpolation` to `hermite`
+                (default) or `linear`; optional `freeArms: true` disables arm/elbow/wrist
+                anatomical bend clamps for authoring; optional flags such as `clavicleLift` and
                 `gripSide` — 'R'|'L', default 'R', which hand holds the racket;
                 at most 10 s and 120 keys). `schemaVersion` must be 2: older
                 documents are refused with 400 `validation_failed`, never
@@ -208,7 +210,7 @@ components:
         id: {type: string}
         revision:
           type: string
-          description: "workshop-doc-<first 12 hex digits of definitionSHA256> for bundled actions; workshop-doc/v2 for the client-supplied document action."
+          description: "workshop-doc-<first 12 hex digits of definitionSHA256> for bundled actions; workshop-doc/v4 for the client-supplied document action."
         definitionSHA256:
           type: [string, 'null']
           description: Hash of the resolved action definition; null for client-supplied documents, whose hash is computed per request.

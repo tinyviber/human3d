@@ -9,16 +9,37 @@
 .ws-header .brand small{font-size:10px;color:var(--muted);margin-left:10px;letter-spacing:.04em}
 .ws-header nav a{display:flex;align-items:center;gap:6px;font-size:13px;color:var(--fg-2)}
 .ws-header nav a:hover{color:var(--blue);text-decoration:none}
-.ws-main{display:grid;grid-template-columns:250px minmax(0,1fr) 272px;min-height:0}
+.ws-main{display:flex;min-height:0;min-width:0}
+.ws-main>[data-panel]{min-width:0;height:100%}
+.ws-library-panel,.ws-inspector-panel{overflow:hidden}
+.ws-left,.ws-right{height:100%}
+.ws-stage{min-width:0;height:100%}
+.ws-viewport{height:100%}
+.ws-viewport{flex:1;min-width:320px}
 .ws-left,.ws-right{background:var(--surface);overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin}
 .ws-left{border-right:1px solid var(--line)}
 .ws-right{border-left:1px solid var(--line)}
 .ws-card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 15px}
+.ws-key-card{display:flex;flex:0 0 auto;flex-direction:column;min-height:0}
+.ws-key-card>h2{flex:0 0 auto}
+.ws-adjustment-tabs{display:flex;flex:0 0 auto;gap:4px;margin:0 0 8px;padding:3px;background:var(--pill);border-radius:6px}
+.ws-adjustment-tabs button{flex:1;min-width:0;padding:6px 3px;border-radius:4px;color:var(--fg-2);font-size:10px;white-space:nowrap}
+.ws-adjustment-tabs button[aria-pressed=true]{background:var(--card);color:var(--blue);box-shadow:var(--seg-edge)}
+.ws-key-panel{flex:0 1 auto;min-height:220px;max-height:max(220px,calc(100dvh - 460px));overflow-y:auto;overscroll-behavior:contain;padding-right:3px;scrollbar-width:thin}
 .ws-card h2{font-size:13px;font-weight:600;display:flex;align-items:baseline;justify-content:space-between;margin-bottom:10px}
 .ws-card h2 small{font-size:9px;color:var(--muted);font-weight:400}
 .ws-card h3{font-size:11px;font-weight:600;color:var(--fg-2);margin:0 0 8px;display:flex;justify-content:space-between;align-items:baseline}
 .ws-card h3 small{font-size:9px;color:var(--muted);font-weight:400}
 .ws-sub{margin-top:14px;padding-top:12px;border-top:1px dashed var(--line)}
+.ws-preset-entry{margin:-2px 0 12px;padding:9px;background:#f5f8ff;border:1px solid #e0eaff;border-radius:6px}
+.ws-preset-entry .ws-field{margin:0 0 8px}
+.ws-preset-entry .ws-field span{width:54px}
+.ws-preset-start{width:100%;min-height:34px;display:flex;align-items:center;justify-content:center;gap:6px;border-radius:5px;background:var(--blue);color:#fff;font-size:11px;font-weight:600}
+.ws-preset-start:hover:not(:disabled){background:#1257d4;color:#fff}
+.ws-limb-side{margin-top:10px}
+.ws-vector-control{margin:10px 0 12px;padding-top:8px;border-top:1px dashed #e3e8f0}
+.ws-vector-control>strong{display:block;margin-bottom:5px;color:#52637c;font-size:10px;font-weight:600}
+.ws-limb-controls>.ws-note{margin:0 0 8px}
 .ws-generation-locked .ws-left>.ws-card:not(.ws-generator),.ws-generation-locked .ws-right,.ws-generation-locked .ws-footer{pointer-events:none;opacity:.48;user-select:none}
 .ws-generator{border-color:var(--line);background:linear-gradient(160deg,var(--card) 0%,var(--card) 100%)}
 .ws-generator>h2{color:var(--accent)}
@@ -93,6 +114,24 @@
 .ws-lib-name>span{display:block;font-size:11px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .ws-lib-name small{font-size:9px;color:var(--muted)}
 .ws-lib-row.sel .ws-lib-name{color:var(--blue)}
+
+.ws-keyframes{flex-shrink:0}
+.ws-keyframe-list{max-height:240px;overflow-y:auto;overscroll-behavior:contain;scrollbar-width:thin}
+.ws-keyframe-row{display:flex;align-items:center;gap:2px;border-bottom:1px solid var(--line-2)}
+.ws-keyframe-row:last-child{border-bottom:0}
+.ws-keyframe-row.sel{background:var(--sel);border-radius:5px}
+.ws-keyframe-select{flex:1;min-width:0;display:flex;align-items:center;gap:6px;text-align:left;padding:7px 4px;color:var(--fg-2);border-radius:4px}
+.ws-keyframe-select:hover,.ws-keyframe-row.sel .ws-keyframe-select{color:var(--blue)}
+.ws-keyframe-index{flex:0 0 15px;text-align:center;color:var(--muted);font-size:9px;font-variant-numeric:tabular-nums}
+.ws-keyframe-name{flex:1;min-width:0}
+.ws-keyframe-name strong{display:block;font-size:11px;font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.ws-keyframe-name small{display:block;margin-top:2px;color:var(--muted);font-size:9px;font-variant-numeric:tabular-nums}
+.ws-keyframe-icon{flex:0 0 22px;height:28px;display:grid;place-items:center;border-radius:4px;color:var(--muted)}
+.ws-keyframe-icon:hover:not(:disabled){color:var(--blue);background:var(--sel)}
+.ws-keyframe-icon.danger:hover:not(:disabled){color:var(--red);background:var(--red-soft)}
+.ws-keyframe-icon:disabled{opacity:.3;cursor:default}
+.ws-keyframe-actions button{flex:1;justify-content:center}
+.ws-key-metadata{padding-bottom:8px;margin-bottom:8px;border-bottom:1px dashed var(--line)}
 .ws-newname{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:6px 8px;font-size:11px;background:var(--card)}
 .ws-video-pick{width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;padding:26px 10px;border:1.5px dashed var(--faint);border-radius:7px;color:var(--muted);font-size:11px}
 .ws-video-pick:hover{color:var(--blue);border-color:var(--blue)}
@@ -126,14 +165,14 @@
 .ws-key.contact{border-color:#f0b429}
 .ws-key.contact.sel{background:#f0b429}
 .ws-track-labels{position:relative;height:22px;margin-top:6px}
-.ws-track-labels button{position:absolute;transform:translateX(-50%);font-size:9px;color:var(--muted);white-space:nowrap;padding:2px 4px;border-radius:3px}
+.ws-track-labels button{position:absolute;transform:translateX(-50%);max-width:90px;overflow:hidden;text-overflow:ellipsis;font-size:9px;color:var(--muted);white-space:nowrap;padding:2px 4px;border-radius:3px}
 .ws-track-labels button.sel{color:var(--blue);font-weight:600}
 .ws-track-labels button:hover{color:var(--blue);background:var(--pill-hover)}
 .ws-actions{display:flex;flex-direction:column;gap:7px}
 .ws-actions button{display:inline-flex;align-items:center;gap:6px;font-size:11px;color:var(--fg-2);border:1px solid var(--line);border-radius:6px;padding:8px 12px;white-space:nowrap}
 .ws-actions button:hover{color:var(--blue);border-color:var(--line)}
 .ws-actions button.on{background:var(--sel);color:var(--blue);border-color:var(--line)}
-@media(max-width:1100px){.ws-main{grid-template-columns:220px minmax(0,1fr) 236px}}
+@media(max-width:1100px){.ws-left,.ws-right{padding:14px 12px}}
 
 .ws-drag{width:18px;height:22px;display:grid;place-items:center;color:var(--faint);cursor:grab;flex-shrink:0;padding:0;border-radius:4px}
 .ws-drag:active{cursor:grabbing}

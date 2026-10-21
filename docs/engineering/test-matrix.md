@@ -8,7 +8,7 @@
 |---|---|---|---|---|
 | 文档/索引/约定 | `docs/**`、各 `AGENTS.md`、README | L0 | diff + `npm run docs:check` | 触及代码注释里被引用的路径时按对应域升级 |
 | core 文档模型/采样 | `packages/motion-core/src/document.ts`、`motion-file*.ts`、`motions.ts` | L3 | `apps/web/src/workshop/workshop.test.ts`、`apps/web/src/workshop/mirror.test.ts`、`packages/motion-core/src/grip-side.test.ts`、`regressions.test.ts` + `tsc -b` | 求解输出变化 → `SERVICE_VERSION` bump + golden/探针全量 |
-| core 求解/几何 | `solver.ts`、`kinematics.ts`、`rig.ts`、`hand-frame.ts`、`foot.ts`、`racket.ts`、`limits.ts` | L3 | `kinematics.test.ts`、`solver-hints.test.ts`、`grip-side.test.ts`、`quality.test.ts`、`solver-baseline.test.ts` | 真实路径验证不可省（review-gates L3） |
+| core 求解/几何 | `solver.ts`、`kinematics.ts`、`rig.ts`、`hand-frame.ts`、`foot.ts`、`props/racket.ts`、`grip.ts`、`limits.ts` | L3 | `kinematics.test.ts`、`solver-hints.test.ts`、`grip-side.test.ts`、`quality.test.ts`、`solver-baseline.test.ts` | 真实路径验证不可省（review-gates L3） |
 | 协议/姿态包/导出 | `protocol.ts`、`pose-package.ts`、`package-const.ts`、`package-inspect.ts`、`package-export.ts`、`glb-export.ts`、`validate.ts`（core 内） | L3 | `package-export.test.ts`、`glb-export.test.ts`、`validate.test.ts`、`property.test.ts`、`compiled.test.ts` + `npm run spec:check` | 改 `spec/` 契约按「spec/协议」行 |
 | 生成器/质量度量 | `generate.ts`、`quality-probe.ts`、`random-document.ts`、`semantic-map.ts`、`muscle-action.ts` | L2–L3 | `generate.test.ts`、`compiled.test.ts`、`quality.test.ts`（低资源加 `--maxWorkers=1`） | 度量语义变化 → evidence 基线重生成 |
 | web 工作台 | `apps/web/src/workshop/` | L3（交互） | `workshop.test.ts`、`mirror.test.ts`；真实交互路径按 [../domain/workshop.md](../domain/workshop.md) 补 QA 断言 | 持久化/撤销/写路径 → 浏览器 QA |
@@ -17,6 +17,7 @@
 | spec/契约文本 | `spec/*.schema.json`、`spec/openapi.yaml`、`spec/examples/` | L3 | `npm run spec:check` | golden 变化要逐位审 diff（[../decisions/0007-golden-plaintext.md](../decisions/0007-golden-plaintext.md)） |
 | 包边界/结构 | 跨包导入、`package.json` 依赖、`tsconfig` | L2 | `tests/architecture.test.ts` + `tsc -b` | 公共入口/包配置 → 保守扩大（fail-open） |
 | 动力学资产/工具链 | `assets/motions/`、`assets/dynamics/`、`scripts/*.py`、`public/dynamics/` | L2 | `npm run dynamics:validate`、`dynamics:test`（需 `.venv-dynamics`） | 信封字段 → `motion-files` 相关测试 |
+| 持拍动作资产/生成器 | `assets/motions/forehand.json`、`assets/motions/*-forehand.json`、`scripts/generate-player-forehands.mts`、`scripts/lib/forehand-arms.mts`、`scripts/lib/forehand-depth.mts`、`evidence/forehand-depth.json` | L3（运动语义） | `apps/web/src/lab/pose-validity.test.ts`（全部持拍动作每键 + 16 等分：无 145° 肘钳位、无手臂—躯干交叉）、`scripts/forehand-depth.test.ts`（引拍深度 ±1.5 cm、击球段屈膝损失 ≤ 0.6 cm、后踝 ≤ 20.05°、服务 40/60 Hz 无 422、根加速度 ≤ 36、滑移 ≤ 9 mm）、`npx tsx scripts/measure-player-forehands.mts`、`kinematics.test.ts` | 改 `forehand.json` → 另跑 `solver-baseline.test.ts`/`quality.test.ts`/`service.test.ts` 并以 `--update-evidence` 重捕获 golden 与 `evidence/quality-probe-*`；信封 notes/description 变化 → `service.test.ts`、`motion-source.test.ts` |
 | CI/工具/脚本 | `.github/workflows/`、`scripts/*.mjs`/`*.mts`、`tests/` | L2 | `tsc -b`、受影响脚本定向跑、`tests/*.test.ts` | 依赖/构建行为 → `npm run build` |
 | evidence 基线 | `evidence/**` | L1 | 对应测量脚本重跑（`measure-quality-probe.mts`/`bench`/`generate-motion.mts`） | 只写既有基线外的新文件需 review 确认 |
 

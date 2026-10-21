@@ -1,5 +1,5 @@
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
-import {attachRacket,generateMotion,HumanRig} from '@human3d/motion-core';
+import {attachProp,generateMotion,HumanRig} from '@human3d/motion-core';
 import type {RigInfo} from '@human3d/motion-core';
 import type {GenerateWorkerReply,GenerateWorkerRequest,MotionGenSummary} from './generation-protocol';
 
@@ -24,7 +24,7 @@ worker.onmessage=async(event:MessageEvent<GenerateWorkerRequest>)=>{
   const info=await response.json() as RigInfo;
   const rig=new HumanRig(gltf.scene,info);
   const grip=request.doc.gripSide==='L'?'L':'R';
-  const racket=attachRacket(rig,grip);
+  const racket=attachProp(rig,'racket',grip);
   const result=generateMotion(rig,{
    doc:request.doc,
    lockedKeyIds:request.lockedKeyIds,
