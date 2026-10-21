@@ -3,7 +3,8 @@
  * `worldLandmarks`, through the same local browser tool used for visual
  * comparison (`research/forehand-retargeting/pose-debugger`).
  *
- *   npx tsx scripts/measure-forehand-depth.mts [--write] [--json]
+ *   npx tsx scripts/measure-forehand-depth.mts [球员 id…] [--write] [--json]
+ *   npx tsx scripts/measure-forehand-depth.mts --all [--write] [--json]
  *
  * Sampling: 10 Hz over each selected window (±6 s around the profile's key
  * frames), analysed by `scripts/lib/forehand-depth.mts`. The report is written
@@ -19,6 +20,7 @@ import {spawn} from 'node:child_process';
 import {fileURLToPath} from 'node:url';
 import {chromium} from 'playwright';
 import {analyzePlayer, readFrame} from './lib/forehand-depth.mts';
+import {mergeSelectedProfiles} from './lib/forehand-depth-report.mts';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const debuggerRoot = path.join(root, 'research/forehand-retargeting/pose-debugger');
@@ -39,7 +41,10 @@ declare global {
 const args = process.argv.slice(2);
 const write = args.includes('--write');
 const json = args.includes('--json');
+const all = args.includes('--all');
 const only = args.filter(arg => !arg.startsWith('--'));
+if (all && only.length) throw new Error('--all cannot be combined with player ids');
+if (write && !all && !only.length) throw new Error('--write requires player ids for a partial update or --all for a full replacement');
 
 /** Serve the research tool on an ephemeral port so parallel runs never collide. */
 function startServer(): Promise<{port: number; stop: () => void}> {
@@ -61,6 +66,7 @@ function startServer(): Promise<{port: number; stop: () => void}> {
 }
 
 const landmarks = JSON.parse(fs.readFileSync(landmarksPath, 'utf8')) as Landmarks;
+for (const id of only) if (!landmarks.profiles[id]) throw new Error(`unknown player id: ${id}`);
 const profiles = Object.entries(landmarks.profiles)
   .filter(([id]) => !only.length || only.includes(id))
   .filter(([, profile]) => {
@@ -135,6 +141,12 @@ const report = {
 };
 if (json) console.log(JSON.stringify(report, null, 1));
 if (write) {
-  fs.writeFileSync(evidencePath, `${JSON.stringify(report, null, 1)}\n`);
+  let output = report;
+  if (!all && only.length) {
+    if (!fs.existsSync(evidencePath)) throw new Error(`cannot update selected profiles: ${path.relative(root, evidencePath)} does not exist; run with --all first`);
+    const previous = JSON.parse(fs.readFileSync(evidencePath, 'utf8'));
+    output = mergeSelectedProfiles(previous, report, only);
+  }
+  fs.writeFileSync(evidencePath, `${JSON.stringify(output, null, 1)}\n`);
   console.log(`wrote ${path.relative(root, evidencePath)}`);
 }

@@ -87,6 +87,19 @@ describe('insertBasicAction',()=>{
   expect(validateDocShape(doc)).toEqual([]);
  });
 
+ it('ripples dense keys after the insertion boundary, including a key only 5 ms later',()=>{
+  const doc=docOf('idle');
+  doc.keys=doc.keys.slice(0,2);
+  doc.keys[0].time=0;doc.keys[1].time=1;doc.duration=1.2;
+  const dense=structuredClone(doc.keys[0]);dense.id='dense';dense.time=.005;
+  doc.keys.push(dense);doc.keys.sort((a,b)=>a.time-b.time);
+  const original=structuredClone(doc.keys);
+  const ins=insertBasicAction(doc,basicOf('basic-lunge'),0,origin())!;
+  expect(keyAt(doc,'dense')!.time).toBeCloseTo(.005+ins.span,9);
+  expect(keyAt(doc,original[2].id)!.time).toBeCloseTo(1+ins.span,9);
+  expect(validateDocShape(doc)).toEqual([]);
+ });
+
  it('lunge: the lead foot steps forward, holds, and is released at the last key',()=>{
   const doc=docOf('roger-federer-forehand');
   const rightBefore=frameAt(doc,.5,origin()).constraints.plantR;
@@ -102,6 +115,16 @@ describe('insertBasicAction',()=>{
   // The trailing foot is not moved by the action: it keeps the state's contact.
   expect(k0.constraints.plantR).toBe(rightBefore);
   expect(k2.constraints.plantR).toBe(rightBefore);
+  expect(validateDocShape(doc)).toEqual([]);
+ });
+
+ it('preserves a planted reused anchor when inserting a lunge',()=>{
+  const doc=docOf('idle');
+  const anchor=doc.keys[0];anchor.time=0;anchor.constraints.plantL=true;anchor.constraints.plantR=true;
+  const original=structuredClone(anchor.constraints);
+  const ins=insertBasicAction(doc,basicOf('basic-lunge'),0,origin())!;
+  expect(ins.keyIds[0]).toBe(anchor.id);
+  expect(keyAt(doc,anchor.id)!.constraints).toEqual(original);
   expect(validateDocShape(doc)).toEqual([]);
  });
 

@@ -4,6 +4,7 @@ import {Quaternion,Vector3} from 'three';
 import {frameAt,measurePackage,MOTION_FILES,solveEffectiveFrame,validatePosePackage,type PosePackage,type WorkshopDoc} from '@human3d/motion-core';
 import {createService,handleRequest,type ServiceContext} from '../apps/server/src/service';
 import {analyzePlayer,depthTargets,phaseMedians,PRESET_KEYS,readFrame} from './lib/forehand-depth.mts';
+import {mergeSelectedProfiles} from './lib/forehand-depth-report.mts';
 
 /** Issue #17 contract for the 17 generated forehand presets, checked through
  * the real service (POST /v1/motions → solveWorkshop → validatePosePackage)
@@ -83,6 +84,31 @@ describe('forehand depth study (pure analysis)',()=>{
   const report=analyzePlayer(rows,[.2,.6,1,1.4,1.8]);
   expect(report.flagCounts['off-frame']).toBe(5);
   expect(report.frames.filter((f:{flags:string[]})=>f.flags.includes('off-frame')).map((f:{time:number})=>Math.round(f.time*10))).toEqual([8,9,10,11,12]);
+ });
+ it('does not count smoothed values from a consecutive off-frame block as usable samples',()=>{
+  const rows=[];
+  for(let i=0;i<20;i++){const p=pose(.8,0,{offFrame:i>=8&&i<=18});rows.push(readFrame(p.world,i*.1,p.image));}
+  const report=analyzePlayer(rows,[.2,.6,1,1.4,1.8]);
+  expect(report.frames[10].smoothedRatio).not.toBeNull(); // neighbour smoothing still describes the gap
+  expect(report.frames[10].flags).toContain('off-frame');
+  expect(report.usable).toBe(9);
+  expect(report.phases.contact).toBeNull(); // only one genuine sample remains in this window
+ });
+ it('does not let a low-visibility gap manufacture the minimum phase sample count',()=>{
+  const rows=[];
+  for(let i=0;i<20;i++){
+   const p=pose(.8);
+   if(i>=2)for(const index of [23,25,27,24,26,28])p.world[index].visibility=.1;
+   rows.push(readFrame(p.world,i*.1,p.image));
+  }
+  const report=analyzePlayer(rows,[.2,.6,1,1.4,1.8]);
+  expect(report.usable).toBe(2);
+  expect(report.phases.ready).toBeNull();
+ });
+ it('merges selected player updates without dropping other evidence profiles',()=>{
+  const old={generated:'old',profiles:{a:{value:1},b:{value:2},c:{value:3}}};
+  const update={generated:'new',profiles:{b:{value:20}}};
+  expect(mergeSelectedProfiles(old,update,['b'])).toEqual({generated:'new',profiles:{a:{value:1},b:{value:20},c:{value:3}}});
  });
  it('derives targets that never exceed the takeback and replace lost phases with the cross-player median',()=>{
   const lost={measurable:true,phases:{ready:{depthCm:9,frames:9},takeback:{depthCm:5,frames:7},contact:null,follow:{depthCm:2,frames:2},recover:{depthCm:-1,frames:9}}};

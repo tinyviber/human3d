@@ -145,7 +145,10 @@ export function analyzePlayer(frames, phases) {
     row.smoothedRatio = median(window.map(other => other.ratio));
     row.smoothedKnee = median(window.map(other => other.kneeFlexion));
   }
-  const usable = rows.filter(row => row.smoothedRatio != null);
+  // Smoothing fills a value for every row with nearby clean neighbours, but
+  // flagged source frames are not observations. Keep them out of every
+  // statistic and minimum-frame count even when an interpolated value exists.
+  const usable = rows.filter(row => !row.flags.length && row.smoothedRatio != null);
   if (!usable.length) {
     return {
       standingRatio: null, samples: rows.length, usable: 0, flagged: rows.length,

@@ -97,11 +97,13 @@ export function insertBasicAction(doc:WorkshopDoc,basic:WorkshopDoc,time:number,
 
   const keyIds:string[]=[];
   const insertedFrom=anchor?1:0;
-  const shifted=doc.keys.filter(k=>k.time>start+BASIC_ANCHOR_EPS);
+  // The insertion point is the boundary: even keys only a few milliseconds
+  // later belong to the old timeline and must ripple with the rest.
+  const shifted=doc.keys.filter(k=>k!==anchor&&k.time>start);
   for(const k of shifted)k.time+=span;
   doc.duration+=span;
   if(anchor){
-   anchor.constraints={...anchor.constraints,plantL:plant('L',0),plantR:plant('R',0)};
+   // Reusing an existing key must not rewrite its authored support semantics.
    keyIds.push(anchor.id);
   }
   for(let j=insertedFrom;j<seq.length;j++){

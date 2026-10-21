@@ -69,14 +69,16 @@ describe('peer parity — document shapes',()=>{
   expect(bounded.served.status).toBe(200);
   expect((free.built.body as PosePackage).tracks).not.toEqual((bounded.built.body as PosePackage).tracks);
  });
- it('free elbows beyond delivery limits receive the same semantic rejection on both peers',async()=>{
+ it('free elbows beyond the ordinary limit export under the explicit free-arm policy',async()=>{
   const d=blankDocument(rig.rest,'自由肘','free-elbow');d.freeArms=true;
   solveEffectiveFrame(rig,frameAt(d,0,rig.rest.get('root')!));
   const shoulder=rig.point('upperarm01_R');
   d.keys.forEach(k=>{k.pose.handR.target={x:shoulder.x,y:shoulder.y-.08,z:shoulder.z};});
   const {built}=await parity(wire(d));
-  expect(built.status).toBe(422);
-  expect((built.body as {error:{details:string[]}}).error.details.some(e=>e.includes('elbow flexion'))).toBe(true);
+  expect(built.status).toBe(200);
+  const pkg=built.body as PosePackage;
+  expect(pkg.action.parameters.presentation).toMatchObject({freeArms:true});
+  expect(pkg.quality.checks.find(c=>c.code==='elbow-flexion-R')?.value).toBeGreaterThan(145);
  });
  it('defaultDocument',()=>parity(wire(defaultDocument(rig.rest))));
  it('pelvis handFrames with rotated pelvis',()=>{

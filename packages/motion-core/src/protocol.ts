@@ -109,14 +109,15 @@ export interface WorkshopMetaArgs{
   * only — 'R' is the absent default). `parameters` is an open object in the
   * schema and never enters the artifact hash — the solve-affecting copy of
   * the side already lives inside parameters.document for the fingerprint. */
- prop?:boolean;loop?:boolean;gripSide?:'L'|'R';
+ prop?:boolean;loop?:boolean;gripSide?:'L'|'R';freeArms?:boolean;
  source:string;license:string;requestFingerprint:string;
  fps:number;duration:number;keys:number;notes?:string[];
 }
 export function workshopMeta(a:WorkshopMetaArgs){
  const parameters=a.documentName===undefined?{}:
   {documentName:a.documentName,presentation:{...(a.prop?{prop:'racket' as const}:{}),
-   ...(a.prop&&a.gripSide==='L'?{gripSide:'L' as const}:{}),loop:a.loop===true}};
+   ...(a.prop&&a.gripSide==='L'?{gripSide:'L' as const}:{}),loop:a.loop===true,
+   ...(a.freeArms?{freeArms:true}:{})}};
  return {motionId:a.motionId,manifestSHA256:a.manifestSHA256,bones:a.bones,
   action:{id:a.actionId,revision:a.revision,parameters,definitionSHA256:a.definitionSHA256},
   provenance:{solver:SOLVER_NAME,solverRevision:SERVICE_VERSION,source:a.source,requestFingerprint:a.requestFingerprint,
