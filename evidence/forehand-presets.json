@@ -4,7 +4,7 @@
   "generator": "scripts/generate-player-forehands.mts",
   "solver": {
     "name": "workshop-hermite-fk-ik",
-    "serviceVersion": "0.7.0"
+    "serviceVersion": "0.8.0"
   },
   "gates": {
     "ankleMaxDeg": 20.05,
@@ -138,7 +138,7 @@
     },
     "roger-federer-forehand": {
       "file": "assets/motions/roger-federer-forehand.json",
-      "sha256": "8ae2e239ddfaa0ec115a8d8125e2a5b63d6857e69acefcc0723785552eef8b40",
+      "sha256": "c98eab00f5c0a8e7cde309f42e039650d67caa56bae2841d04121650719b850f",
       "takeback": {
         "rawCm": 0,
         "targetCm": 8,
@@ -228,7 +228,7 @@
     },
     "carlos-alcaraz-forehand": {
       "file": "assets/motions/carlos-alcaraz-forehand.json",
-      "sha256": "04b160bdbdd1b1c0c75c3ddc91fba9758354f36af9492644b9e89d1532b7ce8f",
+      "sha256": "878abceb8f38747d3389155e56800ea19f11f88bb9c7ad080a0f8de0f5f3004f",
       "takeback": {
         "rawCm": 7.3,
         "targetCm": 8,
@@ -318,7 +318,7 @@
     },
     "alexander-zverev-forehand": {
       "file": "assets/motions/alexander-zverev-forehand.json",
-      "sha256": "32a252a7715766b611a04389da2360fe0c8507dfe58e0ba1a231561c616a1b66",
+      "sha256": "ed4375f7a532b68e2664cae83c2dd679d30c35fb922a12b73a47d2bfe65b4837",
       "takeback": {
         "rawCm": 4.1,
         "targetCm": 8,
@@ -498,7 +498,7 @@
     },
     "ben-shelton-forehand": {
       "file": "assets/motions/ben-shelton-forehand.json",
-      "sha256": "ea56f24e7a74f9cb611035a41bdaec3032f911f2f008dfbce3b4008bb4e3503d",
+      "sha256": "061d376e64b676e3c175e71253de34751b379457903baa3ee7a15d6f25a63d49",
       "takeback": {
         "rawCm": 2.6,
         "targetCm": 8,
@@ -664,7 +664,7 @@
     },
     "frances-tiafoe-forehand": {
       "file": "assets/motions/frances-tiafoe-forehand.json",
-      "sha256": "a625b4edd189a6a0801def22987d94b1ccdb7ae04abeb21adcc48577117e65e6",
+      "sha256": "6e584ed57fd50a4fdaab812f262b4e16fb2569030ef79c1f1bdf0dfa2f690fc2",
       "takeback": {
         "rawCm": 1.3,
         "targetCm": 8,
@@ -850,7 +850,7 @@
     },
     "alex-de-minaur-forehand": {
       "file": "assets/motions/alex-de-minaur-forehand.json",
-      "sha256": "e9fe782c710720cbe95b2b1295fe7dcdfe64f2bf2ee32ea50e894d65927b6370",
+      "sha256": "f717a22c22fdedc9f18a0f7209e83406caab43eee7e537bf3aaf9e4252c39bab",
       "takeback": {
         "rawCm": 2.4,
         "targetCm": 8,
@@ -1106,7 +1106,7 @@
     },
     "marin-cilic-forehand": {
       "file": "assets/motions/marin-cilic-forehand.json",
-      "sha256": "6647ec2e56f7e2fa449f45e0fe6d27096e6eeb34cef6d8c23c36aff066e0e07b",
+      "sha256": "00280f11de68b384282d864e03bfc664358d4a85b7b338204e711c6af6460260",
       "takeback": {
         "rawCm": 1.2,
         "targetCm": 8,
@@ -1208,7 +1208,7 @@
     },
     "karen-khachanov-forehand": {
       "file": "assets/motions/karen-khachanov-forehand.json",
-      "sha256": "9c7c94fcc79892c88154128cf266e24798f4f3279d16303e1dd5938ff775e88f",
+      "sha256": "cd272bb2a7705eb000c23b8aba48a8a116dbce3c36f5ca602d82a2de4ade050a",
       "takeback": {
         "rawCm": 0,
         "targetCm": 8,
@@ -1298,7 +1298,7 @@
     },
     "jakub-mensik-forehand": {
       "file": "assets/motions/jakub-mensik-forehand.json",
-      "sha256": "6fd8a48a0f0709fd6b86b3933f8f0a7f9dfc8fd2d9f3182b737dcddc1ee0cece",
+      "sha256": "3701f3e1cc0cd54832863e14e1ab77d63c0a639d156f9cb44f9d9fa92b24c689",
       "takeback": {
         "rawCm": 1.3,
         "targetCm": 8,
@@ -1381,7 +1381,7 @@
     },
     "ignacio-buse-forehand": {
       "file": "assets/motions/ignacio-buse-forehand.json",
-      "sha256": "4999e32bb72046c6672a2562b19c7606d5f66c55a232e236ea34ee0c6d3fff21",
+      "sha256": "bf754e1bcc8e3c14c5319a7c36c7ff51c2ce3f283a998931cc6fb8c17481d572",
       "takeback": {
         "rawCm": 5,
         "targetCm": 8,
