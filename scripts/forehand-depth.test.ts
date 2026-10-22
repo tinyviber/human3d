@@ -146,10 +146,9 @@ describe('generated forehand presets match the measured depth',()=>{
      expect(Math.abs(depth-fb.floorCm),note).toBeLessThanOrEqual(GATES.depthSlackCm);
      return;
     }
-    // Every other key follows its target; a near-upright target may solve up to the stance ceiling.
+    // Every other key follows its target from both sides; a near-upright target has no allowance.
     const note=`${at} ${depth.toFixed(2)} vs target ${targets[i].toFixed(2)}`;
-    expect(depth,note).toBeLessThanOrEqual(Math.max(targets[i],GATES.stanceFloorCm)+.05);
-    expect(depth,note).toBeGreaterThanOrEqual(targets[i]-.05);
+    expect(Math.abs(depth-targets[i]),note).toBeLessThanOrEqual(GATES.depthSlackCm);
    });
   }
  },120000);

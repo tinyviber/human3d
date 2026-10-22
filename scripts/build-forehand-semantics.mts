@@ -2,7 +2,10 @@
  * Build evidence/forehand-semantics.json from existing depth study + 2D
  * landmarks (bootstrap), or merge a video re-extract over the top.
  *
- *   npx tsx scripts/build-forehand-semantics.mts [--write]
+ *   npx tsx scripts/build-forehand-semantics.mts [--write | --check]
+ *
+ * --check rebuilds the report from the current inputs (depth study, 2D landmarks,
+ * overrides) and fails if the committed file differs, so a stale file cannot pass.
  *
  * Full video re-extract (preferred when overnight budget allows):
  *   npx tsx scripts/measure-forehand-semantics.mts --all --write
@@ -11,6 +14,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import {fileURLToPath} from 'node:url';
 import {median} from './lib/forehand-depth.mts';
+import {jsonDiff} from './lib/forehand-gates.mts';
 import {
   SEMANTICS_KIND, pushOffPitchFromExtension, stanceBoostForKnee,
   stanceMultiplierFromWidth, torsoArmFromOffSemantics,
@@ -18,8 +22,8 @@ import {
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const write = process.argv.includes('--write');
-const depth = JSON.parse(fs.readFileSync(path.join(root, 'evidence/forehand-depth.json'), 'utf8'));
-const landmarks = JSON.parse(fs.readFileSync(path.join(root, 'scripts/player-forehand-landmarks.json'), 'utf8'));
+const check = process.argv.includes('--check');
+const outPath = path.join(root, 'evidence/forehand-semantics.json');
 
 type Joint = {x: number; y: number; confidence: number};
 type Frame2d = {time: number; joints: Record<string, Joint>};
@@ -105,15 +109,25 @@ const handStance: Record<string, number> = {
   'jakub-mensik-forehand': 1.11, 'ignacio-buse-forehand': 1.04, 'felix-auger-aliassime-forehand': 1.12,
 };
 
-const profiles: Record<string, unknown> = {};
-// Hand-authored palm-roll data (racketHand) is an input, not carried over from this
-// builder's previous output: it lives in evidence/forehand-semantic-overrides.json (video
-// cross-check and the user's sweep). A rebuild from clean inputs therefore reproduces the file.
-const overridesPath = path.join(root, 'evidence/forehand-semantic-overrides.json');
-const overrides: Record<string, {racketHand?: unknown}> = fs.existsSync(overridesPath)
-  ? JSON.parse(fs.readFileSync(overridesPath, 'utf8')).profiles ?? {}
-  : {};
-for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][]) {
+export interface SemanticsInputs {
+  depth: any;
+  landmarks: any;
+  overrides: Record<string, {racketHand?: unknown}>;
+}
+
+/** Hand-authored palm-roll data (racketHand) is an input, not carried over from this
+ * builder's previous output: it lives in evidence/forehand-semantic-overrides.json (video
+ * cross-check and the user's sweep). A rebuild from clean inputs therefore reproduces the file. */
+export function loadOverrides(file: string): Record<string, {racketHand?: unknown}> {
+  return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf8')).profiles ?? {} : {};
+}
+
+/** The report for the given inputs. Pure: the same inputs always give the same profiles,
+ * so the committed file can be checked against them. `generated` is the only field that
+ * is not derived from the inputs. */
+export function buildSemanticsReport({depth, landmarks, overrides}: SemanticsInputs, generated: string) {
+  const profiles: Record<string, unknown> = {};
+  for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][]) {
   const lm = landmarks.profiles[id];
   const lefty = id.includes('shelton');
   const frames: Frame2d[] = lm?.frames ?? [];
@@ -309,19 +323,48 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
     fallback,
     racketHand: overrides[id]?.racketHand ?? null,
   };
+  }
+
+  return {
+    schemaVersion: 1,
+    kind: SEMANTICS_KIND,
+    method: 'bootstrap: 3D depth study (evidence/forehand-depth.json phases) + 2D keyframes (scripts/player-forehand-landmarks.json, confidence≥0.45); handedness from the player table (lefty = Shelton), no per-frame L/R detection; no 3D re-extract yet (measure-forehand-semantics.mts only wraps this builder)',
+    generated,
+    profiles,
+  };
 }
 
-const report = {
-  schemaVersion: 1,
-  kind: SEMANTICS_KIND,
-  method: 'bootstrap: 3D depth study (evidence/forehand-depth.json phases) + 2D keyframes (scripts/player-forehand-landmarks.json, confidence≥0.45); handedness from the player table (lefty = Shelton), no per-frame L/R detection; no 3D re-extract yet (measure-forehand-semantics.mts only wraps this builder)',
-  generated: new Date().toISOString().slice(0, 10),
-  profiles,
-};
-const outPath = path.join(root, 'evidence/forehand-semantics.json');
-if (write) {
-  fs.writeFileSync(outPath, `${JSON.stringify(report, null, 1)}\n`);
-  console.log(`wrote ${path.relative(root, outPath)} (${Object.keys(profiles).length} profiles)`);
-} else {
-  console.log(JSON.stringify({kind: report.kind, players: Object.keys(profiles).length, sample: profiles['felix-auger-aliassime-forehand']}, null, 2));
+/** Differences between the committed file and a rebuild, compared as the file is
+ * written: undefined fields are dropped by JSON, and the build date is ignored. */
+export function checkSemantics(committed: Record<string, unknown>, rebuilt: Record<string, unknown>): string[] {
+  const onDisk = (report: Record<string, unknown>) => {
+    const {generated: _date, ...rest} = JSON.parse(JSON.stringify(report)) as Record<string, unknown>;
+    return rest;
+  };
+  return jsonDiff(onDisk(committed), onDisk(rebuilt), 1e-9);
+}
+
+const isMain = process.argv[1] !== undefined && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+if (isMain) {
+  const inputs: SemanticsInputs = {
+    depth: JSON.parse(fs.readFileSync(path.join(root, 'evidence/forehand-depth.json'), 'utf8')),
+    landmarks: JSON.parse(fs.readFileSync(path.join(root, 'scripts/player-forehand-landmarks.json'), 'utf8')),
+    overrides: loadOverrides(path.join(root, 'evidence/forehand-semantic-overrides.json')),
+  };
+  const rebuilt = buildSemanticsReport(inputs, new Date().toISOString().slice(0, 10));
+  const count = Object.keys(rebuilt.profiles).length;
+  if (check) {
+    const committed = JSON.parse(fs.readFileSync(outPath, 'utf8'));
+    const diffs = checkSemantics(committed, rebuilt);
+    if (diffs.length) {
+      console.error(`${path.relative(root, outPath)} is stale against its inputs:\n  ${diffs.join('\n  ')}\nrun: npx tsx scripts/build-forehand-semantics.mts --write`);
+      process.exit(1);
+    }
+    console.log(`${path.relative(root, outPath)} matches its inputs (${count} profiles)`);
+  } else if (write) {
+    fs.writeFileSync(outPath, `${JSON.stringify(rebuilt, null, 1)}\n`);
+    console.log(`wrote ${path.relative(root, outPath)} (${count} profiles)`);
+  } else {
+    console.log(JSON.stringify({kind: rebuilt.kind, players: count, sample: rebuilt.profiles['felix-auger-aliassime-forehand']}, null, 2));
+  }
 }

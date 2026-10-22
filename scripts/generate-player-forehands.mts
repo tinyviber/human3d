@@ -211,13 +211,16 @@ function highestReachRoot(doc:WorkshopDoc,i:number,tol:number){
  for(let n=0;n<30;n++){const mid=(reach+over)/2;if(set(mid).miss<=tol)reach=mid;else over=mid;}
  return reach;
 }
-/** The stance floor of key `i` on the document as it ships: the shallowest depth
- * the feet reach with no margin, i.e. the root raised to the reach limit. It is
- * read after the ankle guard, because the guard moves the pelvis after placement
- * and can raise the floor (buse 随挥 placed at 3.30 cm ships at 3.38 cm). */
+/** The stance floor of key `i` on the document as it ships: the depth that the
+ * clamp in rootYForDepth lands on when the target is out of reach, i.e. the root
+ * raised to the highest root both feet still reach at REACH_TOLERANCE. It is set
+ * by the reach limit alone, never by the depth the key solves to, so a key that
+ * solves deeper than its floor is a deviation the gate can see. It is read after
+ * the ankle guard, because the guard moves the pelvis after placement and can
+ * raise the floor (buse 随挥 placed at 3.30 cm ships at 3.38 cm). */
 function stanceFloorOn(doc:WorkshopDoc,i:number){
  const key=doc.keys[i],orig=key.pose.root.y;
- key.pose.root.y=highestReachRoot(doc,i,0);
+ key.pose.root.y=highestReachRoot(doc,i,REACH_TOLERANCE);
  const depth=solvedDepth(rig,doc,key.time,LEGS).depth;
  key.pose.root.y=orig;
  return depth;
@@ -258,6 +261,19 @@ function applyMeasuredDepth(doc:WorkshopDoc,targets:number[]){
   return {target:targets[i],depth:Math.round(depth*10)/10};
  });
  return achieved;
+}
+/** Re-solve every key's pelvis height on the pose as it ships (after the ankle guard).
+ * The guard moves the pelvis back, which moves the reach limit, so a height placed
+ * before it can end past that limit (buse 随挥 is placed at its 3.30 cm target, but
+ * after the guard its reach limit is 3.49 cm and it shipped at 3.38 cm, past it).
+ * Only the height moves here: the weight shift from applyMeasuredDepth is kept, so
+ * it is not re-centred twice. */
+function resolveHeights(doc:WorkshopDoc,targets:number[]){
+ return doc.keys.map((key,i)=>{
+  const {rootY,depth}=rootYForDepth(doc,i,targets[i]);
+  key.pose.root.y=rootY;
+  return {target:targets[i],depth:Math.round(depth*10)/10};
+ });
 }
 /** How far above a target the stance floor may leave a key before the weight
  * shift is re-centred (cm), and the re-centring step (m). The issue's
@@ -560,8 +576,13 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
   return rig.point('root');
  });
  const placedPelvis=solvedPelvis(doc);
- const depth=applyMeasuredDepth(doc,measuredTargets(player.id)?.targets??UNMEASURED_DEPTH);
+ const targets=measuredTargets(player.id)?.targets??UNMEASURED_DEPTH;
+ applyMeasuredDepth(doc,targets);
  const guard=guardDoc(doc);
+ // The guard moves the pelvis back after placement, and that moves the reach limit.
+ // Re-solve every height on the pose that ships, so each key lands on its target or
+ // its stance floor, and report the depths that ship.
+ const depth=resolveHeights(guard.doc,targets);
  // Hand targets/poles are stored in world space, so the pelvis moves above
  // would pull the trunk away from the arms placed on it. Carry each key's
  // hands by its own solved-pelvis delta: the arms keep their authored
@@ -620,12 +641,13 @@ function buildEnvelope(player:PlayerPreset){
  const phaseName:Record<string,string>={ready:'准备',contact:'击球',follow:'随挥',recover:'恢复'};
  const capped=measured&&'capped'in measured&&Array.isArray((measured as {capped?:string[]}).capped)?(measured as {capped:string[]}).capped:[];
  // Stance-floor fallbacks: a key whose study target the stance cannot reach on the
- // shipped document. Its shipped depth is recorded as the floor and the gate holds
- // it there; the 2.4 cm ceiling is never widened to the target.
+ // shipped document. A reachable target solves at or above its floor, so a floor
+ // above the target marks it. The recorded floor is the reach limit of the shipped
+ // pose, measured apart from the solved depth; the gate holds the solved depth to it.
  const stanceFloor=document.keys.flatMap((k,i)=>{
-  const solved=solvedDepth(rig,document,k.time,LEGS).depth;
-  if(solved<=depth[i].target+GATES.depthSlackCm||stanceFloorOn(document,i)<=depth[i].target+GATES.depthSlackCm)return [];
-  return [{index:i,label:k.label,studyCm:round(depth[i].target,2),floorCm:round(solved,2)}];
+  const floor=stanceFloorOn(document,i);
+  if(floor<=depth[i].target+GATES.depthSlackCm)return [];
+  return [{index:i,label:k.label,studyCm:round(depth[i].target,2),floorCm:round(floor,2)}];
  });
  const floorNote=stanceFloor.length
   ?`站姿下双腿无法完全伸直：浅于站姿下限的目标按下限求解（${stanceFloor.map(f=>`${f.label} ${f.studyCm.toFixed(1)}→${f.floorCm.toFixed(1)} cm`).join('、')}），未放宽校验门限。`

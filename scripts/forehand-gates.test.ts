@@ -56,13 +56,16 @@ describe('forehand gates (scripts/lib/forehand-gates.mts)',()=>{
    .some(m=>m.includes('published schema'))).toBe(true);
  });
 
- it('bounds each key from both sides, with the stance ceiling as the shallowest allowed ceiling',()=>{
+ it('bounds each reachable key from both sides, with no near-upright allowance',()=>{
   expect(gateFailures('p',withKey(2,{targetCm:6,solvedCm:6-GATES.depthSlackCm}))).toEqual([]);
   expect(gateFailures('p',withKey(2,{targetCm:6,solvedCm:6-GATES.depthSlackCm-0.01}))).toHaveLength(1); // too shallow
   expect(gateFailures('p',withKey(2,{targetCm:6,solvedCm:6+1}))).toHaveLength(1); // deeper than the target
-  // A near-upright target may solve up to the stance ceiling, never deeper.
-  expect(gateFailures('p',withKey(2,{targetCm:1,solvedCm:GATES.stanceFloorCm+GATES.depthSlackCm}))).toEqual([]);
-  expect(gateFailures('p',withKey(2,{targetCm:1,solvedCm:GATES.stanceFloorCm+GATES.depthSlackCm+0.01}))).toHaveLength(1);
+  // A near-upright target is held to itself too: it may not solve up to a shared ceiling.
+  expect(gateFailures('p',withKey(2,{targetCm:1,solvedCm:1+GATES.depthSlackCm/2}))).toEqual([]);
+  expect(gateFailures('p',withKey(2,{targetCm:1,solvedCm:1+GATES.depthSlackCm+0.01}))).toHaveLength(1);
+  // The two keys the 2.4 cm ceiling used to pass on the committed assets (1.80 → 1.92, 1.34 → 1.48).
+  expect(gateFailures('p',withKey(4,{targetCm:1.8,solvedCm:1.92}))).toHaveLength(1);
+  expect(gateFailures('p',withKey(5,{targetCm:1.34,solvedCm:1.48}))).toHaveLength(1);
  });
 
  it('does not widen the ceiling for an ordinary key: a 2.5 cm miss on a 1.6 cm target fails',()=>{
@@ -75,6 +78,9 @@ describe('forehand gates (scripts/lib/forehand-gates.mts)',()=>{
   expect(gateFailures('p',fallback({}))).toEqual([]); // sits at its recorded floor
   expect(gateFailures('p',fallback({solvedCm:2.5+GATES.depthSlackCm}))).toEqual([]);
   expect(gateFailures('p',fallback({solvedCm:2.5+GATES.depthSlackCm+0.01}))[0]).toMatch(/its stance floor/); // drifted off it
+  // The floor is the reach limit, not the solved depth: a key that solves 1.2 cm deeper than its floor fails.
+  expect(gateFailures('p',fallback({solvedCm:3.7}))[0]).toMatch(/its stance floor/);
+  expect(gateFailures('p',withKey(8,{label:'恢复',targetCm:1.6,solvedCm:3.7,floorCm:2.5}))).toHaveLength(1);
   expect(gateFailures('p',fallback({floorCm:1.6}))[0]).toMatch(/not above its target/); // not a floor at all
   const deep=GATES.stanceFloorMaxCm+0.01;
   expect(gateFailures('p',fallback({floorCm:deep,solvedCm:deep}))[0]).toMatch(/stance floor .* > /); // beyond the cap

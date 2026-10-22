@@ -1,6 +1,6 @@
 # Forehand Semantics Metrics (17 Players)
 
-Generated: 2026-10-22T07:57:37.502Z (box).
+Generated: 2026-10-22T08:31:20.114Z (box).
 
 ## Acceptance Summary (three categories, separate denominators)
 
@@ -43,7 +43,7 @@ Source: `scripts/measure-player-forehands.mts 16 --json` (production replay: `fr
 | marin-cilic | 24 | 81.8 | 0 | 0 | 0 | 3 | 0 | 0.00 | 20 | 7.826 / 16.917 | 0 | 49.759 (>36) | PASS | ok |
 | karen-khachanov | 24 | 81.8 | 0 | 0 | 0 | 6 | 0 | 0.00 | 20 | 9.115 / 13.473 | 0 | 53.296 (>36) | PASS | ok |
 | jakub-mensik | 24 | 81.8 | 0 | 0 | 0 | 3 | 0 | 0.00 | 19.997 | 14.402 / 19.061 | 0 | 33.134 | PASS | ok |
-| ignacio-buse | 24 | 91.4 | 0 | 0 | 0 | 8 | 0 | 0.00 | 19.992 | 20.833 / 23.186 | 0.461 | 39.192 (>36) | PASS | ok |
+| ignacio-buse | 24 | 91.4 | 0 | 0 | 0 | 8 | 0 | 0.00 | 19.992 | 20.811 / 23.06 | 0 | 39.192 (>36) | PASS | ok |
 | felix-auger-aliassime | 24 | 83.6 | 0 | 0 | 0 | 5 | 0 | 0.00 | 20 | 13.895 / 14.321 | 0 | 33.177 | PASS | ok |
 
 **Solver Validity (definite checks): 17/17 (100.0%)**

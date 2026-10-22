@@ -12,14 +12,11 @@ export const GATES={
  ankleMaxDeg:20.05,
  /** Takeback hip depth against its floored target (cm). */
  takebackTolCm:1.5,
- /** A key's depth may not fall short of its target by more than this (cm). The per-key
-  * bound below is the operative contact-phase guard: the old separate 0.6 cm contact-loss
-  * assertion was strictly weaker than it and could never fail. */
+ /** A key's solved depth may differ from its target (or, for a stance-floor fallback,
+  * from its floor) by at most this (cm), in either direction. The per-key bound below is
+  * the operative contact-phase guard: the old separate 0.6 cm contact-loss assertion was
+  * strictly weaker than it and could never fail. */
  depthSlackCm:0.05,
- /** Ceiling (cm) for a near-upright key: a staggered, turned stance cannot fold it
-  * below this, so such a key may solve up to it. A key whose stance floor sits above
-  * its target is NOT widened to this; it is a recorded fallback (KeyFact.floorCm). */
- stanceFloorCm:2.4,
  /** Highest stance floor (cm) a fallback may record. A deeper floor is a pose
   * problem, not a stance limit, and fails the gate. */
  stanceFloorMaxCm:4,
@@ -39,7 +36,8 @@ export interface ServiceFact{fps:number;schema:boolean;rejected:string[];rootAcc
 export interface KeyFact{
  label:string;targetCm:number;solvedCm:number;
  /** Set when the stance floor, not the target, is the shallowest reachable depth
-  * (the key is a recorded fallback). The key is then held to this floor. */
+  * (the key is a recorded fallback). The floor is the reach limit of the shipped
+  * pose, measured on its own and never taken from solvedCm; the key is held to it. */
  floorCm?:number;
 }
 export interface PresetFacts{
@@ -67,14 +65,16 @@ export function gateFailures(id:string,facts:PresetFacts):string[]{
  if(Math.abs(ts-tt)>GATES.takebackTolCm)fail(`takeback ${f2(ts)} cm vs target ${f2(tt)} cm (tolerance ${GATES.takebackTolCm})`);
  for(const k of facts.keys){
   if(k.floorCm!==undefined){
-   // Stance-floor fallback: the target is unreachable, so the key is held to its floor.
+   // Stance-floor fallback: the target is unreachable, so the key sits on its floor
+   // (the reach limit), and the solved depth must match that floor from both sides.
    if(k.floorCm<=k.targetCm+GATES.depthSlackCm)fail(`${k.label} records stance floor ${f2(k.floorCm)} cm, not above its target ${f2(k.targetCm)} cm`);
    else if(k.floorCm>GATES.stanceFloorMaxCm)fail(`${k.label} stance floor ${f2(k.floorCm)} cm > ${GATES.stanceFloorMaxCm} cm`);
    if(Math.abs(k.solvedCm-k.floorCm)>GATES.depthSlackCm)fail(`${k.label} depth ${f2(k.solvedCm)} cm vs its stance floor ${f2(k.floorCm)} cm`);
    continue;
   }
-  const ceiling=Math.max(k.targetCm,GATES.stanceFloorCm)+GATES.depthSlackCm;
-  if(k.solvedCm>ceiling||k.solvedCm<k.targetCm-GATES.depthSlackCm)
+  // A reachable target: the solved depth follows it from both sides. There is no
+  // near-upright allowance; a key that cannot reach its target has a recorded floor.
+  if(Math.abs(k.solvedCm-k.targetCm)>GATES.depthSlackCm)
    fail(`${k.label} depth ${f2(k.solvedCm)} cm vs target ${f2(k.targetCm)} cm`);
  }
  if(facts.ankleDeg>GATES.ankleMaxDeg)fail(`rear ankle dorsiflexion ${f2(facts.ankleDeg)}° > ${GATES.ankleMaxDeg}°`);
