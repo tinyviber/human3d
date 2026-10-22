@@ -13,15 +13,19 @@ import {legRest,peakDorsiflexion,solvedDepth,wristMiss,wristSampleTimes,type Leg
  * and the real frameAt → solveEffectiveFrame path:
  *   - the takeback sits within 1.5 cm of the MediaPipe worldLandmarks
  *     measurement in evidence/forehand-depth.json;
- *   - every key's solved depth follows the study-derived target, except where
- *     the stance cannot straighten that far (floor) — never deeper;
+ *   - every key's solved depth follows the study-derived target (depth ≥ target
+ *     − 0.05 cm and ≤ max(target, 2.4) + 0.05 cm); a key whose target the stance
+ *     cannot reach is a recorded stance-floor fallback (receipt `stanceFloor`)
+ *     and is held to its recorded floor, which must lie above the target and
+ *     within GATES.stanceFloorMaxCm;
  *   - the rear-ankle guard keeps dorsiflexion ≤ 20.05° WITHOUT lifting the
- *     pelvis: contact-phase crouch is the target ±0.6 cm;
+ *     pelvis (per-key lower bound above; no separate contact-loss limit);
  *   - root acceleration ≤ 36 m/s² and support slip ≤ 9 mm at the service's
  *     40 Hz default and its 60 Hz maximum; no 422.
  * The study figures come from the evidence file; the derivation is the same
  * function the generator uses (scripts/lib/forehand-depth.mts). */
 const study=JSON.parse(fs.readFileSync('evidence/forehand-depth.json','utf8'));
+const RECEIPT='evidence/forehand-presets.json';
 const medians=phaseMedians(study);
 const PRESETS=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.capabilities?.prop?.kind==='racket'
  &&f.phases?.some(p=>p.label==='引拍')&&f.id!=='forehand');
@@ -118,7 +122,8 @@ describe('generated forehand presets match the measured depth',()=>{
   }
  });
 
- it('puts each takeback within 1.5 cm of its (floored) target and keeps every key at its target or the stance floor',()=>{
+ it('puts each takeback within 1.5 cm of its (floored) target and keeps every key at its target, or at its recorded stance floor',()=>{
+  const receipt=JSON.parse(fs.readFileSync(RECEIPT,'utf8'));
   for(const file of PRESETS){
    const doc=file.document! as WorkshopDoc;
    const {targets,takeback}=semanticDepthTargets(study.profiles[file.id],medians)!;
@@ -126,10 +131,22 @@ describe('generated forehand presets match the measured depth',()=>{
    const take=depthAt(doc,doc.keys[1].time);
    // Compare against depthTargets load (includes MIN_TAKEBACK_CM floor), not the raw MediaPipe median.
    expect(Math.abs(take-takeback),`${file.id} takeback ${take.toFixed(2)} vs target ${takeback}`).toBeLessThanOrEqual(GATES.takebackTolCm);
+   const floors=new Map<number,{studyCm:number;floorCm:number}>(
+    (receipt.presets[file.id]?.stanceFloor??[]).map((f:{index:number;studyCm:number;floorCm:number})=>[f.index,f]));
    doc.keys.forEach((key,i)=>{
     const depth=depthAt(doc,key.time),at=`${file.id} ${key.label}`;
-    // At the measurement; a near-upright target the stance cannot straighten
-    // to solves at the floor instead, and never deeper than that.
+    const fb=floors.get(i);
+    if(fb){
+     // Stance-floor fallback: the study target is out of the stance's reach, so the
+     // key sits at its recorded floor, which must be above the target and capped.
+     const note=`${at} ${depth.toFixed(2)} vs stance floor ${fb.floorCm.toFixed(2)} (study target ${targets[i].toFixed(2)})`;
+     expect(fb.studyCm,note).toBeCloseTo(targets[i],2);
+     expect(fb.floorCm,note).toBeGreaterThan(targets[i]+GATES.depthSlackCm);
+     expect(fb.floorCm,note).toBeLessThanOrEqual(GATES.stanceFloorMaxCm);
+     expect(Math.abs(depth-fb.floorCm),note).toBeLessThanOrEqual(GATES.depthSlackCm);
+     return;
+    }
+    // Every other key follows its target; a near-upright target may solve up to the stance ceiling.
     const note=`${at} ${depth.toFixed(2)} vs target ${targets[i].toFixed(2)}`;
     expect(depth,note).toBeLessThanOrEqual(Math.max(targets[i],GATES.stanceFloorCm)+.05);
     expect(depth,note).toBeGreaterThanOrEqual(targets[i]-.05);

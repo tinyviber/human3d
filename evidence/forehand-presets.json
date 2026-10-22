@@ -10,7 +10,8 @@
     "ankleMaxDeg": 20.05,
     "takebackTolCm": 1.5,
     "depthSlackCm": 0.05,
-    "stanceFloorCm": 4,
+    "stanceFloorCm": 2.4,
+    "stanceFloorMaxCm": 4,
     "wristMaxM": 0.001,
     "rootAccelMax": 36,
     "slipMaxM": 0.009,
@@ -26,12 +27,12 @@
     "stance": 0.005
   },
   "inputs": {
-    "scripts/generate-player-forehands.mts": "c877ffe942d74754c861c36312afa8cc087e91c14029c48ed4cfd36fbf73b17a",
+    "scripts/generate-player-forehands.mts": "fe4baa04327fbfc0fedef48b67709d6cc5da9b214be377185a4dd52b860370e4",
     "scripts/lib/forehand-arms.mts": "dd5b34d28b81d5d8edcb2130149cb49ba60402d502e4a28ccae5f1084c31b7bb",
     "scripts/lib/forehand-depth.mts": "4ce8e3765a95b3267ba8d79935c0c61f3c5c878cfb9f527cf3b8c2cd11f79d41",
     "scripts/lib/forehand-semantics.mts": "8c612adcb017675e49db1cece62c054b8839cd1cffb8d63475a5af2e6cd9b137",
     "scripts/lib/forehand-measure.mts": "644a789ed4a25254e2dfa70567ed56d856327fe57073e6c5e2f6deb3c4e55e9d",
-    "scripts/lib/forehand-gates.mts": "0fca3423832a8df77f3e5641eece3a96cde38eceb0855592841126b041ed4248",
+    "scripts/lib/forehand-gates.mts": "571e9c0149fd1d25bd70a35c4bc1974667e0a2e15a3b493f25d329d14299dd14",
     "scripts/forehand-arm-reference.json": "42d417ce4a37d470367a29cdec036279d2dc9bcff08c1f0d0eab79b5bfa3a4fe",
     "spec/examples/forehand-study.request.json": "f55134d326c50223f6e0f796367f99bc058a8d62e08da812b261f81d81e39d20",
     "evidence/forehand-depth.json": "9718541719035cee8efedfcacf1353d26ee97d3c057b4a4be5fa191667ed4c3c",
@@ -42,7 +43,7 @@
   "presets": {
     "novak-djokovic-forehand": {
       "file": "assets/motions/novak-djokovic-forehand.json",
-      "sha256": "d8f524fad0050f2676d6e963992ccca7675a772c5450d91effcf4d15c14aef9e",
+      "sha256": "e07f22ad21cad8c0b148914007a49c98681418bcedc9f2a32bcdc6a8002a8853",
       "takeback": {
         "rawCm": 1.7,
         "targetCm": 8,
@@ -87,6 +88,14 @@
           2.51
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 8,
+          "label": "恢复",
+          "studyCm": 1.6,
+          "floorCm": 2.51
+        }
+      ],
       "heel": {
         "semanticDeg": 7.2,
         "source": "measured",
@@ -102,27 +111,27 @@
       "posteriorCm": 0,
       "service": {
         "40": {
-          "rootAccel": 9.541,
+          "rootAccel": 4.882,
           "slipMm": 0.213
         },
         "60": {
-          "rootAccel": 14.415,
+          "rootAccel": 8.274,
           "slipMm": 0.213
         }
       },
       "probe240": {
-        "rootAccel": 54.899,
-        "atS": 0.775
+        "rootAccel": 29.289,
+        "atS": 1.025
       },
       "ratchet": {
-        "rootAccel240": 54.899,
+        "rootAccel240": 29.289,
         "posteriorCm": 0,
         "stance": 1.352
       }
     },
     "roger-federer-forehand": {
       "file": "assets/motions/roger-federer-forehand.json",
-      "sha256": "666f81995a83ee376fc207f90567f52b588f6e9b4059cdfa8a4b4ee794b56c13",
+      "sha256": "12d18edd0dc68cfbea5e105625664842308bf8bcea226681b23b6f21a42ff9b7",
       "takeback": {
         "rawCm": 0,
         "targetCm": 8,
@@ -167,6 +176,14 @@
           2.1
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 4,
+          "label": "击球",
+          "studyCm": 0.6,
+          "floorCm": 1.48
+        }
+      ],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -182,27 +199,27 @@
       "posteriorCm": 6.074,
       "service": {
         "40": {
-          "rootAccel": 15.525,
+          "rootAccel": 8.957,
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 22.948,
+          "rootAccel": 10.449,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 88.972,
-        "atS": 0.733
+        "rootAccel": 36.988,
+        "atS": 1.133
       },
       "ratchet": {
-        "rootAccel240": 88.972,
+        "rootAccel240": 36.988,
         "posteriorCm": 6.074,
         "stance": 1.02
       }
     },
     "carlos-alcaraz-forehand": {
       "file": "assets/motions/carlos-alcaraz-forehand.json",
-      "sha256": "0c2ce8c56127770857e7070b776786989339bf0a54a95a28e0f2c475087ae110",
+      "sha256": "4cb1a7877bfe0aaac135c1564988d07da1d3d4de7567d255e7137d8e1a09b8c7",
       "takeback": {
         "rawCm": 7.3,
         "targetCm": 8,
@@ -247,6 +264,14 @@
           3.06
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 8,
+          "label": "恢复",
+          "studyCm": 2.1,
+          "floorCm": 3.06
+        }
+      ],
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
@@ -282,7 +307,7 @@
     },
     "alexander-zverev-forehand": {
       "file": "assets/motions/alexander-zverev-forehand.json",
-      "sha256": "48bb667fc62b3636d5d71ec891a96c9c75bf4da419a8db4ff0049517f11e8c3f",
+      "sha256": "097595352ea1aa54b47fce4097b938acbbd6c8602eebdd7a5bdf1ded7cafcb93",
       "takeback": {
         "rawCm": 4.1,
         "targetCm": 8,
@@ -327,6 +352,14 @@
           3.12
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 8,
+          "label": "恢复",
+          "studyCm": 1.6,
+          "floorCm": 3.12
+        }
+      ],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -346,23 +379,23 @@
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 14.992,
+          "rootAccel": 14.115,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 45.541,
+        "rootAccel": 40.603,
         "atS": 0.992
       },
       "ratchet": {
-        "rootAccel240": 45.541,
+        "rootAccel240": 40.603,
         "posteriorCm": 6.973,
         "stance": 1.56
       }
     },
     "daniil-medvedev-forehand": {
       "file": "assets/motions/daniil-medvedev-forehand.json",
-      "sha256": "ff0d27b53d850c1fcb1c3831653086bee914389d12a68a210acbcb012abbe69c",
+      "sha256": "2a8efa0a95e0d87ccb79df2232a6176565f46271e4bca2a7a940e7dc144e1ab2",
       "takeback": {
         "rawCm": 4.7,
         "targetCm": 8,
@@ -407,6 +440,14 @@
           7.5
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 0,
+          "label": "准备",
+          "studyCm": 0.3,
+          "floorCm": 2.35
+        }
+      ],
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
@@ -431,18 +472,18 @@
         }
       },
       "probe240": {
-        "rootAccel": 46.382,
+        "rootAccel": 41.98,
         "atS": 1.013
       },
       "ratchet": {
-        "rootAccel240": 46.382,
+        "rootAccel240": 41.98,
         "posteriorCm": 5.124,
         "stance": 1.56
       }
     },
     "ben-shelton-forehand": {
       "file": "assets/motions/ben-shelton-forehand.json",
-      "sha256": "53e7053184d1f12456e151639e781a7a5e67ae16463a8d45a654e900b957f187",
+      "sha256": "66dc6afb374324df0ab2cf2c0e4f695f37c63465248c729d06d6009d20d867c1",
       "takeback": {
         "rawCm": 2.6,
         "targetCm": 8,
@@ -487,6 +528,7 @@
           6.2
         ]
       ],
+      "stanceFloor": [],
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
@@ -502,27 +544,27 @@
       "posteriorCm": 4.739,
       "service": {
         "40": {
-          "rootAccel": 8.437,
+          "rootAccel": 7.695,
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 18.239,
+          "rootAccel": 13.013,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 60.806,
+        "rootAccel": 43.752,
         "atS": 0.938
       },
       "ratchet": {
-        "rootAccel240": 60.806,
+        "rootAccel240": 43.752,
         "posteriorCm": 4.739,
         "stance": 1.54
       }
     },
     "alexander-bublik-forehand": {
       "file": "assets/motions/alexander-bublik-forehand.json",
-      "sha256": "5121f143c174a8c3906eacd76a3c9329a8424e6cc70d7e0e39d22d14bf3e35d2",
+      "sha256": "d591fbc0cf351076b920f6e560fded8cb86d7ded4bdfb8a2fe7c1459b6205351",
       "takeback": {
         "rawCm": 1.8,
         "targetCm": 8,
@@ -567,6 +609,7 @@
           1.6
         ]
       ],
+      "stanceFloor": [],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -582,27 +625,27 @@
       "posteriorCm": 4.449,
       "service": {
         "40": {
-          "rootAccel": 10.379,
+          "rootAccel": 8.081,
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 15.176,
+          "rootAccel": 9.156,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 58.24,
-        "atS": 0.863
+        "rootAccel": 21.124,
+        "atS": 1.108
       },
       "ratchet": {
-        "rootAccel240": 58.24,
+        "rootAccel240": 21.124,
         "posteriorCm": 4.449,
         "stance": 1.175
       }
     },
     "frances-tiafoe-forehand": {
       "file": "assets/motions/frances-tiafoe-forehand.json",
-      "sha256": "36f70c5a5e26d96ed98ae063795faead570a631b7f91d39089391352f689661e",
+      "sha256": "dd8cf0359df0147da35a3f13d1237bd393512e7836e8f61de24f3784578d9b4a",
       "takeback": {
         "rawCm": 1.3,
         "targetCm": 8,
@@ -647,6 +690,14 @@
           3.4
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 4,
+          "label": "击球",
+          "studyCm": 0.6,
+          "floorCm": 1.26
+        }
+      ],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -662,27 +713,27 @@
       "posteriorCm": 0,
       "service": {
         "40": {
-          "rootAccel": 14.286,
+          "rootAccel": 6.46,
           "slipMm": 0.396
         },
         "60": {
-          "rootAccel": 21.273,
+          "rootAccel": 9.219,
           "slipMm": 0.404
         }
       },
       "probe240": {
-        "rootAccel": 70.142,
-        "atS": 0.754
+        "rootAccel": 33.377,
+        "atS": 1.113
       },
       "ratchet": {
-        "rootAccel240": 70.142,
+        "rootAccel240": 33.377,
         "posteriorCm": 0,
         "stance": 1.15
       }
     },
     "holger-rune-forehand": {
       "file": "assets/motions/holger-rune-forehand.json",
-      "sha256": "e39df9234b8f5011c76f712cb7e0012491ad9b251778853b32880335050ef34e",
+      "sha256": "ee9425d5a2141bc6a62c6e53b57a66b783d9b27b2e8e9b03759ad88935f1a23c",
       "takeback": {
         "rawCm": 4.3,
         "targetCm": 8,
@@ -727,6 +778,20 @@
           2.85
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 0,
+          "label": "准备",
+          "studyCm": 1,
+          "floorCm": 2.28
+        },
+        {
+          "index": 8,
+          "label": "恢复",
+          "studyCm": 1.7,
+          "floorCm": 2.85
+        }
+      ],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -746,23 +811,23 @@
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 17.807,
+          "rootAccel": 15.428,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 52.763,
+        "rootAccel": 41.842,
         "atS": 0.892
       },
       "ratchet": {
-        "rootAccel240": 52.763,
+        "rootAccel240": 41.842,
         "posteriorCm": 8.697,
         "stance": 1.498
       }
     },
     "alex-de-minaur-forehand": {
       "file": "assets/motions/alex-de-minaur-forehand.json",
-      "sha256": "b994273e216e61a14fdbe282dbaceaa7b0f3815f59b66963ca3817a53268c7bf",
+      "sha256": "0c3010cf7d28c5c2e3f12dadf41e5b0cc9dcc017a87471ad925c6f19a0dfc9e6",
       "takeback": {
         "rawCm": 2.4,
         "targetCm": 8,
@@ -807,6 +872,14 @@
           3.6
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 0,
+          "label": "准备",
+          "studyCm": 0.7,
+          "floorCm": 1.83
+        }
+      ],
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
@@ -826,23 +899,23 @@
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 11.932,
+          "rootAccel": 10.329,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 42.598,
-        "atS": 0.85
+        "rootAccel": 31.189,
+        "atS": 0.921
       },
       "ratchet": {
-        "rootAccel240": 42.598,
+        "rootAccel240": 31.189,
         "posteriorCm": 4.247,
         "stance": 1.414
       }
     },
     "alejandro-davidovich-fokina-forehand": {
       "file": "assets/motions/alejandro-davidovich-fokina-forehand.json",
-      "sha256": "63377d4b3cb69864c674f98f3f18f8d94eb8a29099548811d2b8aac57a327f27",
+      "sha256": "8e79a1f224677b49518eda5a3fce137157637d350f91557e1088480a22c25fb7",
       "takeback": {
         "rawCm": 2.8,
         "targetCm": 8,
@@ -887,6 +960,7 @@
           5.4
         ]
       ],
+      "stanceFloor": [],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -922,7 +996,7 @@
     },
     "flavio-cobolli-forehand": {
       "file": "assets/motions/flavio-cobolli-forehand.json",
-      "sha256": "8387009a8291e4ffc8d0c499240a8f4612fbe8e772631a482c558de092c72236",
+      "sha256": "533dcaec0e0c2a4dc06eba7c268eb95f91c284c4798ea89ef49bf344e5bb91b4",
       "takeback": {
         "rawCm": 4.2,
         "targetCm": 8,
@@ -967,6 +1041,7 @@
           5.8
         ]
       ],
+      "stanceFloor": [],
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
@@ -982,27 +1057,27 @@
       "posteriorCm": 11.326,
       "service": {
         "40": {
-          "rootAccel": 15.668,
+          "rootAccel": 15.176,
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 23.399,
+          "rootAccel": 16.252,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 90.251,
-        "atS": 0.754
+        "rootAccel": 31.609,
+        "atS": 1.142
       },
       "ratchet": {
-        "rootAccel240": 90.251,
+        "rootAccel240": 31.609,
         "posteriorCm": 11.326,
         "stance": 1.245
       }
     },
     "marin-cilic-forehand": {
       "file": "assets/motions/marin-cilic-forehand.json",
-      "sha256": "1a99675eedb54a51dcf66aed9215c97c352cdbef28c1cb00ebabf87b40bb1cf0",
+      "sha256": "85ab9c5bc01a53c63446c5e5f74c80c372bdcdafdbe55d92832a3c4d3aabe718",
       "takeback": {
         "rawCm": 1.2,
         "targetCm": 8,
@@ -1047,6 +1122,20 @@
           1.9
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 0,
+          "label": "准备",
+          "studyCm": 0,
+          "floorCm": 0.86
+        },
+        {
+          "index": 4,
+          "label": "击球",
+          "studyCm": 0.3,
+          "floorCm": 1.53
+        }
+      ],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -1082,7 +1171,7 @@
     },
     "karen-khachanov-forehand": {
       "file": "assets/motions/karen-khachanov-forehand.json",
-      "sha256": "c519360a73e254137d252046be30360760a3dab80b2e0d59b04e9e7fcc3cec4d",
+      "sha256": "8a72f6911ac0c14417bc68aa4dbc184879c38d41c82373e617c038e50770bf40",
       "takeback": {
         "rawCm": 0,
         "targetCm": 8,
@@ -1127,6 +1216,14 @@
           2.7
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 8,
+          "label": "恢复",
+          "studyCm": 1.6,
+          "floorCm": 2.7
+        }
+      ],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -1142,27 +1239,27 @@
       "posteriorCm": 1.041,
       "service": {
         "40": {
-          "rootAccel": 10.656,
+          "rootAccel": 9.115,
           "slipMm": 0
         },
         "60": {
-          "rootAccel": 15.904,
+          "rootAccel": 13.473,
           "slipMm": 0
         }
       },
       "probe240": {
-        "rootAccel": 59.903,
-        "atS": 0.804
+        "rootAccel": 53.296,
+        "atS": 1.05
       },
       "ratchet": {
-        "rootAccel240": 59.903,
+        "rootAccel240": 53.296,
         "posteriorCm": 1.041,
         "stance": 1.458
       }
     },
     "jakub-mensik-forehand": {
       "file": "assets/motions/jakub-mensik-forehand.json",
-      "sha256": "2774a8ddd44e1c1376d4c6795b85dfbd78c4ecfee0820e23ae753b164ddc7ebc",
+      "sha256": "d8a0b12bcb369c11df2b428d0fb0f760d51921df1d6adf9c2d4e62f63432b99c",
       "takeback": {
         "rawCm": 1.3,
         "targetCm": 8,
@@ -1207,6 +1304,7 @@
           10.9
         ]
       ],
+      "stanceFloor": [],
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
@@ -1231,18 +1329,18 @@
         }
       },
       "probe240": {
-        "rootAccel": 43.902,
-        "atS": 0.775
+        "rootAccel": 33.134,
+        "atS": 1.017
       },
       "ratchet": {
-        "rootAccel240": 43.902,
+        "rootAccel240": 33.134,
         "posteriorCm": 16.121,
         "stance": 1.496
       }
     },
     "ignacio-buse-forehand": {
       "file": "assets/motions/ignacio-buse-forehand.json",
-      "sha256": "9dfd7010f8f410e3b523f6ab8dee88aa29fbe0774a75dcdfb38fcc4bed60d0a7",
+      "sha256": "26f5d1c2d2940160a25cdd331f19952f284a8c3452dd8b0059500682955c1f37",
       "takeback": {
         "rawCm": 5,
         "targetCm": 8,
@@ -1287,6 +1385,14 @@
           7.4
         ]
       ],
+      "stanceFloor": [
+        {
+          "index": 7,
+          "label": "随挥",
+          "studyCm": 3.3,
+          "floorCm": 3.38
+        }
+      ],
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
@@ -1322,7 +1428,7 @@
     },
     "felix-auger-aliassime-forehand": {
       "file": "assets/motions/felix-auger-aliassime-forehand.json",
-      "sha256": "e283b2f2f94b99b11f23097b82763aac90068511ea6096e7d84d42ee47107773",
+      "sha256": "653df43bace9df90b430a47f1725a3b317221b653d4ab62a7d3ce2304d58bae0",
       "takeback": {
         "rawCm": 13.3,
         "targetCm": 13.3,
@@ -1367,6 +1473,7 @@
           13.1
         ]
       ],
+      "stanceFloor": [],
       "heel": {
         "semanticDeg": 8.4,
         "source": "measured",

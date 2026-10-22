@@ -16,9 +16,13 @@ export const GATES={
   * bound below is the operative contact-phase guard: the old separate 0.6 cm contact-loss
   * assertion was strictly weaker than it and could never fail. */
  depthSlackCm:0.05,
- /** Stance floor (cm): a near-upright target is not reachable below this with a
-  * staggered, turned stance, so the key solves to the floor instead. */
- stanceFloorCm:4,
+ /** Ceiling (cm) for a near-upright key: a staggered, turned stance cannot fold it
+  * below this, so such a key may solve up to it. A key whose stance floor sits above
+  * its target is NOT widened to this; it is a recorded fallback (KeyFact.floorCm). */
+ stanceFloorCm:2.4,
+ /** Highest stance floor (cm) a fallback may record. A deeper floor is a pose
+  * problem, not a stance limit, and fails the gate. */
+ stanceFloorMaxCm:4,
  /** Wrist residual (m): solved wrist against its hand target. */
  wristMaxM:0.001,
  /** Served root acceleration (m/s²). Kept below VALIDATION_LIMITS.rootAccelMPerS2 (40). */
@@ -32,7 +36,12 @@ export const GATES={
 } as const;
 
 export interface ServiceFact{fps:number;schema:boolean;rejected:string[];rootAccel:number;slip:number}
-export interface KeyFact{label:string;targetCm:number;solvedCm:number}
+export interface KeyFact{
+ label:string;targetCm:number;solvedCm:number;
+ /** Set when the stance floor, not the target, is the shallowest reachable depth
+  * (the key is a recorded fallback). The key is then held to this floor. */
+ floorCm?:number;
+}
 export interface PresetFacts{
  takeback:{targetCm:number;solvedCm:number};
  /** Every key in document order, with its study-derived target. */
@@ -57,6 +66,13 @@ export function gateFailures(id:string,facts:PresetFacts):string[]{
  const {targetCm:tt,solvedCm:ts}=facts.takeback;
  if(Math.abs(ts-tt)>GATES.takebackTolCm)fail(`takeback ${f2(ts)} cm vs target ${f2(tt)} cm (tolerance ${GATES.takebackTolCm})`);
  for(const k of facts.keys){
+  if(k.floorCm!==undefined){
+   // Stance-floor fallback: the target is unreachable, so the key is held to its floor.
+   if(k.floorCm<=k.targetCm+GATES.depthSlackCm)fail(`${k.label} records stance floor ${f2(k.floorCm)} cm, not above its target ${f2(k.targetCm)} cm`);
+   else if(k.floorCm>GATES.stanceFloorMaxCm)fail(`${k.label} stance floor ${f2(k.floorCm)} cm > ${GATES.stanceFloorMaxCm} cm`);
+   if(Math.abs(k.solvedCm-k.floorCm)>GATES.depthSlackCm)fail(`${k.label} depth ${f2(k.solvedCm)} cm vs its stance floor ${f2(k.floorCm)} cm`);
+   continue;
+  }
   const ceiling=Math.max(k.targetCm,GATES.stanceFloorCm)+GATES.depthSlackCm;
   if(k.solvedCm>ceiling||k.solvedCm<k.targetCm-GATES.depthSlackCm)
    fail(`${k.label} depth ${f2(k.solvedCm)} cm vs target ${f2(k.targetCm)} cm`);
@@ -67,15 +83,17 @@ export function gateFailures(id:string,facts:PresetFacts):string[]{
 }
 
 /** Ratchet metrics: values that may improve but must not silently worsen.
- * rootAccel240 is a known solver defect at plant (issue #17 handoff) that this PR
- * does not fix; posteriorCm and stance are hidden compensations (pelvis setback,
- * knee-boost stance). A regression needs an explicit --rebaseline. */
+ * rootAccel240 peaks above 36 m/s² fell from 16 to 10 of 17 presets with the
+ * 引拍→落拍 Hermite change; the remaining 10 are held by this ratchet, not fixed.
+ * posteriorCm and stance are hidden compensations (pelvis setback, knee-boost
+ * stance). A regression needs an explicit --rebaseline, which records the new
+ * value as the ceiling. */
 export const RATCHET_TOLERANCE={rootAccel240:0.05,posteriorCm:0.05,stance:0.005} as const;
 export type Ratchet={rootAccel240:number;posteriorCm:number;stance:number};
 export const RATCHET_KEYS=Object.keys(RATCHET_TOLERANCE) as (keyof Ratchet)[];
 
-export function ratchetFailures(id:string,values:Ratchet,ceiling:Ratchet|undefined):string[]{
- if(!ceiling)return [];
+export function ratchetFailures(id:string,values:Ratchet,ceiling:Ratchet|undefined,rebaseline=false):string[]{
+ if(!ceiling||rebaseline)return [];
  return RATCHET_KEYS.filter(k=>values[k]>ceiling[k]+RATCHET_TOLERANCE[k]).map(k=>
   `${id}: ${k} ${values[k]} exceeds its recorded ceiling ${ceiling[k]} (tolerance ${RATCHET_TOLERANCE[k]}); re-baseline with --rebaseline only if the increase is intended`);
 }

@@ -56,13 +56,28 @@ describe('forehand gates (scripts/lib/forehand-gates.mts)',()=>{
    .some(m=>m.includes('published schema'))).toBe(true);
  });
 
- it('bounds each key from both sides, with the stance floor as the shallowest allowed ceiling',()=>{
+ it('bounds each key from both sides, with the stance ceiling as the shallowest allowed ceiling',()=>{
   expect(gateFailures('p',withKey(2,{targetCm:6,solvedCm:6-GATES.depthSlackCm}))).toEqual([]);
   expect(gateFailures('p',withKey(2,{targetCm:6,solvedCm:6-GATES.depthSlackCm-0.01}))).toHaveLength(1); // too shallow
   expect(gateFailures('p',withKey(2,{targetCm:6,solvedCm:6+1}))).toHaveLength(1); // deeper than the target
-  // A near-upright target solves at the stance floor, never deeper.
+  // A near-upright target may solve up to the stance ceiling, never deeper.
   expect(gateFailures('p',withKey(2,{targetCm:1,solvedCm:GATES.stanceFloorCm+GATES.depthSlackCm}))).toEqual([]);
   expect(gateFailures('p',withKey(2,{targetCm:1,solvedCm:GATES.stanceFloorCm+GATES.depthSlackCm+0.01}))).toHaveLength(1);
+ });
+
+ it('does not widen the ceiling for an ordinary key: a 2.5 cm miss on a 1.6 cm target fails',()=>{
+  // The 恢复 keys that a 4 cm ceiling used to pass; without a recorded floor they must fail.
+  expect(gateFailures('p',withKey(8,{label:'恢复',targetCm:1.6,solvedCm:2.5}))).toHaveLength(1);
+ });
+
+ it('holds a stance-floor fallback to its recorded floor, never to its target, and caps the floor',()=>{
+  const fallback=(patch:Partial<PresetFacts['keys'][number]>)=>withKey(8,{label:'恢复',targetCm:1.6,solvedCm:2.5,floorCm:2.5,...patch});
+  expect(gateFailures('p',fallback({}))).toEqual([]); // sits at its recorded floor
+  expect(gateFailures('p',fallback({solvedCm:2.5+GATES.depthSlackCm}))).toEqual([]);
+  expect(gateFailures('p',fallback({solvedCm:2.5+GATES.depthSlackCm+0.01}))[0]).toMatch(/its stance floor/); // drifted off it
+  expect(gateFailures('p',fallback({floorCm:1.6}))[0]).toMatch(/not above its target/); // not a floor at all
+  const deep=GATES.stanceFloorMaxCm+0.01;
+  expect(gateFailures('p',fallback({floorCm:deep,solvedCm:deep}))[0]).toMatch(/stance floor .* > /); // beyond the cap
  });
 
  it('holds the contact-phase crouch (前挥, 击球, 延伸) through the per-key shortfall bound',()=>{
@@ -88,6 +103,14 @@ describe('forehand ratchet (recorded ceilings may not silently worsen)',()=>{
   expect(msgs).toHaveLength(1);
   expect(msgs[0]).toMatch(/posteriorCm/);
   expect(msgs[0]).toMatch(/--rebaseline/);
+ });
+
+ it('refuses a raised ceiling without --rebaseline, and under --rebaseline allows it and records the new value',()=>{
+  const raised={...values,rootAccel240:values.rootAccel240+5};
+  expect(ratchetFailures('p',raised,values)).toHaveLength(1);
+  expect(ratchetFailures('p',raised,values,false)).toHaveLength(1);
+  expect(ratchetFailures('p',raised,values,true)).toEqual([]);
+  expect(nextCeiling(raised,values,true).rootAccel240).toBe(raised.rootAccel240);
  });
 
  it('ratchets the ceiling down on improvement and raises it only on an explicit re-baseline',()=>{
