@@ -73,12 +73,9 @@ function bestOffFrom2d(frames: Frame2d[], indices: number[], lefty: boolean, pre
 }
 
 function offFrom2d(frames: Frame2d[], phase: keyof typeof PHASE_IDX, lefty: boolean) {
-  // Load phases (ready/takeback): search frames 0..2 for the straightest arm.
-  // Contact/follow: search the phase frame and neighbours; prefer bent after contact.
-  if (phase === 'ready' || phase === 'takeback') return bestOffFrom2d(frames, [0, 1, 2], lefty, 'straight');
-  if (phase === 'contact') return bestOffFrom2d(frames, [2, 3], lefty, 'bent');
-  if (phase === 'follow' || phase === 'recover') return bestOffFrom2d(frames, [3, 4], lefty, 'bent');
-  return bestOffFrom2d(frames, [PHASE_IDX[phase]], lefty, 'straight');
+  // Use each phase's own frame strictly — no cross-stage pollution!
+  const prefer = (phase === 'contact' || phase === 'follow' || phase === 'recover') ? 'bent' : 'straight';
+  return bestOffFrom2d(frames, [PHASE_IDX[phase]], lefty, prefer);
 }
 
 function stanceFrom2d(frames: Frame2d[], phase: keyof typeof PHASE_IDX) {
@@ -124,17 +121,35 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
       fallback.push(`${name}-depth`);
       continue;
     }
+    // Per-side knee measurement from 3D depth study frames:
+    // When support === 'left', f.kneeFlexion is left knee. When support === 'right', it is right knee.
+    const phaseFrames = (depthProf.frames || []).filter(
+      (f: any) => f.time >= d.from - 1e-6 && f.time <= d.to + 1e-6 && (!f.flags || f.flags.length === 0)
+    );
+    const leftKnees = phaseFrames.filter((f: any) => f.support === 'left').map((f: any) => f.kneeFlexion);
+    const rightKnees = phaseFrames.filter((f: any) => f.support === 'right').map((f: any) => f.kneeFlexion);
+    const kneeFlexL = leftKnees.length >= 2 ? Math.round(median(leftKnees)) : null;
+    const kneeFlexR = rightKnees.length >= 2 ? Math.round(median(rightKnees)) : null;
+    const kneeFlex = (kneeFlexL != null && kneeFlexR != null)
+      ? Math.max(kneeFlexL, kneeFlexR)
+      : (kneeFlexL ?? kneeFlexR ?? d.kneeFlexion ?? null);
+
     phaseOut[name] = {
       from: d.from, to: d.to, frames: d.frames,
-      kneeFlexL: d.kneeFlexion ?? null,
-      kneeFlexR: d.kneeFlexion ?? null,
-      kneeFlex: d.kneeFlexion ?? null,
+      kneeFlexL,
+      kneeFlexR,
+      kneeFlex,
       pelvisDropCm: d.depthCm ?? null,
       stanceOverLeg: stance2d,
       offElbowDeg: off.offElbowDeg,
       offArmDir: off.offArmDir,
       offHandHeight: off.offHandHeight,
-      fallback: [...(stance2d == null ? ['stance-2d'] : []), ...off.flags],
+      fallback: [
+        ...(stance2d == null ? ['stance-2d'] : []),
+        ...(kneeFlexL == null ? ['knee-flex-L-unmeasured'] : []),
+        ...(kneeFlexR == null ? ['knee-flex-R-unmeasured'] : []),
+        ...off.flags,
+      ],
       source: 'depth+2d-bootstrap',
     };
   }
@@ -169,8 +184,14 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
 
   const tb = phaseOut.takeback as any;
   const ct = phaseOut.contact = phaseOut.contact as any;
-  const rearKneeExtensionDeg = (tb?.kneeFlex != null && ct?.kneeFlex != null)
-    ? Math.round(tb.kneeFlex - ct.kneeFlex) : null;
+  // Rear leg is strictly the racket side: right leg for righty, left leg for lefty.
+  // Both takeback and contact MUST be measured on this same rear leg side.
+  const rearSide = lefty ? 'left' : 'right';
+  const tbRear = rearSide === 'left' ? tb?.kneeFlexL : tb?.kneeFlexR;
+  const ctRear = rearSide === 'left' ? ct?.kneeFlexL : ct?.kneeFlexR;
+  const rearKneeExtensionDeg = (tbRear != null && ctRear != null)
+    ? Math.round(tbRear - ctRear)
+    : null;
   if (rearKneeExtensionDeg == null) fallback.push('rearKneeExtension');
 
   // Stance: 2D ankle ratios are heavily foreshortened — keep them as evidence
@@ -213,13 +234,7 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
   // Prefer near-straight takeback when 2d is missing (video consensus 136–179°).
   let takeOffElbow = tb?.offElbowDeg ?? 155;
   let takeOffDir = tb?.offArmDir ?? {el: 5, az: 25};
-  // If contact frame captured the straight guard-arm (common when 5-frame
-  // sampling puts "contact" on the still-extended off arm), promote it.
-  if ((ct?.offElbowDeg ?? 0) > takeOffElbow + 15 && (ct?.offElbowDeg ?? 0) >= 130) {
-    takeOffElbow = ct.offElbowDeg;
-    takeOffDir = ct.offArmDir ?? takeOffDir;
-    fallback.push('takeback-off-from-contact-frame');
-  }
+
   // Video consensus at takeback is near-straight (136–179°). A 2D reading
   // below 120° is almost always occlusion/swap noise — lift to the floor.
   // Also force an *outward* direction: az≤10 (or negative) with a near-straight

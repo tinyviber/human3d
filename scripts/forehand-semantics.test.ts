@@ -113,6 +113,63 @@ describe('forehand semantics (pure analysis)', () => {
     expect(row.flags).toContain('lr-swap-corrected');
   });
 
+  it('measures rear-knee extension strictly on the racket-side rear leg', () => {
+    // Generate frames where left and right legs differ at takeback (t=0.6) and contact (t=1.4)
+    const rows = [];
+    for (let i = 0; i < 20; i++) {
+      const t = i * 0.1;
+      const isTakeback = Math.abs(t - 0.6) < 0.25;
+      const isContact = Math.abs(t - 1.0) < 0.25;
+      const p = pose({
+        hipToAnkle: 0.7,
+        kneeForward: isTakeback ? 0.2 : (isContact ? 0.08 : 0.15),
+        stance: 0.5,
+      });
+      const sf = readSemanticsFrame(p.world, t, p.image);
+      if (isTakeback) {
+        sf.kneeFlexL = 20;
+        sf.kneeFlexR = 50;
+      } else if (isContact) {
+        sf.kneeFlexL = 45;
+        sf.kneeFlexR = 25;
+      }
+      rows.push(sf);
+    }
+    // Right-hander (default, lefty: false): rear leg is Right
+    // Takeback rear = 50, Contact rear = 25 => extension = 25
+    // (If using Math.max, contact took 45 (Left), giving 50 - 45 = 5 - wrong leg!)
+    const rightyReport = analyzeSemantics(rows, [0.2, 0.6, 1.0, 1.4, 1.8], {lefty: false});
+    expect(rightyReport.rearKneeExtensionDeg).toBe(25);
+
+    // Left-hander (lefty: true): rear leg is Left
+    // Takeback rear = 20, Contact rear = 45 => extension = -25
+    const leftyReport = analyzeSemantics(rows, [0.2, 0.6, 1.0, 1.4, 1.8], {lefty: true});
+    expect(leftyReport.rearKneeExtensionDeg).toBe(-25);
+
+    // Missing data fallback: when rear knee is missing, extension must be null and flagged in fallback
+    const missingRows = rows.map(r => ({...r, kneeFlexR: null}));
+    const fallbackReport = analyzeSemantics(missingRows, [0.2, 0.6, 1.0, 1.4, 1.8], {lefty: false});
+    expect(fallbackReport.rearKneeExtensionDeg).toBeNull();
+    expect(fallbackReport.fallback).toContain('rearKneeExtension');
+  });
+
+  it('documents detectSwap behavior on mirrored pose and cross-over step', () => {
+    // 1. Normal upright facing camera: left ankle is left of right ankle (x_L > x_R in image)
+    const normal = pose();
+    expect(detectSwap(normal.image)).toBe(false);
+
+    // 2. Swapped person: MediaPipe flipped person horizontally
+    const swapped = pose({swap: true});
+    expect(detectSwap(swapped.image)).toBe(true);
+
+    // 3. Cross-over step (交叉步 / closed stance):
+    // In a deep closed stance or cross step, the player's front/lead foot crosses
+    // the midline in 2D image coordinates, so ankleOrder flips sign vs shoulderOrder.
+    const crossStep = pose();
+    crossStep.image![27].x = crossStep.image![28].x - 0.05;
+    expect(detectSwap(crossStep.image)).toBe(true);
+  });
+
   it('maps stance width to a clamped generator multiplier', () => {
     const ok = stanceMultiplierFromWidth(0.5, 1.1);
     expect(ok.source).toBe('measured');
@@ -200,5 +257,37 @@ describe('forehand semantics evidence', () => {
       expect(r, id).not.toBeNull();
       expect(r!.targets).toHaveLength(9);
     }
+  });
+
+  it('enforces same-side rear leg extension in evidence/forehand-semantics.json', () => {
+    const study = JSON.parse(fs.readFileSync('evidence/forehand-semantics.json', 'utf8'));
+    for (const [id, prof] of Object.entries(study.profiles) as [string, any][]) {
+      const rearSideKey = prof.lefty ? 'kneeFlexL' : 'kneeFlexR';
+      const tbRear = prof.phases.takeback?.[rearSideKey];
+      const ctRear = prof.phases.contact?.[rearSideKey];
+      if (prof.rearKneeExtensionDeg != null) {
+        expect(tbRear, `${id} missing tbRear`).not.toBeNull();
+        expect(ctRear, `${id} missing ctRear`).not.toBeNull();
+        expect(prof.rearKneeExtensionDeg).toBe(Math.round(tbRear - ctRear));
+      } else {
+        expect(prof.fallback).toContain('rearKneeExtension');
+      }
+    }
+  });
+
+  it('prohibits ready and takeback off-arm from sharing identical measured readings', () => {
+    const study = JSON.parse(fs.readFileSync('evidence/forehand-semantics.json', 'utf8'));
+    let identicalMeasuredCount = 0;
+    for (const [id, prof] of Object.entries(study.profiles) as [string, any][]) {
+      const rElbow = prof.phases.ready?.offElbowDeg;
+      const tbElbow = prof.phases.takeback?.offElbowDeg;
+      const rDir = JSON.stringify(prof.phases.ready?.offArmDir);
+      const tbDir = JSON.stringify(prof.phases.takeback?.offArmDir);
+      if (rElbow != null && tbElbow != null && rElbow === tbElbow && rDir === tbDir) {
+        identicalMeasuredCount++;
+      }
+    }
+    // Cross-stage contamination should be 0 (was 16/17 before fix!)
+    expect(identicalMeasuredCount).toBe(0);
   });
 });

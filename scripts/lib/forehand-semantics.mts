@@ -120,6 +120,12 @@ function legOf(world: Point[], image: ImagePoint[] | undefined, side: 'left' | '
  * Detect a left/right landmark swap: when the "left" ankle sits clearly on the
  * right of the "right" ankle in image space (and vice versa) while both are
  * visible, MediaPipe has flipped the person. We correct by swapping sides.
+ *
+ * NOTE / LIMITATION: Tennis cross-over steps (交叉步) or closed stances may place
+ * the lead ankle on the opposite side of the rear ankle in 2D image coordinates,
+ * causing detectSwap to falsely trigger and invert anatomical left and right.
+ * Callers on dynamic leg footwork sequences should consider temporal continuity
+ * or 3D depth rather than single-frame 2D x ordering alone.
  */
 export function detectSwap(image?: ImagePoint[] | null): boolean {
   if (!image) return false;
@@ -289,7 +295,7 @@ function countFlags(rows: SemanticsFrame[]) {
 export function analyzeSemantics(
   frames: SemanticsFrame[],
   phases: number[],
-  opts: {referenceLegLength?: number} = {},
+  opts: {referenceLegLength?: number; lefty?: boolean} = {},
 ): PlayerSemantics {
   const rows = [...frames].sort((a, b) => a.time - b.time);
   // Per-side median chain for length-tolerance filtering.
@@ -380,16 +386,14 @@ export function analyzeSemantics(
 
   // Rear-knee extension: racket-side knee flex drop from takeback → contact.
   // Righty rear = R; lefty rear = L (after swap correction the landmark sides
-  // are anatomical).
+  // are anatomical). Always measure the SAME rear leg on both takeback and contact.
   const tb = phaseMap.takeback, ct = phaseMap.contact;
   let rearKneeExtensionDeg: number | null = null;
-  if (tb && ct) {
-    // Prefer the side that was more bent at takeback (typically the rear/loaded leg).
-    const tbRear = Math.max(tb.kneeFlexL ?? 0, tb.kneeFlexR ?? 0);
-    const ctRear = Math.max(ct.kneeFlexL ?? 0, ct.kneeFlexR ?? 0);
-    if (tb.kneeFlex != null && ct.kneeFlex != null) {
-      rearKneeExtensionDeg = Math.round(tbRear - ctRear);
-    }
+  const rearSideKey = opts.lefty ? 'kneeFlexL' : 'kneeFlexR';
+  const tbRear = tb ? tb[rearSideKey] : null;
+  const ctRear = ct ? ct[rearSideKey] : null;
+  if (tbRear != null && ctRear != null) {
+    rearKneeExtensionDeg = Math.round(tbRear - ctRear);
   }
 
   const stanceOverLeg = tb?.stanceOverLeg

@@ -2,7 +2,7 @@
  "schemaVersion": 1,
  "kind": "forehand-semantics-study",
  "method": "bootstrap from evidence/forehand-depth.json phases + scripts/player-forehand-landmarks.json 2D (confidence≥0.45, L/R-swap heuristic); full 3D re-extract via measure-forehand-semantics.mts preferred",
- "generated": "2026-10-21",
+ "generated": "2026-10-22",
  "profiles": {
   "carlos-alcaraz-forehand": {
    "name": "Carlos Alcaraz",
@@ -19,7 +19,7 @@
      "from": 89.6,
      "to": 90.4,
      "frames": 9,
-     "kneeFlexL": 49,
+     "kneeFlexL": 27,
      "kneeFlexR": 49,
      "kneeFlex": 49,
      "pelvisDropCm": 6.1,
@@ -39,19 +39,19 @@
      "from": 91.65,
      "to": 92.35,
      "frames": 7,
-     "kneeFlexL": 52,
-     "kneeFlexR": 52,
-     "kneeFlex": 52,
+     "kneeFlexL": 49,
+     "kneeFlexR": 58,
+     "kneeFlex": 58,
      "pelvisDropCm": 7.3,
      "stanceOverLeg": 0.2977,
-     "offElbowDeg": 152,
+     "offElbowDeg": 73,
      "offArmDir": {
       "el": -25,
-      "az": -1.96
+      "az": 5.71
      },
-     "offHandHeight": -0.703,
+     "offHandHeight": -0.505,
      "fallback": [
-      "off-from-2d@90"
+      "off-from-2d@92"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -59,9 +59,9 @@
      "from": 92.7,
      "to": 93.3,
      "frames": 7,
-     "kneeFlexL": 70,
-     "kneeFlexR": 70,
-     "kneeFlex": 70,
+     "kneeFlexL": 79,
+     "kneeFlexR": 56,
+     "kneeFlex": 79,
      "pelvisDropCm": 14.6,
      "stanceOverLeg": 0.3821,
      "offElbowDeg": 55,
@@ -81,17 +81,17 @@
      "from": 92.35,
      "to": 92.7,
      "frames": 7,
-     "kneeFlexL": 60.1,
-     "kneeFlexR": 60.1,
-     "kneeFlex": 60.1,
+     "kneeFlexL": 62.5,
+     "kneeFlexR": 57.1,
+     "kneeFlex": 67.5,
      "pelvisDropCm": 10.6,
      "stanceOverLeg": 0.2977,
-     "offElbowDeg": 108.4,
+     "offElbowDeg": 64.9,
      "offArmDir": {
       "el": -25,
-      "az": 20.61
+      "az": 24.83
      },
-     "offHandHeight": -0.5,
+     "offHandHeight": -0.3,
      "fallback": [
       "interpolated"
      ],
@@ -101,15 +101,15 @@
      "from": 92.35,
      "to": 92.7,
      "frames": 7,
-     "kneeFlexL": 63.6,
-     "kneeFlexR": 63.6,
-     "kneeFlex": 63.6,
+     "kneeFlexL": 68.3,
+     "kneeFlexR": 56.7,
+     "kneeFlex": 71.5,
      "pelvisDropCm": 12,
      "stanceOverLeg": 0.2977,
-     "offElbowDeg": 89.7,
+     "offElbowDeg": 61.4,
      "offArmDir": {
       "el": -25,
-      "az": 30.27
+      "az": 33.01
      },
      "offHandHeight": -0.3,
      "fallback": [
@@ -121,9 +121,9 @@
      "from": 92.7,
      "to": 93.3,
      "frames": 7,
-     "kneeFlexL": 70,
-     "kneeFlexR": 70,
-     "kneeFlex": 70,
+     "kneeFlexL": 79,
+     "kneeFlexR": 56,
+     "kneeFlex": 79,
      "pelvisDropCm": 14.6,
      "stanceOverLeg": 0.3821,
      "offElbowDeg": 55,
@@ -141,9 +141,9 @@
      "from": 92.7,
      "to": 93.3,
      "frames": 7,
-     "kneeFlexL": 70,
-     "kneeFlexR": 70,
-     "kneeFlex": 70,
+     "kneeFlexL": 79,
+     "kneeFlexR": 56,
+     "kneeFlex": 79,
      "pelvisDropCm": 14.6,
      "stanceOverLeg": 0.3821,
      "offElbowDeg": 55,
@@ -158,7 +158,7 @@
      "source": "depth+2d-bootstrap"
     }
    },
-   "rearKneeExtensionDeg": -18,
+   "rearKneeExtensionDeg": 2,
    "stanceOverLeg": 0.2977,
    "peakKneeFlexion": 70,
    "mapping": {
@@ -166,21 +166,20 @@
     "stanceSource": "hand-times-knee-boost",
     "stanceBoost": 1.4,
     "handStanceFallback": 1.12,
-    "pushOffPitch": 12,
-    "pushOffScale": 1,
-    "pushOffSource": "fallback",
-    "pushOffFlag": "rear-knee-no-extension",
+    "pushOffPitch": 6.6,
+    "pushOffScale": 0.55,
+    "pushOffSource": "measured",
     "offArms": {
      "takeback": {
-      "reach": 0.9703,
+      "reach": 0.9659,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.4226182617406995,
-        0,
-        0.90630778703665
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
-       "reach": 0.9703,
+       "reach": 0.9659,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -194,15 +193,15 @@
       }
      },
      "drop": {
-      "reach": 0.8111,
+      "reach": 0.5366,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.31902488730691836,
+        0.38058341469984214,
         -0.4226182617406995,
-        0.8483023789440166
+        0.8225266374401974
        ],
-       "reach": 0.8111,
+       "reach": 0.5366,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -243,7 +242,7 @@
     "bootstrap-from-depth-and-2d",
     "follow-depth",
     "recover-depth",
-    "takeback-off-outward-dir"
+    "takeback-off-straight-floor"
    ]
   },
   "alexander-zverev-forehand": {
@@ -261,19 +260,20 @@
      "from": 131.6,
      "to": 132.4,
      "frames": 9,
-     "kneeFlexL": 55,
+     "kneeFlexL": null,
      "kneeFlexR": 55,
      "kneeFlex": 55,
      "pelvisDropCm": 9,
      "stanceOverLeg": 0.2084,
-     "offElbowDeg": 125,
+     "offElbowDeg": 76,
      "offArmDir": {
       "el": -25,
-      "az": 23.14
+      "az": -40
      },
-     "offHandHeight": -0.599,
+     "offHandHeight": -0.42,
      "fallback": [
-      "off-from-2d@135"
+      "knee-flex-L-unmeasured",
+      "off-from-2d@132"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -282,7 +282,7 @@
      "to": 135.35,
      "frames": 7,
      "kneeFlexL": 42,
-     "kneeFlexR": 42,
+     "kneeFlexR": null,
      "kneeFlex": 42,
      "pelvisDropCm": 4.1,
      "stanceOverLeg": null,
@@ -294,6 +294,7 @@
      "offHandHeight": -0.599,
      "fallback": [
       "stance-2d",
+      "knee-flex-R-unmeasured",
       "off-from-2d@135"
      ],
      "source": "depth+2d-bootstrap"
@@ -302,9 +303,9 @@
      "from": 137.7,
      "to": 138.3,
      "frames": 7,
-     "kneeFlexL": 30,
+     "kneeFlexL": 31,
      "kneeFlexR": 30,
-     "kneeFlex": 30,
+     "kneeFlex": 31,
      "pelvisDropCm": 8.2,
      "stanceOverLeg": 0.5976,
      "offElbowDeg": 106,
@@ -322,19 +323,20 @@
      "from": 140.6,
      "to": 141.4,
      "frames": 9,
-     "kneeFlexL": 15,
+     "kneeFlexL": null,
      "kneeFlexR": 15,
      "kneeFlex": 15,
      "pelvisDropCm": 0.1,
      "stanceOverLeg": 0.3612,
-     "offElbowDeg": 88,
+     "offElbowDeg": 110,
      "offArmDir": {
-      "el": 35,
-      "az": -0.31
+      "el": -25,
+      "az": 30.75
      },
-     "offHandHeight": 0.321,
+     "offHandHeight": -0.341,
      "fallback": [
-      "off-from-2d@144"
+      "knee-flex-L-unmeasured",
+      "off-from-2d@141"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -342,9 +344,9 @@
      "from": 143.6,
      "to": 144.4,
      "frames": 9,
-     "kneeFlexL": 21,
-     "kneeFlexR": 21,
-     "kneeFlex": 21,
+     "kneeFlexL": 39,
+     "kneeFlexR": 18,
+     "kneeFlex": 39,
      "pelvisDropCm": -0.2,
      "stanceOverLeg": 0.1925,
      "offElbowDeg": 88,
@@ -362,9 +364,9 @@
      "from": 135.35,
      "to": 137.7,
      "frames": 7,
-     "kneeFlexL": 36.6,
-     "kneeFlexR": 36.6,
-     "kneeFlex": 36.6,
+     "kneeFlexL": 37.1,
+     "kneeFlexR": 30,
+     "kneeFlex": 37.1,
      "pelvisDropCm": 5.9,
      "stanceOverLeg": 0.5976,
      "offElbowDeg": 116.5,
@@ -382,9 +384,9 @@
      "from": 135.35,
      "to": 137.7,
      "frames": 7,
-     "kneeFlexL": 34.3,
-     "kneeFlexR": 34.3,
-     "kneeFlex": 34.3,
+     "kneeFlexL": 34.9,
+     "kneeFlexR": 30,
+     "kneeFlex": 34.9,
      "pelvisDropCm": 6.7,
      "stanceOverLeg": 0.5976,
      "offElbowDeg": 112.8,
@@ -402,17 +404,17 @@
      "from": 138.3,
      "to": 140.6,
      "frames": 7,
-     "kneeFlexL": 24.6,
+     "kneeFlexL": 31,
      "kneeFlexR": 24.6,
-     "kneeFlex": 24.6,
+     "kneeFlex": 25.2,
      "pelvisDropCm": 5.3,
      "stanceOverLeg": 0.5976,
-     "offElbowDeg": 99.5,
+     "offElbowDeg": 107.4,
      "offArmDir": {
-      "el": -3.4,
-      "az": 27.01
+      "el": -25,
+      "az": 38.19
      },
-     "offHandHeight": -0.1,
+     "offHandHeight": -0.3,
      "fallback": [
       "interpolated"
      ],
@@ -422,24 +424,24 @@
      "from": 138.3,
      "to": 140.6,
      "frames": 7,
-     "kneeFlexL": 19.5,
+     "kneeFlexL": 31,
      "kneeFlexR": 19.5,
-     "kneeFlex": 19.5,
+     "kneeFlex": 19.8,
      "pelvisDropCm": 2.5,
      "stanceOverLeg": 0.5976,
-     "offElbowDeg": 93.4,
+     "offElbowDeg": 108.8,
      "offArmDir": {
-      "el": 17,
-      "az": 12.49
+      "el": -25,
+      "az": 34.24
      },
-     "offHandHeight": 0.1,
+     "offHandHeight": -0.3,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": 12,
+   "rearKneeExtensionDeg": null,
    "stanceOverLeg": 0.2084,
    "peakKneeFlexion": 57,
    "mapping": {
@@ -447,9 +449,10 @@
     "stanceSource": "hand-times-knee-boost",
     "stanceBoost": 1.4,
     "handStanceFallback": 1.06,
-    "pushOffPitch": 6.6,
-    "pushOffScale": 0.55,
-    "pushOffSource": "measured",
+    "pushOffPitch": 12,
+    "pushOffScale": 1,
+    "pushOffSource": "fallback",
+    "pushOffFlag": "rear-knee-missing",
     "offArms": {
      "takeback": {
       "reach": 0.887,
@@ -520,7 +523,8 @@
     }
    },
    "fallback": [
-    "bootstrap-from-depth-and-2d"
+    "bootstrap-from-depth-and-2d",
+    "rearKneeExtension"
    ]
   },
   "daniil-medvedev-forehand": {
@@ -538,19 +542,17 @@
      "from": 161.6,
      "to": 162.4,
      "frames": 9,
-     "kneeFlexL": 27,
+     "kneeFlexL": null,
      "kneeFlexR": 27,
      "kneeFlex": 27,
      "pelvisDropCm": 0.3,
      "stanceOverLeg": 0.1921,
-     "offElbowDeg": 89,
-     "offArmDir": {
-      "el": -15.24,
-      "az": -40
-     },
-     "offHandHeight": -0.113,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@168"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -558,20 +560,17 @@
      "from": 164.65,
      "to": 165.35,
      "frames": 7,
-     "kneeFlexL": 41,
+     "kneeFlexL": 43,
      "kneeFlexR": 41,
-     "kneeFlex": 41,
+     "kneeFlex": 43,
      "pelvisDropCm": 4.7,
      "stanceOverLeg": null,
-     "offElbowDeg": 89,
-     "offArmDir": {
-      "el": -15.24,
-      "az": -40
-     },
-     "offHandHeight": -0.113,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "stance-2d",
-      "off-from-2d@168"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -579,9 +578,9 @@
      "from": 167.7,
      "to": 168.3,
      "frames": 7,
-     "kneeFlexL": 37,
-     "kneeFlexR": 37,
-     "kneeFlex": 37,
+     "kneeFlexL": null,
+     "kneeFlexR": 34,
+     "kneeFlex": 34,
      "pelvisDropCm": 8,
      "stanceOverLeg": 0.7142,
      "offElbowDeg": 89,
@@ -591,6 +590,7 @@
      },
      "offHandHeight": -0.113,
      "fallback": [
+      "knee-flex-L-unmeasured",
       "off-from-2d@168"
      ],
      "source": "depth+2d-bootstrap"
@@ -599,7 +599,7 @@
      "from": 170.6,
      "to": 171.4,
      "frames": 9,
-     "kneeFlexL": 30,
+     "kneeFlexL": null,
      "kneeFlexR": 30,
      "kneeFlex": 30,
      "pelvisDropCm": 1.1,
@@ -608,6 +608,7 @@
      "offArmDir": null,
      "offHandHeight": null,
      "fallback": [
+      "knee-flex-L-unmeasured",
       "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
@@ -616,9 +617,9 @@
      "from": 173.6,
      "to": 174.4,
      "frames": 9,
-     "kneeFlexL": 18,
-     "kneeFlexR": 18,
-     "kneeFlex": 18,
+     "kneeFlexL": 16,
+     "kneeFlexR": 56,
+     "kneeFlex": 56,
      "pelvisDropCm": 7.5,
      "stanceOverLeg": 0.6288,
      "offElbowDeg": null,
@@ -633,9 +634,9 @@
      "from": 165.35,
      "to": 167.7,
      "frames": 7,
-     "kneeFlexL": 39.2,
-     "kneeFlexR": 39.2,
-     "kneeFlex": 39.2,
+     "kneeFlexL": 43,
+     "kneeFlexR": 37.9,
+     "kneeFlex": 39,
      "pelvisDropCm": 6.2,
      "stanceOverLeg": 0.7142,
      "offElbowDeg": 89,
@@ -643,7 +644,7 @@
       "el": -15.24,
       "az": -40
      },
-     "offHandHeight": -0.1,
+     "offHandHeight": -0.113,
      "fallback": [
       "interpolated"
      ],
@@ -653,9 +654,9 @@
      "from": 165.35,
      "to": 167.7,
      "frames": 7,
-     "kneeFlexL": 38.4,
-     "kneeFlexR": 38.4,
-     "kneeFlex": 38.4,
+     "kneeFlexL": 43,
+     "kneeFlexR": 36.5,
+     "kneeFlex": 37.2,
      "pelvisDropCm": 6.8,
      "stanceOverLeg": 0.7142,
      "offElbowDeg": 89,
@@ -663,7 +664,7 @@
       "el": -15.24,
       "az": -40
      },
-     "offHandHeight": -0.1,
+     "offHandHeight": -0.113,
      "fallback": [
       "interpolated"
      ],
@@ -673,9 +674,9 @@
      "from": 168.3,
      "to": 170.6,
      "frames": 7,
-     "kneeFlexL": 34.5,
-     "kneeFlexR": 34.5,
-     "kneeFlex": 34.5,
+     "kneeFlexL": null,
+     "kneeFlexR": 32.6,
+     "kneeFlex": 32.6,
      "pelvisDropCm": 5.5,
      "stanceOverLeg": 0.7142,
      "offElbowDeg": 89,
@@ -693,9 +694,9 @@
      "from": 168.3,
      "to": 170.6,
      "frames": 7,
-     "kneeFlexL": 32.1,
-     "kneeFlexR": 32.1,
-     "kneeFlex": 32.1,
+     "kneeFlexL": null,
+     "kneeFlexR": 31.2,
+     "kneeFlex": 31.2,
      "pelvisDropCm": 3.2,
      "stanceOverLeg": 0.7142,
      "offElbowDeg": 89,
@@ -710,7 +711,7 @@
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": 4,
+   "rearKneeExtensionDeg": 7,
    "stanceOverLeg": 0.1921,
    "peakKneeFlexion": 41,
    "mapping": {
@@ -723,7 +724,7 @@
     "pushOffSource": "measured",
     "offArms": {
      "takeback": {
-      "reach": 0.9659,
+      "reach": 0.9763,
       "source": "measured",
       "arm": {
        "wrist": [
@@ -731,7 +732,7 @@
         0.08715574274765817,
         0.9028590122851735
        ],
-       "reach": 0.9659,
+       "reach": 0.9763,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -791,8 +792,7 @@
     }
    },
    "fallback": [
-    "bootstrap-from-depth-and-2d",
-    "takeback-off-straight-floor"
+    "bootstrap-from-depth-and-2d"
    ]
   },
   "ben-shelton-forehand": {
@@ -810,15 +810,16 @@
      "from": 185.6,
      "to": 186.4,
      "frames": 9,
-     "kneeFlexL": 38,
-     "kneeFlexR": 38,
-     "kneeFlex": 38,
+     "kneeFlexL": 39,
+     "kneeFlexR": null,
+     "kneeFlex": 39,
      "pelvisDropCm": 3.4,
      "stanceOverLeg": 0.3613,
      "offElbowDeg": null,
      "offArmDir": null,
      "offHandHeight": null,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
@@ -827,9 +828,9 @@
      "from": 188.65,
      "to": 189.35,
      "frames": 7,
-     "kneeFlexL": 35,
-     "kneeFlexR": 35,
-     "kneeFlex": 35,
+     "kneeFlexL": 48,
+     "kneeFlexR": 23,
+     "kneeFlex": 48,
      "pelvisDropCm": 2.6,
      "stanceOverLeg": null,
      "offElbowDeg": null,
@@ -846,7 +847,7 @@
      "to": 192.3,
      "frames": 7,
      "kneeFlexL": 46,
-     "kneeFlexR": 46,
+     "kneeFlexR": null,
      "kneeFlex": 46,
      "pelvisDropCm": 6.1,
      "stanceOverLeg": null,
@@ -855,6 +856,7 @@
      "offHandHeight": null,
      "fallback": [
       "stance-2d",
+      "knee-flex-R-unmeasured",
       "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
@@ -863,19 +865,17 @@
      "from": 194.6,
      "to": 195.4,
      "frames": 9,
-     "kneeFlexL": 19,
+     "kneeFlexL": null,
      "kneeFlexR": 19,
      "kneeFlex": 19,
      "pelvisDropCm": 5.4,
      "stanceOverLeg": 0.5164,
-     "offElbowDeg": 60,
-     "offArmDir": {
-      "el": 35,
-      "az": 6.7
-     },
-     "offHandHeight": 0.268,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@198"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -884,7 +884,7 @@
      "to": 198.4,
      "frames": 9,
      "kneeFlexL": 39,
-     "kneeFlexR": 39,
+     "kneeFlexR": null,
      "kneeFlex": 39,
      "pelvisDropCm": 6.2,
      "stanceOverLeg": 0.2943,
@@ -895,6 +895,7 @@
      },
      "offHandHeight": 0.268,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@198"
      ],
      "source": "depth+2d-bootstrap"
@@ -903,9 +904,9 @@
      "from": 189.35,
      "to": 191.7,
      "frames": 7,
-     "kneeFlexL": 40,
-     "kneeFlexR": 40,
-     "kneeFlex": 40,
+     "kneeFlexL": 47.1,
+     "kneeFlexR": 23,
+     "kneeFlex": 47.1,
      "pelvisDropCm": 4.2,
      "stanceOverLeg": null,
      "offElbowDeg": null,
@@ -920,9 +921,9 @@
      "from": 189.35,
      "to": 191.7,
      "frames": 7,
-     "kneeFlexL": 42.1,
-     "kneeFlexR": 42.1,
-     "kneeFlex": 42.1,
+     "kneeFlexL": 46.7,
+     "kneeFlexR": 23,
+     "kneeFlex": 46.7,
      "pelvisDropCm": 4.8,
      "stanceOverLeg": null,
      "offElbowDeg": null,
@@ -937,17 +938,14 @@
      "from": 192.3,
      "to": 194.6,
      "frames": 7,
-     "kneeFlexL": 36.3,
-     "kneeFlexR": 36.3,
+     "kneeFlexL": 46,
+     "kneeFlexR": 19,
      "kneeFlex": 36.3,
      "pelvisDropCm": 5.8,
      "stanceOverLeg": 0.5164,
-     "offElbowDeg": 60,
-     "offArmDir": {
-      "el": 35,
-      "az": 6.7
-     },
-     "offHandHeight": 0.268,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "interpolated"
      ],
@@ -957,24 +955,21 @@
      "from": 192.3,
      "to": 194.6,
      "frames": 7,
-     "kneeFlexL": 27.1,
-     "kneeFlexR": 27.1,
+     "kneeFlexL": 46,
+     "kneeFlexR": 19,
      "kneeFlex": 27.1,
      "pelvisDropCm": 5.6,
      "stanceOverLeg": 0.5164,
-     "offElbowDeg": 60,
-     "offArmDir": {
-      "el": 35,
-      "az": 6.7
-     },
-     "offHandHeight": 0.268,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": -11,
+   "rearKneeExtensionDeg": 2,
    "stanceOverLeg": 0.3613,
    "peakKneeFlexion": 49,
    "mapping": {
@@ -982,10 +977,9 @@
     "stanceSource": "hand-times-knee-boost",
     "stanceBoost": 1.4,
     "handStanceFallback": 1.1,
-    "pushOffPitch": 12,
-    "pushOffScale": 1,
-    "pushOffSource": "fallback",
-    "pushOffFlag": "rear-knee-no-extension",
+    "pushOffPitch": 6.6,
+    "pushOffScale": 0.55,
+    "pushOffSource": "measured",
     "offArms": {
      "takeback": {
       "reach": 0.9763,
@@ -1075,7 +1069,7 @@
      "to": 216.4,
      "frames": 9,
      "kneeFlexL": 50,
-     "kneeFlexR": 50,
+     "kneeFlexR": null,
      "kneeFlex": 50,
      "pelvisDropCm": 8.1,
      "stanceOverLeg": 0.1401,
@@ -1086,6 +1080,7 @@
      },
      "offHandHeight": -0.733,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@216"
      ],
      "source": "depth+2d-bootstrap"
@@ -1094,19 +1089,17 @@
      "from": 218.65,
      "to": 219.35,
      "frames": 7,
-     "kneeFlexL": 18,
-     "kneeFlexR": 18,
-     "kneeFlex": 18,
+     "kneeFlexL": null,
+     "kneeFlexR": 24,
+     "kneeFlex": 24,
      "pelvisDropCm": 1.8,
      "stanceOverLeg": 0.233,
-     "offElbowDeg": 167,
-     "offArmDir": {
-      "el": -25,
-      "az": 33.79
-     },
-     "offHandHeight": -0.733,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@216"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -1114,19 +1107,17 @@
      "from": 221.7,
      "to": 222.3,
      "frames": 7,
-     "kneeFlexL": 35,
+     "kneeFlexL": null,
      "kneeFlexR": 35,
      "kneeFlex": 35,
      "pelvisDropCm": 1.9,
      "stanceOverLeg": 0.6414,
-     "offElbowDeg": 176,
-     "offArmDir": {
-      "el": -25,
-      "az": 17.04
-     },
-     "offHandHeight": -0.706,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@225"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -1134,9 +1125,9 @@
      "from": 224.6,
      "to": 225.4,
      "frames": 9,
-     "kneeFlexL": 28,
-     "kneeFlexR": 28,
-     "kneeFlex": 28,
+     "kneeFlexL": 37,
+     "kneeFlexR": 27,
+     "kneeFlex": 37,
      "pelvisDropCm": 2.3,
      "stanceOverLeg": null,
      "offElbowDeg": 176,
@@ -1155,19 +1146,16 @@
      "from": 227.6,
      "to": 228.4,
      "frames": 9,
-     "kneeFlexL": 14,
-     "kneeFlexR": 14,
-     "kneeFlex": 14,
+     "kneeFlexL": 11,
+     "kneeFlexR": 25,
+     "kneeFlex": 25,
      "pelvisDropCm": 0.9,
      "stanceOverLeg": 0.3134,
-     "offElbowDeg": 176,
-     "offArmDir": {
-      "el": -25,
-      "az": 17.04
-     },
-     "offHandHeight": -0.706,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@225"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -1175,17 +1163,14 @@
      "from": 219.35,
      "to": 221.7,
      "frames": 7,
-     "kneeFlexL": 25.7,
-     "kneeFlexR": 25.7,
-     "kneeFlex": 25.7,
+     "kneeFlexL": null,
+     "kneeFlexR": 29,
+     "kneeFlex": 29,
      "pelvisDropCm": 1.8,
      "stanceOverLeg": 0.233,
-     "offElbowDeg": 171.1,
-     "offArmDir": {
-      "el": -25,
-      "az": 26.25
-     },
-     "offHandHeight": -0.7,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "interpolated"
      ],
@@ -1195,17 +1180,14 @@
      "from": 219.35,
      "to": 221.7,
      "frames": 7,
-     "kneeFlexL": 28.9,
-     "kneeFlexR": 28.9,
-     "kneeFlex": 28.9,
+     "kneeFlexL": null,
+     "kneeFlexR": 31.1,
+     "kneeFlex": 31.1,
      "pelvisDropCm": 1.9,
      "stanceOverLeg": 0.233,
-     "offElbowDeg": 172.8,
-     "offArmDir": {
-      "el": -25,
-      "az": 23.03
-     },
-     "offHandHeight": -0.7,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "interpolated"
      ],
@@ -1215,9 +1197,9 @@
      "from": 222.3,
      "to": 224.6,
      "frames": 7,
-     "kneeFlexL": 32.5,
-     "kneeFlexR": 32.5,
-     "kneeFlex": 32.5,
+     "kneeFlexL": 37,
+     "kneeFlexR": 32.1,
+     "kneeFlex": 35.7,
      "pelvisDropCm": 2,
      "stanceOverLeg": 0.6414,
      "offElbowDeg": 176,
@@ -1225,7 +1207,7 @@
       "el": -25,
       "az": 17.04
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.706,
      "fallback": [
       "interpolated"
      ],
@@ -1235,9 +1217,9 @@
      "from": 222.3,
      "to": 224.6,
      "frames": 7,
-     "kneeFlexL": 30.1,
-     "kneeFlexR": 30.1,
-     "kneeFlex": 30.1,
+     "kneeFlexL": 37,
+     "kneeFlexR": 29.4,
+     "kneeFlex": 36.4,
      "pelvisDropCm": 2.2,
      "stanceOverLeg": 0.6414,
      "offElbowDeg": 176,
@@ -1245,14 +1227,14 @@
       "el": -25,
       "az": 17.04
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.706,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": -17,
+   "rearKneeExtensionDeg": -11,
    "stanceOverLeg": 0.233,
    "peakKneeFlexion": 50,
    "mapping": {
@@ -1266,15 +1248,15 @@
     "pushOffFlag": "rear-knee-no-extension",
     "offArms": {
      "takeback": {
-      "reach": 0.99,
+      "reach": 0.9763,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.5040435949641859,
-        -0.42261826174069944,
-        0.7532156790845829
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
-       "reach": 0.99,
+       "reach": 0.9763,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -1288,15 +1270,297 @@
       }
      },
      "drop": {
-      "reach": 0.99,
+      "reach": 0.9763,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.40084968406372146,
-        -0.42261826174069944,
-        0.812842749631984
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
-       "reach": 0.99,
+       "reach": 0.9763,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     },
+     "contact": {
+      "reach": 0.8192,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        -0.2548870022441788,
+        -0.17364817766693036,
+        0.9512512425641979
+       ],
+       "reach": 0.8192,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     }
+    }
+   },
+   "fallback": [
+    "bootstrap-from-depth-and-2d"
+   ]
+  },
+  "frances-tiafoe-forehand": {
+   "name": "Frances Tiafoe",
+   "video": "多人正手.mp4",
+   "lefty": false,
+   "measurable": true,
+   "source": "bootstrap-depth-2d",
+   "standingRatio": 0.9845,
+   "samples": 241,
+   "usable": 241,
+   "flagged": 0,
+   "phases": {
+    "ready": {
+     "from": 239.6,
+     "to": 240.4,
+     "frames": 9,
+     "kneeFlexL": 52,
+     "kneeFlexR": 17,
+     "kneeFlex": 52,
+     "pelvisDropCm": 1.5,
+     "stanceOverLeg": null,
+     "offElbowDeg": 103,
+     "offArmDir": {
+      "el": -25,
+      "az": 47.12
+     },
+     "offHandHeight": -0.311,
+     "fallback": [
+      "stance-2d",
+      "off-from-2d@240"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "takeback": {
+     "from": 242.65,
+     "to": 243.35,
+     "frames": 7,
+     "kneeFlexL": 18,
+     "kneeFlexR": 24,
+     "kneeFlex": 24,
+     "pelvisDropCm": 1.3,
+     "stanceOverLeg": 0.3176,
+     "offElbowDeg": 95,
+     "offArmDir": {
+      "el": -25,
+      "az": -30.75
+     },
+     "offHandHeight": -0.611,
+     "fallback": [
+      "off-from-2d@243"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "contact": {
+     "from": 245.7,
+     "to": 246.3,
+     "frames": 7,
+     "kneeFlexL": 23,
+     "kneeFlexR": null,
+     "kneeFlex": 23,
+     "pelvisDropCm": 0.6,
+     "stanceOverLeg": 0.1429,
+     "offElbowDeg": 179,
+     "offArmDir": {
+      "el": -25,
+      "az": 43.77
+     },
+     "offHandHeight": -0.333,
+     "fallback": [
+      "knee-flex-R-unmeasured",
+      "off-from-2d@246"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "follow": {
+     "from": 248.6,
+     "to": 249.4,
+     "frames": 9,
+     "kneeFlexL": null,
+     "kneeFlexR": 31,
+     "kneeFlex": 31,
+     "pelvisDropCm": 2.6,
+     "stanceOverLeg": null,
+     "offElbowDeg": 50,
+     "offArmDir": {
+      "el": -25,
+      "az": -18.46
+     },
+     "offHandHeight": -0.346,
+     "fallback": [
+      "stance-2d",
+      "knee-flex-L-unmeasured",
+      "off-from-2d@249"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "recover": {
+     "from": 251.6,
+     "to": 252.4,
+     "frames": 9,
+     "kneeFlexL": null,
+     "kneeFlexR": 34,
+     "kneeFlex": 34,
+     "pelvisDropCm": 3.4,
+     "stanceOverLeg": 0.2755,
+     "offElbowDeg": 96,
+     "offArmDir": {
+      "el": -25,
+      "az": -34.32
+     },
+     "offHandHeight": -0.567,
+     "fallback": [
+      "knee-flex-L-unmeasured",
+      "off-from-2d@252"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "drop": {
+     "from": 243.35,
+     "to": 245.7,
+     "frames": 7,
+     "kneeFlexL": 20.3,
+     "kneeFlexR": 24,
+     "kneeFlex": 23.6,
+     "pelvisDropCm": 1,
+     "stanceOverLeg": 0.3176,
+     "offElbowDeg": 132.8,
+     "offArmDir": {
+      "el": -25,
+      "az": 2.78
+     },
+     "offHandHeight": -0.5,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    },
+    "foreSwing": {
+     "from": 243.35,
+     "to": 245.7,
+     "frames": 7,
+     "kneeFlexL": 21.2,
+     "kneeFlexR": 24,
+     "kneeFlex": 23.4,
+     "pelvisDropCm": 0.9,
+     "stanceOverLeg": 0.3176,
+     "offElbowDeg": 149,
+     "offArmDir": {
+      "el": -25,
+      "az": 17.13
+     },
+     "offHandHeight": -0.4,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    },
+    "extend": {
+     "from": 246.3,
+     "to": 248.6,
+     "frames": 7,
+     "kneeFlexL": 23,
+     "kneeFlexR": 31,
+     "kneeFlex": 25.9,
+     "pelvisDropCm": 1.3,
+     "stanceOverLeg": 0.1429,
+     "offElbowDeg": 132.6,
+     "offArmDir": {
+      "el": -25,
+      "az": 21.37
+     },
+     "offHandHeight": -0.3,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    },
+    "fold": {
+     "from": 246.3,
+     "to": 248.6,
+     "frames": 7,
+     "kneeFlexL": 23,
+     "kneeFlexR": 31,
+     "kneeFlex": 28.6,
+     "pelvisDropCm": 2,
+     "stanceOverLeg": 0.1429,
+     "offElbowDeg": 88.7,
+     "offArmDir": {
+      "el": -25,
+      "az": 0.21
+     },
+     "offHandHeight": -0.3,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    }
+   },
+   "rearKneeExtensionDeg": null,
+   "stanceOverLeg": 0.3176,
+   "peakKneeFlexion": 51,
+   "mapping": {
+    "stance": 1.15,
+    "stanceSource": "hand-times-knee-boost",
+    "stanceBoost": 1,
+    "handStanceFallback": 1.15,
+    "pushOffPitch": 12,
+    "pushOffScale": 1,
+    "pushOffSource": "fallback",
+    "pushOffFlag": "rear-knee-missing",
+    "offArms": {
+     "takeback": {
+      "reach": 0.9659,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
+       ],
+       "reach": 0.9659,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     },
+     "drop": {
+      "reach": 0.9164,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        0.043956940663165,
+        -0.42261826174069944,
+        0.9052411790295471
+       ],
+       "reach": 0.9164,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -1335,287 +1599,9 @@
    },
    "fallback": [
     "bootstrap-from-depth-and-2d",
+    "rearKneeExtension",
+    "takeback-off-straight-floor",
     "contact-off-tuck-heuristic"
-   ]
-  },
-  "frances-tiafoe-forehand": {
-   "name": "Frances Tiafoe",
-   "video": "多人正手.mp4",
-   "lefty": false,
-   "measurable": true,
-   "source": "bootstrap-depth-2d",
-   "standingRatio": 0.9845,
-   "samples": 241,
-   "usable": 241,
-   "flagged": 0,
-   "phases": {
-    "ready": {
-     "from": 239.6,
-     "to": 240.4,
-     "frames": 9,
-     "kneeFlexL": 27,
-     "kneeFlexR": 27,
-     "kneeFlex": 27,
-     "pelvisDropCm": 1.5,
-     "stanceOverLeg": null,
-     "offElbowDeg": 179,
-     "offArmDir": {
-      "el": -25,
-      "az": 43.77
-     },
-     "offHandHeight": -0.333,
-     "fallback": [
-      "stance-2d",
-      "off-from-2d@246"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "takeback": {
-     "from": 242.65,
-     "to": 243.35,
-     "frames": 7,
-     "kneeFlexL": 18,
-     "kneeFlexR": 18,
-     "kneeFlex": 18,
-     "pelvisDropCm": 1.3,
-     "stanceOverLeg": 0.3176,
-     "offElbowDeg": 179,
-     "offArmDir": {
-      "el": -25,
-      "az": 43.77
-     },
-     "offHandHeight": -0.333,
-     "fallback": [
-      "off-from-2d@246"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "contact": {
-     "from": 245.7,
-     "to": 246.3,
-     "frames": 7,
-     "kneeFlexL": 23,
-     "kneeFlexR": 23,
-     "kneeFlex": 23,
-     "pelvisDropCm": 0.6,
-     "stanceOverLeg": 0.1429,
-     "offElbowDeg": 50,
-     "offArmDir": {
-      "el": -25,
-      "az": -18.46
-     },
-     "offHandHeight": -0.346,
-     "fallback": [
-      "off-from-2d@249"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "follow": {
-     "from": 248.6,
-     "to": 249.4,
-     "frames": 9,
-     "kneeFlexL": 31,
-     "kneeFlexR": 31,
-     "kneeFlex": 31,
-     "pelvisDropCm": 2.6,
-     "stanceOverLeg": null,
-     "offElbowDeg": 50,
-     "offArmDir": {
-      "el": -25,
-      "az": -18.46
-     },
-     "offHandHeight": -0.346,
-     "fallback": [
-      "stance-2d",
-      "off-from-2d@249"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "recover": {
-     "from": 251.6,
-     "to": 252.4,
-     "frames": 9,
-     "kneeFlexL": 34,
-     "kneeFlexR": 34,
-     "kneeFlex": 34,
-     "pelvisDropCm": 3.4,
-     "stanceOverLeg": 0.2755,
-     "offElbowDeg": 50,
-     "offArmDir": {
-      "el": -25,
-      "az": -18.46
-     },
-     "offHandHeight": -0.346,
-     "fallback": [
-      "off-from-2d@249"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "drop": {
-     "from": 243.35,
-     "to": 245.7,
-     "frames": 7,
-     "kneeFlexL": 20.3,
-     "kneeFlexR": 20.3,
-     "kneeFlex": 20.3,
-     "pelvisDropCm": 1,
-     "stanceOverLeg": 0.3176,
-     "offElbowDeg": 121,
-     "offArmDir": {
-      "el": -25,
-      "az": 15.77
-     },
-     "offHandHeight": -0.3,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    },
-    "foreSwing": {
-     "from": 243.35,
-     "to": 245.7,
-     "frames": 7,
-     "kneeFlexL": 21.2,
-     "kneeFlexR": 21.2,
-     "kneeFlex": 21.2,
-     "pelvisDropCm": 0.9,
-     "stanceOverLeg": 0.3176,
-     "offElbowDeg": 96.1,
-     "offArmDir": {
-      "el": -25,
-      "az": 3.79
-     },
-     "offHandHeight": -0.3,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    },
-    "extend": {
-     "from": 246.3,
-     "to": 248.6,
-     "frames": 7,
-     "kneeFlexL": 25.9,
-     "kneeFlexR": 25.9,
-     "kneeFlex": 25.9,
-     "pelvisDropCm": 1.3,
-     "stanceOverLeg": 0.1429,
-     "offElbowDeg": 50,
-     "offArmDir": {
-      "el": -25,
-      "az": -18.46
-     },
-     "offHandHeight": -0.3,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    },
-    "fold": {
-     "from": 246.3,
-     "to": 248.6,
-     "frames": 7,
-     "kneeFlexL": 28.6,
-     "kneeFlexR": 28.6,
-     "kneeFlex": 28.6,
-     "pelvisDropCm": 2,
-     "stanceOverLeg": 0.1429,
-     "offElbowDeg": 50,
-     "offArmDir": {
-      "el": -25,
-      "az": -18.46
-     },
-     "offHandHeight": -0.3,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    }
-   },
-   "rearKneeExtensionDeg": -5,
-   "stanceOverLeg": 0.3176,
-   "peakKneeFlexion": 51,
-   "mapping": {
-    "stance": 1.15,
-    "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1,
-    "handStanceFallback": 1.15,
-    "pushOffPitch": 12,
-    "pushOffScale": 1,
-    "pushOffSource": "fallback",
-    "pushOffFlag": "rear-knee-no-extension",
-    "offArms": {
-     "takeback": {
-      "reach": 0.99,
-      "source": "measured",
-      "flag": "off-elbow-clamped",
-      "arm": {
-       "wrist": [
-        0.6269521569626357,
-        -0.42261826174069944,
-        0.6544652761783227
-       ],
-       "reach": 0.99,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     },
-     "drop": {
-      "reach": 0.8704,
-      "source": "measured",
-      "arm": {
-       "wrist": [
-        0.24631306183133447,
-        -0.42261826174069944,
-        0.8721947491326365
-       ],
-       "reach": 0.8704,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     },
-     "contact": {
-      "reach": 0.48,
-      "source": "measured",
-      "arm": {
-       "wrist": [
-        -0.2869755855048087,
-        -0.42261826174069944,
-        0.8596736695790106
-       ],
-       "reach": 0.48,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     }
-    }
-   },
-   "fallback": [
-    "bootstrap-from-depth-and-2d"
    ]
   },
   "holger-rune-forehand": {
@@ -1634,18 +1620,19 @@
      "to": 267.4,
      "frames": 9,
      "kneeFlexL": 30,
-     "kneeFlexR": 30,
+     "kneeFlexR": null,
      "kneeFlex": 30,
      "pelvisDropCm": 1,
      "stanceOverLeg": 0.3698,
-     "offElbowDeg": 136,
+     "offElbowDeg": 135,
      "offArmDir": {
       "el": -25,
-      "az": 63.18
+      "az": -39.3
      },
-     "offHandHeight": -0.608,
+     "offHandHeight": -0.807,
      "fallback": [
-      "off-from-2d@270"
+      "knee-flex-R-unmeasured",
+      "off-from-2d@267"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -1653,9 +1640,9 @@
      "from": 269.65,
      "to": 270.35,
      "frames": 7,
-     "kneeFlexL": 38,
-     "kneeFlexR": 38,
-     "kneeFlex": 38,
+     "kneeFlexL": 40,
+     "kneeFlexR": 32,
+     "kneeFlex": 40,
      "pelvisDropCm": 4.3,
      "stanceOverLeg": null,
      "offElbowDeg": 136,
@@ -1675,7 +1662,7 @@
      "to": 273.3,
      "frames": 7,
      "kneeFlexL": 62,
-     "kneeFlexR": 62,
+     "kneeFlexR": null,
      "kneeFlex": 62,
      "pelvisDropCm": 8.7,
      "stanceOverLeg": 0.1618,
@@ -1686,6 +1673,7 @@
      },
      "offHandHeight": -0.021,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@273"
      ],
      "source": "depth+2d-bootstrap"
@@ -1695,18 +1683,19 @@
      "to": 276.4,
      "frames": 9,
      "kneeFlexL": 35,
-     "kneeFlexR": 35,
+     "kneeFlexR": null,
      "kneeFlex": 35,
      "pelvisDropCm": 2.9,
      "stanceOverLeg": 0.3237,
-     "offElbowDeg": 134,
+     "offElbowDeg": 173,
      "offArmDir": {
       "el": -25,
-      "az": -5
+      "az": 11.35
      },
-     "offHandHeight": -0.645,
+     "offHandHeight": -0.451,
      "fallback": [
-      "off-from-2d@279"
+      "knee-flex-R-unmeasured",
+      "off-from-2d@276"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -1715,7 +1704,7 @@
      "to": 279.4,
      "frames": 9,
      "kneeFlexL": 32,
-     "kneeFlexR": 32,
+     "kneeFlexR": null,
      "kneeFlex": 32,
      "pelvisDropCm": 1.7,
      "stanceOverLeg": 0.3198,
@@ -1726,6 +1715,7 @@
      },
      "offHandHeight": -0.645,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@279"
      ],
      "source": "depth+2d-bootstrap"
@@ -1734,9 +1724,9 @@
      "from": 270.35,
      "to": 272.7,
      "frames": 7,
-     "kneeFlexL": 48.8,
-     "kneeFlexR": 48.8,
-     "kneeFlex": 48.8,
+     "kneeFlexL": 49.9,
+     "kneeFlexR": 32,
+     "kneeFlex": 49.9,
      "pelvisDropCm": 6.3,
      "stanceOverLeg": 0.1618,
      "offElbowDeg": 130.2,
@@ -1754,9 +1744,9 @@
      "from": 270.35,
      "to": 272.7,
      "frames": 7,
-     "kneeFlexL": 53.4,
-     "kneeFlexR": 53.4,
-     "kneeFlex": 53.4,
+     "kneeFlexL": 54.1,
+     "kneeFlexR": 32,
+     "kneeFlex": 54.1,
      "pelvisDropCm": 7.1,
      "stanceOverLeg": 0.1618,
      "offElbowDeg": 127.6,
@@ -1775,14 +1765,14 @@
      "to": 275.6,
      "frames": 7,
      "kneeFlexL": 52.3,
-     "kneeFlexR": 52.3,
+     "kneeFlexR": null,
      "kneeFlex": 52.3,
      "pelvisDropCm": 6.6,
      "stanceOverLeg": 0.1618,
-     "offElbowDeg": 127,
+     "offElbowDeg": 141,
      "offArmDir": {
       "el": -10.45,
-      "az": 42.41
+      "az": 48.3
      },
      "offHandHeight": -0.2,
      "fallback": [
@@ -1795,23 +1785,23 @@
      "to": 275.6,
      "frames": 7,
      "kneeFlexL": 43.1,
-     "kneeFlexR": 43.1,
+     "kneeFlexR": null,
      "kneeFlex": 43.1,
      "pelvisDropCm": 4.6,
      "stanceOverLeg": 0.1618,
-     "offElbowDeg": 130.7,
+     "offElbowDeg": 158,
      "offArmDir": {
       "el": -18.18,
-      "az": 17.22
+      "az": 28.67
      },
-     "offHandHeight": -0.5,
+     "offHandHeight": -0.3,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": -24,
+   "rearKneeExtensionDeg": null,
    "stanceOverLeg": 0.3698,
    "peakKneeFlexion": 62,
    "mapping": {
@@ -1822,7 +1812,7 @@
     "pushOffPitch": 12,
     "pushOffScale": 1,
     "pushOffSource": "fallback",
-    "pushOffFlag": "rear-knee-no-extension",
+    "pushOffFlag": "rear-knee-missing",
     "offArms": {
      "takeback": {
       "reach": 0.9272,
@@ -1893,7 +1883,8 @@
     }
    },
    "fallback": [
-    "bootstrap-from-depth-and-2d"
+    "bootstrap-from-depth-and-2d",
+    "rearKneeExtension"
    ]
   },
   "alex-de-minaur-forehand": {
@@ -1911,19 +1902,16 @@
      "from": 284.6,
      "to": 285.4,
      "frames": 9,
-     "kneeFlexL": 27,
-     "kneeFlexR": 27,
-     "kneeFlex": 27,
+     "kneeFlexL": 28,
+     "kneeFlexR": 23,
+     "kneeFlex": 28,
      "pelvisDropCm": 0.7,
      "stanceOverLeg": 0.1447,
-     "offElbowDeg": 137,
-     "offArmDir": {
-      "el": -25,
-      "az": 5.21
-     },
-     "offHandHeight": -0.697,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@288"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -1932,8 +1920,8 @@
      "to": 288.35,
      "frames": 7,
      "kneeFlexL": 30,
-     "kneeFlexR": 30,
-     "kneeFlex": 30,
+     "kneeFlexR": 43,
+     "kneeFlex": 43,
      "pelvisDropCm": 2.4,
      "stanceOverLeg": 0.2634,
      "offElbowDeg": 137,
@@ -1951,9 +1939,9 @@
      "from": 290.7,
      "to": 291.3,
      "frames": 7,
-     "kneeFlexL": 40,
-     "kneeFlexR": 40,
-     "kneeFlex": 40,
+     "kneeFlexL": 62,
+     "kneeFlexR": 32,
+     "kneeFlex": 62,
      "pelvisDropCm": 5.3,
      "stanceOverLeg": null,
      "offElbowDeg": 134,
@@ -1973,18 +1961,16 @@
      "to": 294.4,
      "frames": 9,
      "kneeFlexL": 39,
-     "kneeFlexR": 39,
+     "kneeFlexR": null,
      "kneeFlex": 39,
      "pelvisDropCm": 7.1,
      "stanceOverLeg": 0.2856,
-     "offElbowDeg": 162,
-     "offArmDir": {
-      "el": -25,
-      "az": 15.78
-     },
-     "offHandHeight": -0.493,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@297"
+      "knee-flex-R-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -1993,7 +1979,7 @@
      "to": 297.4,
      "frames": 9,
      "kneeFlexL": 31,
-     "kneeFlexR": 31,
+     "kneeFlexR": null,
      "kneeFlex": 31,
      "pelvisDropCm": 1.3,
      "stanceOverLeg": 0.3056,
@@ -2004,6 +1990,7 @@
      },
      "offHandHeight": -0.493,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@297"
      ],
      "source": "depth+2d-bootstrap"
@@ -2012,9 +1999,9 @@
      "from": 288.35,
      "to": 290.7,
      "frames": 7,
-     "kneeFlexL": 34.5,
-     "kneeFlexR": 34.5,
-     "kneeFlex": 34.5,
+     "kneeFlexL": 44.4,
+     "kneeFlexR": 38.1,
+     "kneeFlex": 51.6,
      "pelvisDropCm": 3.7,
      "stanceOverLeg": 0.2634,
      "offElbowDeg": 135.7,
@@ -2032,9 +2019,9 @@
      "from": 288.35,
      "to": 290.7,
      "frames": 7,
-     "kneeFlexL": 36.4,
-     "kneeFlexR": 36.4,
-     "kneeFlex": 36.4,
+     "kneeFlexL": 50.6,
+     "kneeFlexR": 35.9,
+     "kneeFlex": 55.2,
      "pelvisDropCm": 4.3,
      "stanceOverLeg": 0.2634,
      "offElbowDeg": 135.1,
@@ -2052,17 +2039,17 @@
      "from": 291.3,
      "to": 293.6,
      "frames": 7,
-     "kneeFlexL": 39.6,
-     "kneeFlexR": 39.6,
-     "kneeFlex": 39.6,
+     "kneeFlexL": 53.7,
+     "kneeFlexR": 32,
+     "kneeFlex": 53.7,
      "pelvisDropCm": 5.9,
      "stanceOverLeg": 0.2856,
-     "offElbowDeg": 144.1,
+     "offElbowDeg": 134,
      "offArmDir": {
       "el": -25,
-      "az": 29.18
+      "az": 36.72
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.796,
      "fallback": [
       "interpolated"
      ],
@@ -2072,35 +2059,34 @@
      "from": 291.3,
      "to": 293.6,
      "frames": 7,
-     "kneeFlexL": 39.3,
-     "kneeFlexR": 39.3,
-     "kneeFlex": 39.3,
+     "kneeFlexL": 45.9,
+     "kneeFlexR": 32,
+     "kneeFlex": 45.9,
      "pelvisDropCm": 6.6,
      "stanceOverLeg": 0.2856,
-     "offElbowDeg": 153.6,
+     "offElbowDeg": 134,
      "offArmDir": {
       "el": -25,
-      "az": 22.06
+      "az": 36.72
      },
-     "offHandHeight": -0.6,
+     "offHandHeight": -0.796,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": -10,
+   "rearKneeExtensionDeg": 11,
    "stanceOverLeg": 0.2634,
    "peakKneeFlexion": 42,
    "mapping": {
-    "stance": 1.292,
+    "stance": 1.414,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.279,
+    "stanceBoost": 1.4,
     "handStanceFallback": 1.01,
-    "pushOffPitch": 12,
-    "pushOffScale": 1,
-    "pushOffSource": "fallback",
-    "pushOffFlag": "rear-knee-no-extension",
+    "pushOffPitch": 6.6,
+    "pushOffScale": 0.55,
+    "pushOffSource": "measured",
     "offArms": {
      "takeback": {
       "reach": 0.9304,
@@ -2191,19 +2177,16 @@
      "from": 311.6,
      "to": 312.4,
      "frames": 9,
-     "kneeFlexL": 36,
-     "kneeFlexR": 36,
-     "kneeFlex": 36,
+     "kneeFlexL": 39,
+     "kneeFlexR": 32,
+     "kneeFlex": 39,
      "pelvisDropCm": 4.8,
      "stanceOverLeg": 0.1327,
-     "offElbowDeg": 116,
-     "offArmDir": {
-      "el": -25,
-      "az": -23.83
-     },
-     "offHandHeight": -0.691,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@318"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2211,19 +2194,16 @@
      "from": 314.65,
      "to": 315.35,
      "frames": 7,
-     "kneeFlexL": 19,
-     "kneeFlexR": 19,
-     "kneeFlex": 19,
+     "kneeFlexL": 41,
+     "kneeFlexR": 18,
+     "kneeFlex": 41,
      "pelvisDropCm": 2.8,
      "stanceOverLeg": 0.4421,
-     "offElbowDeg": 116,
-     "offArmDir": {
-      "el": -25,
-      "az": -23.83
-     },
-     "offHandHeight": -0.691,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@318"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2232,7 +2212,7 @@
      "to": 318.3,
      "frames": 7,
      "kneeFlexL": 17,
-     "kneeFlexR": 17,
+     "kneeFlexR": null,
      "kneeFlex": 17,
      "pelvisDropCm": 3.1,
      "stanceOverLeg": 0.2188,
@@ -2243,6 +2223,7 @@
      },
      "offHandHeight": -0.691,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@318"
      ],
      "source": "depth+2d-bootstrap"
@@ -2251,19 +2232,16 @@
      "from": 320.6,
      "to": 321.4,
      "frames": 9,
-     "kneeFlexL": 16,
-     "kneeFlexR": 16,
-     "kneeFlex": 16,
+     "kneeFlexL": 15,
+     "kneeFlexR": 10,
+     "kneeFlex": 15,
      "pelvisDropCm": 0,
      "stanceOverLeg": 0.3575,
-     "offElbowDeg": 42,
-     "offArmDir": {
-      "el": -25,
-      "az": 31.46
-     },
-     "offHandHeight": -0.094,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@324"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2272,7 +2250,7 @@
      "to": 324.4,
      "frames": 9,
      "kneeFlexL": 31,
-     "kneeFlexR": 31,
+     "kneeFlexR": null,
      "kneeFlex": 31,
      "pelvisDropCm": 5.4,
      "stanceOverLeg": 0.5211,
@@ -2283,6 +2261,7 @@
      },
      "offHandHeight": -0.094,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@324"
      ],
      "source": "depth+2d-bootstrap"
@@ -2291,9 +2270,9 @@
      "from": 315.35,
      "to": 317.7,
      "frames": 7,
-     "kneeFlexL": 18.1,
-     "kneeFlexR": 18.1,
-     "kneeFlex": 18.1,
+     "kneeFlexL": 30.2,
+     "kneeFlexR": 18,
+     "kneeFlex": 30.2,
      "pelvisDropCm": 2.9,
      "stanceOverLeg": 0.4421,
      "offElbowDeg": 116,
@@ -2301,7 +2280,7 @@
       "el": -25,
       "az": -23.83
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.691,
      "fallback": [
       "interpolated"
      ],
@@ -2311,9 +2290,9 @@
      "from": 315.35,
      "to": 317.7,
      "frames": 7,
-     "kneeFlexL": 17.7,
-     "kneeFlexR": 17.7,
-     "kneeFlex": 17.7,
+     "kneeFlexL": 25.6,
+     "kneeFlexR": 18,
+     "kneeFlex": 25.6,
      "pelvisDropCm": 3,
      "stanceOverLeg": 0.4421,
      "offElbowDeg": 116,
@@ -2321,7 +2300,7 @@
       "el": -25,
       "az": -23.83
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.691,
      "fallback": [
       "interpolated"
      ],
@@ -2331,17 +2310,17 @@
      "from": 318.3,
      "to": 320.6,
      "frames": 7,
-     "kneeFlexL": 16.6,
-     "kneeFlexR": 16.6,
-     "kneeFlex": 16.6,
+     "kneeFlexL": 16.3,
+     "kneeFlexR": 10,
+     "kneeFlex": 16.3,
      "pelvisDropCm": 2,
      "stanceOverLeg": 0.2188,
-     "offElbowDeg": 89.4,
+     "offElbowDeg": 116,
      "offArmDir": {
       "el": -25,
-      "az": -3.93
+      "az": -23.83
      },
-     "offHandHeight": -0.5,
+     "offHandHeight": -0.691,
      "fallback": [
       "interpolated"
      ],
@@ -2351,37 +2330,38 @@
      "from": 318.3,
      "to": 320.6,
      "frames": 7,
-     "kneeFlexL": 16.3,
-     "kneeFlexR": 16.3,
-     "kneeFlex": 16.3,
+     "kneeFlexL": 15.6,
+     "kneeFlexR": 10,
+     "kneeFlex": 15.6,
      "pelvisDropCm": 0.9,
      "stanceOverLeg": 0.2188,
-     "offElbowDeg": 64.2,
+     "offElbowDeg": 116,
      "offArmDir": {
       "el": -25,
-      "az": 14.87
+      "az": -23.83
      },
-     "offHandHeight": -0.3,
+     "offHandHeight": -0.691,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": 2,
+   "rearKneeExtensionDeg": null,
    "stanceOverLeg": 0.4421,
    "peakKneeFlexion": 43,
    "mapping": {
-    "stance": 1.16,
+    "stance": 1.51,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1,
+    "stanceBoost": 1.302,
     "handStanceFallback": 1.16,
-    "pushOffPitch": 6.6,
-    "pushOffScale": 0.55,
-    "pushOffSource": "measured",
+    "pushOffPitch": 12,
+    "pushOffScale": 1,
+    "pushOffSource": "fallback",
+    "pushOffFlag": "rear-knee-missing",
     "offArms": {
      "takeback": {
-      "reach": 0.9659,
+      "reach": 0.9763,
       "source": "measured",
       "arm": {
        "wrist": [
@@ -2389,7 +2369,7 @@
         0.08715574274765817,
         0.9028590122851735
        ],
-       "reach": 0.9659,
+       "reach": 0.9763,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -2450,7 +2430,7 @@
    },
    "fallback": [
     "bootstrap-from-depth-and-2d",
-    "takeback-off-straight-floor"
+    "rearKneeExtension"
    ]
   },
   "flavio-cobolli-forehand": {
@@ -2469,18 +2449,15 @@
      "to": 330.4,
      "frames": 9,
      "kneeFlexL": 57,
-     "kneeFlexR": 57,
-     "kneeFlex": 57,
+     "kneeFlexR": 58,
+     "kneeFlex": 58,
      "pelvisDropCm": 9.9,
      "stanceOverLeg": 0.296,
-     "offElbowDeg": 94,
-     "offArmDir": {
-      "el": -25,
-      "az": 60.79
-     },
-     "offHandHeight": -0.221,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@333"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2488,9 +2465,9 @@
      "from": 332.65,
      "to": 333.35,
      "frames": 7,
-     "kneeFlexL": 28,
+     "kneeFlexL": 36,
      "kneeFlexR": 28,
-     "kneeFlex": 28,
+     "kneeFlex": 36,
      "pelvisDropCm": 4.2,
      "stanceOverLeg": 0.5334,
      "offElbowDeg": 94,
@@ -2508,20 +2485,18 @@
      "from": 335.7,
      "to": 336.3,
      "frames": 7,
-     "kneeFlexL": 31,
+     "kneeFlexL": null,
      "kneeFlexR": 31,
      "kneeFlex": 31,
      "pelvisDropCm": 2,
      "stanceOverLeg": null,
-     "offElbowDeg": 60,
-     "offArmDir": {
-      "el": 23.23,
-      "az": 51.21
-     },
-     "offHandHeight": 0.103,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "stance-2d",
-      "off-from-2d@339"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2529,9 +2504,9 @@
      "from": 338.6,
      "to": 339.4,
      "frames": 9,
-     "kneeFlexL": 43,
+     "kneeFlexL": 50,
      "kneeFlexR": 43,
-     "kneeFlex": 43,
+     "kneeFlex": 50,
      "pelvisDropCm": 9.3,
      "stanceOverLeg": 0.5865,
      "offElbowDeg": 60,
@@ -2549,20 +2524,18 @@
      "from": 341.6,
      "to": 342.4,
      "frames": 9,
-     "kneeFlexL": 41,
+     "kneeFlexL": null,
      "kneeFlexR": 41,
      "kneeFlex": 41,
      "pelvisDropCm": 4,
      "stanceOverLeg": null,
-     "offElbowDeg": 60,
-     "offArmDir": {
-      "el": 23.23,
-      "az": 51.21
-     },
-     "offHandHeight": 0.103,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "stance-2d",
-      "off-from-2d@339"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2570,17 +2543,17 @@
      "from": 333.35,
      "to": 335.7,
      "frames": 7,
-     "kneeFlexL": 29.4,
+     "kneeFlexL": 36,
      "kneeFlexR": 29.4,
-     "kneeFlex": 29.4,
+     "kneeFlex": 33.8,
      "pelvisDropCm": 3.2,
      "stanceOverLeg": 0.5334,
-     "offElbowDeg": 78.7,
+     "offElbowDeg": 94,
      "offArmDir": {
-      "el": -3.3,
-      "az": 56.48
+      "el": -25,
+      "az": 60.79
      },
-     "offHandHeight": -0.1,
+     "offHandHeight": -0.221,
      "fallback": [
       "interpolated"
      ],
@@ -2590,17 +2563,17 @@
      "from": 333.35,
      "to": 335.7,
      "frames": 7,
-     "kneeFlexL": 29.9,
+     "kneeFlexL": 36,
      "kneeFlexR": 29.9,
-     "kneeFlex": 29.9,
+     "kneeFlex": 32.8,
      "pelvisDropCm": 2.8,
      "stanceOverLeg": 0.5334,
-     "offElbowDeg": 72.2,
+     "offElbowDeg": 94,
      "offArmDir": {
-      "el": 5.99,
-      "az": 54.63
+      "el": -25,
+      "az": 60.79
      },
-     "offHandHeight": 0,
+     "offHandHeight": -0.221,
      "fallback": [
       "interpolated"
      ],
@@ -2610,9 +2583,9 @@
      "from": 336.3,
      "to": 338.6,
      "frames": 7,
-     "kneeFlexL": 35.3,
+     "kneeFlexL": 50,
      "kneeFlexR": 35.3,
-     "kneeFlex": 35.3,
+     "kneeFlex": 37.8,
      "pelvisDropCm": 4.6,
      "stanceOverLeg": 0.5865,
      "offElbowDeg": 60,
@@ -2620,7 +2593,7 @@
       "el": 23.23,
       "az": 51.21
      },
-     "offHandHeight": 0.1,
+     "offHandHeight": 0.103,
      "fallback": [
       "interpolated"
      ],
@@ -2630,9 +2603,9 @@
      "from": 336.3,
      "to": 338.6,
      "frames": 7,
-     "kneeFlexL": 39.4,
+     "kneeFlexL": 50,
      "kneeFlexR": 39.4,
-     "kneeFlex": 39.4,
+     "kneeFlex": 44.3,
      "pelvisDropCm": 7.1,
      "stanceOverLeg": 0.5865,
      "offElbowDeg": 60,
@@ -2640,7 +2613,7 @@
       "el": 23.23,
       "az": 51.21
      },
-     "offHandHeight": 0.1,
+     "offHandHeight": 0.103,
      "fallback": [
       "interpolated"
      ],
@@ -2651,9 +2624,9 @@
    "stanceOverLeg": 0.5334,
    "peakKneeFlexion": 58,
    "mapping": {
-    "stance": 1.124,
+    "stance": 1.245,
     "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.07,
+    "stanceBoost": 1.186,
     "handStanceFallback": 1.05,
     "pushOffPitch": 6.6,
     "pushOffScale": 0.55,
@@ -2683,15 +2656,15 @@
       }
      },
      "drop": {
-      "reach": 0.6341,
+      "reach": 0.7314,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.8323106928525058,
-        -0.057564026959567284,
-        0.5513123373946751
+        0.7910588941477207,
+        -0.42261826174069944,
+        0.4422890806170268
        ],
-       "reach": 0.6341,
+       "reach": 0.7314,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -2705,15 +2678,15 @@
       }
      },
      "contact": {
-      "reach": 0.5,
+      "reach": 0.8192,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.7162567004276165,
-        0.39442311370649996,
-        0.5756793781842573
+        -0.2548870022441788,
+        -0.17364817766693036,
+        0.9512512425641979
        ],
-       "reach": 0.5,
+       "reach": 0.8192,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -2749,7 +2722,7 @@
      "to": 345.4,
      "frames": 9,
      "kneeFlexL": 13,
-     "kneeFlexR": 13,
+     "kneeFlexR": null,
      "kneeFlex": 13,
      "pelvisDropCm": -0.7,
      "stanceOverLeg": 0.2948,
@@ -2760,6 +2733,7 @@
      },
      "offHandHeight": -0.326,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@345"
      ],
      "source": "depth+2d-bootstrap"
@@ -2768,19 +2742,16 @@
      "from": 347.65,
      "to": 348.35,
      "frames": 7,
-     "kneeFlexL": 23,
-     "kneeFlexR": 23,
-     "kneeFlex": 23,
+     "kneeFlexL": 25,
+     "kneeFlexR": 20,
+     "kneeFlex": 25,
      "pelvisDropCm": 1.2,
      "stanceOverLeg": 0.146,
-     "offElbowDeg": 177,
-     "offArmDir": {
-      "el": -25,
-      "az": 59.26
-     },
-     "offHandHeight": -0.326,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@345"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2789,7 +2760,7 @@
      "to": 351.3,
      "frames": 5,
      "kneeFlexL": 18,
-     "kneeFlexR": 18,
+     "kneeFlexR": null,
      "kneeFlex": 18,
      "pelvisDropCm": 0.3,
      "stanceOverLeg": null,
@@ -2801,6 +2772,7 @@
      "offHandHeight": -0.573,
      "fallback": [
       "stance-2d",
+      "knee-flex-R-unmeasured",
       "off-from-2d@351"
      ],
      "source": "depth+2d-bootstrap"
@@ -2809,19 +2781,19 @@
      "from": 353.6,
      "to": 354.4,
      "frames": 9,
-     "kneeFlexL": 28,
+     "kneeFlexL": 7,
      "kneeFlexR": 28,
      "kneeFlex": 28,
      "pelvisDropCm": 1,
      "stanceOverLeg": 0.1777,
-     "offElbowDeg": 98,
+     "offElbowDeg": 176,
      "offArmDir": {
       "el": -25,
-      "az": 19.79
+      "az": 5.18
      },
-     "offHandHeight": -0.551,
+     "offHandHeight": -0.672,
      "fallback": [
-      "off-from-2d@356"
+      "off-from-2d@354"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -2829,9 +2801,9 @@
      "from": 355.6,
      "to": 356.4,
      "frames": 9,
-     "kneeFlexL": 25,
-     "kneeFlexR": 25,
-     "kneeFlex": 25,
+     "kneeFlexL": 21,
+     "kneeFlexR": 26,
+     "kneeFlex": 26,
      "pelvisDropCm": 1.9,
      "stanceOverLeg": null,
      "offElbowDeg": 98,
@@ -2850,17 +2822,17 @@
      "from": 348.35,
      "to": 350.7,
      "frames": 5,
-     "kneeFlexL": 20.8,
-     "kneeFlexR": 20.8,
-     "kneeFlex": 20.8,
+     "kneeFlexL": 21.9,
+     "kneeFlexR": 20,
+     "kneeFlex": 21.9,
      "pelvisDropCm": 0.8,
      "stanceOverLeg": 0.146,
-     "offElbowDeg": 147.8,
+     "offElbowDeg": 112,
      "offArmDir": {
       "el": -25,
-      "az": 41.44
+      "az": 19.66
      },
-     "offHandHeight": -0.4,
+     "offHandHeight": -0.573,
      "fallback": [
       "interpolated"
      ],
@@ -2870,17 +2842,17 @@
      "from": 348.35,
      "to": 350.7,
      "frames": 5,
-     "kneeFlexL": 19.8,
-     "kneeFlexR": 19.8,
-     "kneeFlex": 19.8,
+     "kneeFlexL": 20.5,
+     "kneeFlexR": 20,
+     "kneeFlex": 20.5,
      "pelvisDropCm": 0.6,
      "stanceOverLeg": 0.146,
-     "offElbowDeg": 135.2,
+     "offElbowDeg": 112,
      "offArmDir": {
       "el": -25,
-      "az": 33.82
+      "az": 19.66
      },
-     "offHandHeight": -0.5,
+     "offHandHeight": -0.573,
      "fallback": [
       "interpolated"
      ],
@@ -2890,15 +2862,15 @@
      "from": 351.3,
      "to": 353.6,
      "frames": 5,
-     "kneeFlexL": 21.6,
-     "kneeFlexR": 21.6,
+     "kneeFlexL": 14,
+     "kneeFlexR": 28,
      "kneeFlex": 21.6,
      "pelvisDropCm": 0.6,
      "stanceOverLeg": 0.1777,
-     "offElbowDeg": 107,
+     "offElbowDeg": 135,
      "offArmDir": {
       "el": -25,
-      "az": 19.71
+      "az": 14.45
      },
      "offHandHeight": -0.6,
      "fallback": [
@@ -2910,15 +2882,15 @@
      "from": 351.3,
      "to": 353.6,
      "frames": 5,
-     "kneeFlexL": 25,
-     "kneeFlexR": 25,
+     "kneeFlexL": 10.3,
+     "kneeFlexR": 28,
      "kneeFlex": 25,
      "pelvisDropCm": 0.8,
      "stanceOverLeg": 0.1777,
-     "offElbowDeg": 102.2,
+     "offElbowDeg": 156.8,
      "offArmDir": {
       "el": -25,
-      "az": 19.75
+      "az": 9.52
      },
      "offHandHeight": -0.6,
      "fallback": [
@@ -2927,7 +2899,7 @@
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": 5,
+   "rearKneeExtensionDeg": null,
    "stanceOverLeg": 0.146,
    "peakKneeFlexion": 25,
    "mapping": {
@@ -2935,21 +2907,21 @@
     "stanceSource": "hand-times-knee-boost",
     "stanceBoost": 1,
     "handStanceFallback": 1.08,
-    "pushOffPitch": 6.6,
-    "pushOffScale": 0.55,
-    "pushOffSource": "measured",
+    "pushOffPitch": 12,
+    "pushOffScale": 1,
+    "pushOffSource": "fallback",
+    "pushOffFlag": "rear-knee-missing",
     "offArms": {
      "takeback": {
-      "reach": 0.99,
+      "reach": 0.9763,
       "source": "measured",
-      "flag": "off-elbow-clamped",
       "arm": {
        "wrist": [
-        0.7789675877306154,
-        -0.42261826174069944,
-        0.46325295693434665
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
-       "reach": 0.99,
+       "reach": 0.9763,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -2963,15 +2935,15 @@
       }
      },
      "drop": {
-      "reach": 0.9608,
+      "reach": 0.829,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.5998265590293682,
+        0.3049162939675815,
         -0.42261826174069944,
-        0.6794129112154534
+        0.8534751657291177
        ],
-       "reach": 0.9608,
+       "reach": 0.829,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -3009,7 +2981,8 @@
     }
    },
    "fallback": [
-    "bootstrap-from-depth-and-2d"
+    "bootstrap-from-depth-and-2d",
+    "rearKneeExtension"
    ]
   },
   "karen-khachanov-forehand": {
@@ -3027,19 +3000,19 @@
      "from": 359.6,
      "to": 360.4,
      "frames": 9,
-     "kneeFlexL": 63,
-     "kneeFlexR": 63,
-     "kneeFlex": 63,
+     "kneeFlexL": 70,
+     "kneeFlexR": 34,
+     "kneeFlex": 70,
      "pelvisDropCm": 17.8,
      "stanceOverLeg": 0.7373,
-     "offElbowDeg": 165,
+     "offElbowDeg": 117,
      "offArmDir": {
       "el": -25,
-      "az": 11.57
+      "az": 45.68
      },
-     "offHandHeight": -0.736,
+     "offHandHeight": -0.143,
      "fallback": [
-      "off-from-2d@366"
+      "off-from-2d@360"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3047,19 +3020,17 @@
      "from": 362.65,
      "to": 363.35,
      "frames": 7,
-     "kneeFlexL": 19,
+     "kneeFlexL": null,
      "kneeFlexR": 19,
      "kneeFlex": 19,
      "pelvisDropCm": -1.1,
      "stanceOverLeg": 0.1478,
-     "offElbowDeg": 165,
-     "offArmDir": {
-      "el": -25,
-      "az": 11.57
-     },
-     "offHandHeight": -0.736,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@366"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3067,19 +3038,20 @@
      "from": 365.7,
      "to": 366.3,
      "frames": 7,
-     "kneeFlexL": 40,
+     "kneeFlexL": null,
      "kneeFlexR": 40,
      "kneeFlex": 40,
      "pelvisDropCm": 4.2,
      "stanceOverLeg": 0.1678,
-     "offElbowDeg": 157,
+     "offElbowDeg": 165,
      "offArmDir": {
       "el": -25,
-      "az": 36.9
+      "az": 11.57
      },
-     "offHandHeight": -0.338,
+     "offHandHeight": -0.736,
      "fallback": [
-      "off-from-2d@369"
+      "knee-flex-L-unmeasured",
+      "off-from-2d@366"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3087,7 +3059,7 @@
      "from": 368.6,
      "to": 369.4,
      "frames": 9,
-     "kneeFlexL": 31,
+     "kneeFlexL": null,
      "kneeFlexR": 31,
      "kneeFlex": 31,
      "pelvisDropCm": 1.7,
@@ -3099,6 +3071,7 @@
      },
      "offHandHeight": -0.338,
      "fallback": [
+      "knee-flex-L-unmeasured",
       "off-from-2d@369"
      ],
      "source": "depth+2d-bootstrap"
@@ -3107,19 +3080,16 @@
      "from": 371.6,
      "to": 372.4,
      "frames": 9,
-     "kneeFlexL": 32,
-     "kneeFlexR": 32,
-     "kneeFlex": 32,
+     "kneeFlexL": 41,
+     "kneeFlexR": 30,
+     "kneeFlex": 41,
      "pelvisDropCm": 1.4,
      "stanceOverLeg": 0.1214,
-     "offElbowDeg": 157,
-     "offArmDir": {
-      "el": -25,
-      "az": 36.9
-     },
-     "offHandHeight": -0.338,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@369"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3127,17 +3097,17 @@
      "from": 363.35,
      "to": 365.7,
      "frames": 7,
-     "kneeFlexL": 28.5,
+     "kneeFlexL": null,
      "kneeFlexR": 28.5,
      "kneeFlex": 28.5,
      "pelvisDropCm": 1.3,
      "stanceOverLeg": 0.1478,
-     "offElbowDeg": 161.4,
+     "offElbowDeg": 165,
      "offArmDir": {
       "el": -25,
-      "az": 22.97
+      "az": 11.57
      },
-     "offHandHeight": -0.6,
+     "offHandHeight": -0.736,
      "fallback": [
       "interpolated"
      ],
@@ -3147,17 +3117,17 @@
      "from": 363.35,
      "to": 365.7,
      "frames": 7,
-     "kneeFlexL": 32.5,
+     "kneeFlexL": null,
      "kneeFlexR": 32.5,
      "kneeFlex": 32.5,
      "pelvisDropCm": 2.3,
      "stanceOverLeg": 0.1478,
-     "offElbowDeg": 159.9,
+     "offElbowDeg": 165,
      "offArmDir": {
       "el": -25,
-      "az": 27.84
+      "az": 11.57
      },
-     "offHandHeight": -0.5,
+     "offHandHeight": -0.736,
      "fallback": [
       "interpolated"
      ],
@@ -3167,17 +3137,17 @@
      "from": 366.3,
      "to": 368.6,
      "frames": 7,
-     "kneeFlexL": 36.8,
+     "kneeFlexL": null,
      "kneeFlexR": 36.8,
      "kneeFlex": 36.8,
      "pelvisDropCm": 3.3,
      "stanceOverLeg": 0.1678,
-     "offElbowDeg": 157,
+     "offElbowDeg": 162.1,
      "offArmDir": {
       "el": -25,
-      "az": 36.9
+      "az": 20.69
      },
-     "offHandHeight": -0.3,
+     "offHandHeight": -0.6,
      "fallback": [
       "interpolated"
      ],
@@ -3187,17 +3157,17 @@
      "from": 366.3,
      "to": 368.6,
      "frames": 7,
-     "kneeFlexL": 33.7,
+     "kneeFlexL": null,
      "kneeFlexR": 33.7,
      "kneeFlex": 33.7,
      "pelvisDropCm": 2.5,
      "stanceOverLeg": 0.1678,
-     "offElbowDeg": 157,
+     "offElbowDeg": 159.4,
      "offArmDir": {
       "el": -25,
-      "az": 36.9
+      "az": 29.3
      },
-     "offHandHeight": -0.3,
+     "offHandHeight": -0.5,
      "fallback": [
       "interpolated"
      ],
@@ -3218,6 +3188,28 @@
     "pushOffFlag": "rear-knee-no-extension",
     "offArms": {
      "takeback": {
+      "reach": 0.9763,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
+       ],
+       "reach": 0.9763,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     },
+     "drop": {
       "reach": 0.99,
       "source": "measured",
       "arm": {
@@ -3239,307 +3231,8 @@
        ]
       }
      },
-     "drop": {
-      "reach": 0.9869,
-      "source": "measured",
-      "arm": {
-       "wrist": [
-        0.3536857979752494,
-        -0.4226182617406995,
-        0.8344460205153361
-       ],
-       "reach": 0.9869,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     },
      "contact": {
-      "reach": 0.9799,
-      "source": "measured",
-      "arm": {
-       "wrist": [
-        0.5441655257071487,
-        -0.42261826174069944,
-        0.7247604331605942
-       ],
-       "reach": 0.9799,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     }
-    }
-   },
-   "fallback": [
-    "bootstrap-from-depth-and-2d"
-   ]
-  },
-  "jakub-mensik-forehand": {
-   "name": "Jakub Mensik",
-   "video": "多人正手.mp4",
-   "lefty": false,
-   "measurable": true,
-   "source": "bootstrap-depth-2d",
-   "standingRatio": 0.9727,
-   "samples": 241,
-   "usable": 241,
-   "flagged": 0,
-   "phases": {
-    "ready": {
-     "from": 383.6,
-     "to": 384.4,
-     "frames": 9,
-     "kneeFlexL": 46,
-     "kneeFlexR": 46,
-     "kneeFlex": 46,
-     "pelvisDropCm": 6.9,
-     "stanceOverLeg": 0.3556,
-     "offElbowDeg": 131,
-     "offArmDir": {
-      "el": -25,
-      "az": 28.98
-     },
-     "offHandHeight": -0.418,
-     "fallback": [
-      "off-from-2d@390"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "takeback": {
-     "from": 386.65,
-     "to": 387.35,
-     "frames": 7,
-     "kneeFlexL": 24,
-     "kneeFlexR": 24,
-     "kneeFlex": 24,
-     "pelvisDropCm": 1.3,
-     "stanceOverLeg": 0.2865,
-     "offElbowDeg": 131,
-     "offArmDir": {
-      "el": -25,
-      "az": 28.98
-     },
-     "offHandHeight": -0.418,
-     "fallback": [
-      "off-from-2d@390"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "contact": {
-     "from": 389.7,
-     "to": 390.3,
-     "frames": 7,
-     "kneeFlexL": 43,
-     "kneeFlexR": 43,
-     "kneeFlex": 43,
-     "pelvisDropCm": 4.5,
-     "stanceOverLeg": 0.1494,
-     "offElbowDeg": 131,
-     "offArmDir": {
-      "el": -25,
-      "az": 28.98
-     },
-     "offHandHeight": -0.418,
-     "fallback": [
-      "off-from-2d@390"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "follow": {
-     "from": 392.6,
-     "to": 393.4,
-     "frames": 9,
-     "kneeFlexL": 54,
-     "kneeFlexR": 54,
-     "kneeFlex": 54,
-     "pelvisDropCm": 14.4,
-     "stanceOverLeg": 0.7077,
-     "offElbowDeg": 150,
-     "offArmDir": {
-      "el": 6.59,
-      "az": 46.58
-     },
-     "offHandHeight": 0.025,
-     "fallback": [
-      "off-from-2d@393"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "recover": {
-     "from": 395.6,
-     "to": 396.4,
-     "frames": 9,
-     "kneeFlexL": 24,
-     "kneeFlexR": 24,
-     "kneeFlex": 24,
-     "pelvisDropCm": 0,
-     "stanceOverLeg": 0.2813,
-     "offElbowDeg": 150,
-     "offArmDir": {
-      "el": 6.59,
-      "az": 46.58
-     },
-     "offHandHeight": 0.025,
-     "fallback": [
-      "off-from-2d@393"
-     ],
-     "source": "depth+2d-bootstrap"
-    },
-    "drop": {
-     "from": 387.35,
-     "to": 389.7,
-     "frames": 7,
-     "kneeFlexL": 32.6,
-     "kneeFlexR": 32.6,
-     "kneeFlex": 32.6,
-     "pelvisDropCm": 2.7,
-     "stanceOverLeg": 0.2865,
-     "offElbowDeg": 131,
-     "offArmDir": {
-      "el": -25,
-      "az": 28.98
-     },
-     "offHandHeight": -0.4,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    },
-    "foreSwing": {
-     "from": 387.35,
-     "to": 389.7,
-     "frames": 7,
-     "kneeFlexL": 36.2,
-     "kneeFlexR": 36.2,
-     "kneeFlex": 36.2,
-     "pelvisDropCm": 3.4,
-     "stanceOverLeg": 0.2865,
-     "offElbowDeg": 131,
-     "offArmDir": {
-      "el": -25,
-      "az": 28.98
-     },
-     "offHandHeight": -0.4,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    },
-    "extend": {
-     "from": 390.3,
-     "to": 392.6,
-     "frames": 7,
-     "kneeFlexL": 47,
-     "kneeFlexR": 47,
-     "kneeFlex": 47,
-     "pelvisDropCm": 8.1,
-     "stanceOverLeg": 0.1494,
-     "offElbowDeg": 137.8,
-     "offArmDir": {
-      "el": -13.63,
-      "az": 35.32
-     },
-     "offHandHeight": -0.3,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    },
-    "fold": {
-     "from": 390.3,
-     "to": 392.6,
-     "frames": 7,
-     "kneeFlexL": 50.7,
-     "kneeFlexR": 50.7,
-     "kneeFlex": 50.7,
-     "pelvisDropCm": 11.4,
-     "stanceOverLeg": 0.1494,
-     "offElbowDeg": 144.3,
-     "offArmDir": {
-      "el": -2.89,
-      "az": 41.3
-     },
-     "offHandHeight": -0.1,
-     "fallback": [
-      "interpolated"
-     ],
-     "source": "interpolated"
-    }
-   },
-   "rearKneeExtensionDeg": -19,
-   "stanceOverLeg": 0.2865,
-   "peakKneeFlexion": 57,
-   "mapping": {
-    "stance": 1.496,
-    "stanceSource": "hand-times-knee-boost",
-    "stanceBoost": 1.348,
-    "handStanceFallback": 1.11,
-    "pushOffPitch": 12,
-    "pushOffScale": 1,
-    "pushOffSource": "fallback",
-    "pushOffFlag": "rear-knee-no-extension",
-    "offArms": {
-     "takeback": {
-      "reach": 0.91,
-      "source": "measured",
-      "arm": {
-       "wrist": [
-        0.43911001164494773,
-        -0.42261826174069944,
-        0.7928279778845115
-       ],
-       "reach": 0.91,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     },
-     "drop": {
-      "reach": 0.91,
-      "source": "measured",
-      "arm": {
-       "wrist": [
-        0.43911001164494773,
-        -0.42261826174069944,
-        0.7928279778845115
-       ],
-       "reach": 0.91,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     },
-     "contact": {
-      "reach": 0.7133,
+      "reach": 0.8192,
       "source": "measured",
       "arm": {
        "wrist": [
@@ -3547,7 +3240,7 @@
         -0.13917310096006544,
         0.9752236716571246
        ],
-       "reach": 0.7133,
+       "reach": 0.8192,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -3567,6 +3260,277 @@
     "contact-off-tuck-heuristic"
    ]
   },
+  "jakub-mensik-forehand": {
+   "name": "Jakub Mensik",
+   "video": "多人正手.mp4",
+   "lefty": false,
+   "measurable": true,
+   "source": "bootstrap-depth-2d",
+   "standingRatio": 0.9727,
+   "samples": 241,
+   "usable": 241,
+   "flagged": 0,
+   "phases": {
+    "ready": {
+     "from": 383.6,
+     "to": 384.4,
+     "frames": 9,
+     "kneeFlexL": 46,
+     "kneeFlexR": null,
+     "kneeFlex": 46,
+     "pelvisDropCm": 6.9,
+     "stanceOverLeg": 0.3556,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
+     "fallback": [
+      "knee-flex-R-unmeasured",
+      "off-arm-unmeasured"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "takeback": {
+     "from": 386.65,
+     "to": 387.35,
+     "frames": 7,
+     "kneeFlexL": 23,
+     "kneeFlexR": 26,
+     "kneeFlex": 26,
+     "pelvisDropCm": 1.3,
+     "stanceOverLeg": 0.2865,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
+     "fallback": [
+      "off-arm-unmeasured"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "contact": {
+     "from": 389.7,
+     "to": 390.3,
+     "frames": 7,
+     "kneeFlexL": null,
+     "kneeFlexR": 43,
+     "kneeFlex": 43,
+     "pelvisDropCm": 4.5,
+     "stanceOverLeg": 0.1494,
+     "offElbowDeg": 131,
+     "offArmDir": {
+      "el": -25,
+      "az": 28.98
+     },
+     "offHandHeight": -0.418,
+     "fallback": [
+      "knee-flex-L-unmeasured",
+      "off-from-2d@390"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "follow": {
+     "from": 392.6,
+     "to": 393.4,
+     "frames": 9,
+     "kneeFlexL": 64,
+     "kneeFlexR": 28,
+     "kneeFlex": 64,
+     "pelvisDropCm": 14.4,
+     "stanceOverLeg": 0.7077,
+     "offElbowDeg": 150,
+     "offArmDir": {
+      "el": 6.59,
+      "az": 46.58
+     },
+     "offHandHeight": 0.025,
+     "fallback": [
+      "off-from-2d@393"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "recover": {
+     "from": 395.6,
+     "to": 396.4,
+     "frames": 9,
+     "kneeFlexL": null,
+     "kneeFlexR": 24,
+     "kneeFlex": 24,
+     "pelvisDropCm": 0,
+     "stanceOverLeg": 0.2813,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
+     "fallback": [
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
+     ],
+     "source": "depth+2d-bootstrap"
+    },
+    "drop": {
+     "from": 387.35,
+     "to": 389.7,
+     "frames": 7,
+     "kneeFlexL": 23,
+     "kneeFlexR": 33.7,
+     "kneeFlex": 33.7,
+     "pelvisDropCm": 2.7,
+     "stanceOverLeg": 0.2865,
+     "offElbowDeg": 131,
+     "offArmDir": {
+      "el": -25,
+      "az": 28.98
+     },
+     "offHandHeight": -0.418,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    },
+    "foreSwing": {
+     "from": 387.35,
+     "to": 389.7,
+     "frames": 7,
+     "kneeFlexL": 23,
+     "kneeFlexR": 36.9,
+     "kneeFlex": 36.9,
+     "pelvisDropCm": 3.4,
+     "stanceOverLeg": 0.2865,
+     "offElbowDeg": 131,
+     "offArmDir": {
+      "el": -25,
+      "az": 28.98
+     },
+     "offHandHeight": -0.418,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    },
+    "extend": {
+     "from": 390.3,
+     "to": 392.6,
+     "frames": 7,
+     "kneeFlexL": 64,
+     "kneeFlexR": 37.6,
+     "kneeFlex": 50.6,
+     "pelvisDropCm": 8.1,
+     "stanceOverLeg": 0.1494,
+     "offElbowDeg": 137.8,
+     "offArmDir": {
+      "el": -13.63,
+      "az": 35.32
+     },
+     "offHandHeight": -0.3,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    },
+    "fold": {
+     "from": 390.3,
+     "to": 392.6,
+     "frames": 7,
+     "kneeFlexL": 64,
+     "kneeFlexR": 32.5,
+     "kneeFlex": 57.7,
+     "pelvisDropCm": 11.4,
+     "stanceOverLeg": 0.1494,
+     "offElbowDeg": 144.3,
+     "offArmDir": {
+      "el": -2.89,
+      "az": 41.3
+     },
+     "offHandHeight": -0.1,
+     "fallback": [
+      "interpolated"
+     ],
+     "source": "interpolated"
+    }
+   },
+   "rearKneeExtensionDeg": -17,
+   "stanceOverLeg": 0.2865,
+   "peakKneeFlexion": 57,
+   "mapping": {
+    "stance": 1.496,
+    "stanceSource": "hand-times-knee-boost",
+    "stanceBoost": 1.348,
+    "handStanceFallback": 1.11,
+    "pushOffPitch": 12,
+    "pushOffScale": 1,
+    "pushOffSource": "fallback",
+    "pushOffFlag": "rear-knee-no-extension",
+    "offArms": {
+     "takeback": {
+      "reach": 0.9763,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
+       ],
+       "reach": 0.9763,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     },
+     "drop": {
+      "reach": 0.91,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        0.43911001164494773,
+        -0.42261826174069944,
+        0.7928279778845115
+       ],
+       "reach": 0.91,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     },
+     "contact": {
+      "reach": 0.91,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        0.43911001164494773,
+        -0.42261826174069944,
+        0.7928279778845115
+       ],
+       "reach": 0.91,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     }
+    }
+   },
+   "fallback": [
+    "bootstrap-from-depth-and-2d"
+   ]
+  },
   "ignacio-buse-forehand": {
    "name": "Ignacio Buse",
    "video": "多人正手.mp4",
@@ -3583,18 +3547,15 @@
      "to": 417.4,
      "frames": 9,
      "kneeFlexL": 36,
-     "kneeFlexR": 36,
-     "kneeFlex": 36,
+     "kneeFlexR": 43,
+     "kneeFlex": 43,
      "pelvisDropCm": 3.7,
      "stanceOverLeg": 0.1321,
-     "offElbowDeg": 174,
-     "offArmDir": {
-      "el": -25,
-      "az": 24.83
-     },
-     "offHandHeight": -0.699,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@423"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3602,20 +3563,18 @@
      "from": 419.65,
      "to": 420.35,
      "frames": 7,
-     "kneeFlexL": 44,
+     "kneeFlexL": null,
      "kneeFlexR": 44,
      "kneeFlex": 44,
      "pelvisDropCm": 5,
      "stanceOverLeg": null,
-     "offElbowDeg": 174,
-     "offArmDir": {
-      "el": -25,
-      "az": 24.83
-     },
-     "offHandHeight": -0.699,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "stance-2d",
-      "off-from-2d@423"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3623,7 +3582,7 @@
      "from": 422.7,
      "to": 423.3,
      "frames": 7,
-     "kneeFlexL": 31,
+     "kneeFlexL": null,
      "kneeFlexR": 31,
      "kneeFlex": 31,
      "pelvisDropCm": 8.5,
@@ -3635,6 +3594,7 @@
      },
      "offHandHeight": -0.699,
      "fallback": [
+      "knee-flex-L-unmeasured",
       "off-from-2d@423"
      ],
      "source": "depth+2d-bootstrap"
@@ -3643,19 +3603,17 @@
      "from": 425.6,
      "to": 426.4,
      "frames": 9,
-     "kneeFlexL": 43,
+     "kneeFlexL": null,
      "kneeFlexR": 43,
      "kneeFlex": 43,
      "pelvisDropCm": 3.3,
      "stanceOverLeg": 0.2609,
-     "offElbowDeg": 172,
-     "offArmDir": {
-      "el": -25,
-      "az": 59.63
-     },
-     "offHandHeight": -0.66,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@429"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3663,9 +3621,9 @@
      "from": 428.6,
      "to": 429.4,
      "frames": 9,
-     "kneeFlexL": 53,
-     "kneeFlexR": 53,
-     "kneeFlex": 53,
+     "kneeFlexL": 58,
+     "kneeFlexR": 50,
+     "kneeFlex": 58,
      "pelvisDropCm": 7.4,
      "stanceOverLeg": 0.2057,
      "offElbowDeg": 172,
@@ -3683,7 +3641,7 @@
      "from": 420.35,
      "to": 422.7,
      "frames": 7,
-     "kneeFlexL": 38.2,
+     "kneeFlexL": null,
      "kneeFlexR": 38.2,
      "kneeFlex": 38.2,
      "pelvisDropCm": 6.6,
@@ -3693,7 +3651,7 @@
       "el": -25,
       "az": 24.83
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.699,
      "fallback": [
       "interpolated"
      ],
@@ -3703,7 +3661,7 @@
      "from": 420.35,
      "to": 422.7,
      "frames": 7,
-     "kneeFlexL": 35.6,
+     "kneeFlexL": null,
      "kneeFlexR": 35.6,
      "kneeFlex": 35.6,
      "pelvisDropCm": 7.2,
@@ -3713,7 +3671,7 @@
       "el": -25,
       "az": 24.83
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.699,
      "fallback": [
       "interpolated"
      ],
@@ -3723,17 +3681,17 @@
      "from": 423.3,
      "to": 425.6,
      "frames": 7,
-     "kneeFlexL": 35.3,
+     "kneeFlexL": null,
      "kneeFlexR": 35.3,
      "kneeFlex": 35.3,
      "pelvisDropCm": 6.6,
      "stanceOverLeg": 0.6944,
-     "offElbowDeg": 173.3,
+     "offElbowDeg": 174,
      "offArmDir": {
       "el": -25,
-      "az": 37.36
+      "az": 24.83
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.699,
      "fallback": [
       "interpolated"
      ],
@@ -3743,17 +3701,17 @@
      "from": 423.3,
      "to": 425.6,
      "frames": 7,
-     "kneeFlexL": 39.4,
+     "kneeFlexL": null,
      "kneeFlexR": 39.4,
      "kneeFlex": 39.4,
      "pelvisDropCm": 4.9,
      "stanceOverLeg": 0.6944,
-     "offElbowDeg": 172.6,
+     "offElbowDeg": 174,
      "offArmDir": {
       "el": -25,
-      "az": 49.19
+      "az": 24.83
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -0.699,
      "fallback": [
       "interpolated"
      ],
@@ -3773,15 +3731,15 @@
     "pushOffSource": "measured",
     "offArms": {
      "takeback": {
-      "reach": 0.99,
+      "reach": 0.9763,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.38058341469984214,
-        -0.4226182617406995,
-        0.8225266374401974
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
-       "reach": 0.99,
+       "reach": 0.9763,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -3860,20 +3818,17 @@
      "from": 440.6,
      "to": 441.4,
      "frames": 9,
-     "kneeFlexL": 57,
-     "kneeFlexR": 57,
-     "kneeFlex": 57,
+     "kneeFlexL": 56,
+     "kneeFlexR": 71,
+     "kneeFlex": 71,
      "pelvisDropCm": 12.8,
      "stanceOverLeg": null,
-     "offElbowDeg": 159,
-     "offArmDir": {
-      "el": -25,
-      "az": 36.37
-     },
-     "offHandHeight": -1.04,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "stance-2d",
-      "off-from-2d@453"
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3881,19 +3836,17 @@
      "from": 446.65,
      "to": 447.35,
      "frames": 7,
-     "kneeFlexL": 52,
-     "kneeFlexR": 52,
-     "kneeFlex": 52,
+     "kneeFlexL": null,
+     "kneeFlexR": 51,
+     "kneeFlex": 51,
      "pelvisDropCm": 13.3,
      "stanceOverLeg": 0.8022,
-     "offElbowDeg": 159,
-     "offArmDir": {
-      "el": -25,
-      "az": 36.37
-     },
-     "offHandHeight": -1.04,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@453"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3902,19 +3855,19 @@
      "to": 453.3,
      "frames": 7,
      "kneeFlexL": 56,
-     "kneeFlexR": 56,
-     "kneeFlex": 56,
+     "kneeFlexR": 63,
+     "kneeFlex": 63,
      "pelvisDropCm": 7.7,
      "stanceOverLeg": null,
-     "offElbowDeg": 151,
+     "offElbowDeg": 159,
      "offArmDir": {
       "el": -25,
-      "az": 39.96
+      "az": 36.37
      },
-     "offHandHeight": -0.247,
+     "offHandHeight": -1.04,
      "fallback": [
       "stance-2d",
-      "off-from-2d@459"
+      "off-from-2d@453"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3922,7 +3875,7 @@
      "from": 458.6,
      "to": 459.4,
      "frames": 8,
-     "kneeFlexL": 53,
+     "kneeFlexL": null,
      "kneeFlexR": 53,
      "kneeFlex": 53,
      "pelvisDropCm": 11,
@@ -3934,6 +3887,7 @@
      },
      "offHandHeight": -0.247,
      "fallback": [
+      "knee-flex-L-unmeasured",
       "off-from-2d@459"
      ],
      "source": "depth+2d-bootstrap"
@@ -3943,18 +3897,16 @@
      "to": 465.4,
      "frames": 9,
      "kneeFlexL": 56,
-     "kneeFlexR": 56,
+     "kneeFlexR": null,
      "kneeFlex": 56,
      "pelvisDropCm": 13.1,
      "stanceOverLeg": 0.7093,
-     "offElbowDeg": 151,
-     "offArmDir": {
-      "el": -25,
-      "az": 39.96
-     },
-     "offHandHeight": -0.247,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@459"
+      "knee-flex-R-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -3962,17 +3914,17 @@
      "from": 447.35,
      "to": 452.7,
      "frames": 7,
-     "kneeFlexL": 53.8,
-     "kneeFlexR": 53.8,
-     "kneeFlex": 53.8,
+     "kneeFlexL": 56,
+     "kneeFlexR": 56.4,
+     "kneeFlex": 56.4,
      "pelvisDropCm": 10.8,
      "stanceOverLeg": 0.8022,
-     "offElbowDeg": 155.4,
+     "offElbowDeg": 159,
      "offArmDir": {
       "el": -25,
-      "az": 37.99
+      "az": 36.37
      },
-     "offHandHeight": -0.7,
+     "offHandHeight": -1.04,
      "fallback": [
       "interpolated"
      ],
@@ -3982,17 +3934,17 @@
      "from": 447.35,
      "to": 452.7,
      "frames": 7,
-     "kneeFlexL": 54.6,
-     "kneeFlexR": 54.6,
-     "kneeFlex": 54.6,
+     "kneeFlexL": 56,
+     "kneeFlexR": 58.7,
+     "kneeFlex": 58.7,
      "pelvisDropCm": 9.7,
      "stanceOverLeg": 0.8022,
-     "offElbowDeg": 153.9,
+     "offElbowDeg": 159,
      "offArmDir": {
       "el": -25,
-      "az": 38.68
+      "az": 36.37
      },
-     "offHandHeight": -0.5,
+     "offHandHeight": -1.04,
      "fallback": [
       "interpolated"
      ],
@@ -4002,17 +3954,17 @@
      "from": 453.3,
      "to": 458.6,
      "frames": 7,
-     "kneeFlexL": 54.9,
-     "kneeFlexR": 54.9,
-     "kneeFlex": 54.9,
+     "kneeFlexL": 56,
+     "kneeFlexR": 59.4,
+     "kneeFlex": 59.4,
      "pelvisDropCm": 8.9,
      "stanceOverLeg": 0.225,
-     "offElbowDeg": 151,
+     "offElbowDeg": 156.1,
      "offArmDir": {
       "el": -25,
-      "az": 39.96
+      "az": 37.66
      },
-     "offHandHeight": -0.2,
+     "offHandHeight": -0.8,
      "fallback": [
       "interpolated"
      ],
@@ -4022,24 +3974,24 @@
      "from": 453.3,
      "to": 458.6,
      "frames": 7,
-     "kneeFlexL": 53.9,
-     "kneeFlexR": 53.9,
-     "kneeFlex": 53.9,
+     "kneeFlexL": 56,
+     "kneeFlexR": 56,
+     "kneeFlex": 56,
      "pelvisDropCm": 10,
      "stanceOverLeg": 0.225,
-     "offElbowDeg": 151,
+     "offElbowDeg": 153.4,
      "offArmDir": {
       "el": -25,
-      "az": 39.96
+      "az": 38.88
      },
-     "offHandHeight": -0.2,
+     "offHandHeight": -0.5,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": -4,
+   "rearKneeExtensionDeg": -12,
    "stanceOverLeg": 0.8022,
    "peakKneeFlexion": 72,
    "mapping": {
@@ -4053,6 +4005,28 @@
     "pushOffFlag": "push-from-pelvis-rise",
     "offArms": {
      "takeback": {
+      "reach": 0.9763,
+      "source": "measured",
+      "arm": {
+       "wrist": [
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
+       ],
+       "reach": 0.9763,
+       "hinge": [
+        0.7547319081399414,
+        -0.5534700659692904,
+        0.3522082237986393
+       ],
+       "axis": [
+        0.4040610178208843,
+        0.10101525445522108,
+        0.9091372900969897
+       ]
+      }
+     },
+     "drop": {
       "reach": 0.9833,
       "source": "measured",
       "arm": {
@@ -4074,38 +4048,16 @@
        ]
       }
      },
-     "drop": {
-      "reach": 0.977,
-      "source": "measured",
-      "arm": {
-       "wrist": [
-        0.5578541327944634,
-        -0.4226182617406995,
-        0.7142776570545988
-       ],
-       "reach": 0.977,
-       "hinge": [
-        0.7547319081399414,
-        -0.5534700659692904,
-        0.3522082237986393
-       ],
-       "axis": [
-        0.4040610178208843,
-        0.10101525445522108,
-        0.9091372900969897
-       ]
-      }
-     },
      "contact": {
-      "reach": 0.9681,
+      "reach": 0.8192,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.5820785808188873,
-        -0.42261826174069944,
-        0.6946785807804498
+        -0.17195824553872419,
+        -0.13917310096006544,
+        0.9752236716571246
        ],
-       "reach": 0.9681,
+       "reach": 0.8192,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -4121,7 +4073,8 @@
     }
    },
    "fallback": [
-    "bootstrap-from-depth-and-2d"
+    "bootstrap-from-depth-and-2d",
+    "contact-off-tuck-heuristic"
    ]
   },
   "novak-djokovic-forehand": {
@@ -4139,7 +4092,7 @@
      "from": -0.4,
      "to": 0.4,
      "frames": 5,
-     "kneeFlexL": 40,
+     "kneeFlexL": null,
      "kneeFlexR": 40,
      "kneeFlex": 40,
      "pelvisDropCm": 3.4,
@@ -4151,6 +4104,7 @@
      },
      "offHandHeight": -0.619,
      "fallback": [
+      "knee-flex-L-unmeasured",
       "off-from-2d@0"
      ],
      "source": "depth+2d-bootstrap"
@@ -4159,20 +4113,18 @@
      "from": 2.65,
      "to": 3.35,
      "frames": 7,
-     "kneeFlexL": 36,
+     "kneeFlexL": null,
      "kneeFlexR": 36,
      "kneeFlex": 36,
      "pelvisDropCm": 1.7,
      "stanceOverLeg": null,
-     "offElbowDeg": 134,
-     "offArmDir": {
-      "el": -25,
-      "az": 37.14
-     },
-     "offHandHeight": -0.619,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
       "stance-2d",
-      "off-from-2d@0"
+      "knee-flex-L-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -4180,7 +4132,7 @@
      "from": 5.7,
      "to": 6.3,
      "frames": 7,
-     "kneeFlexL": 21,
+     "kneeFlexL": null,
      "kneeFlexR": 21,
      "kneeFlex": 21,
      "pelvisDropCm": 1.8,
@@ -4192,6 +4144,7 @@
      },
      "offHandHeight": 0.126,
      "fallback": [
+      "knee-flex-L-unmeasured",
       "off-from-2d@6"
      ],
      "source": "depth+2d-bootstrap"
@@ -4201,7 +4154,7 @@
      "to": 7.4,
      "frames": 9,
      "kneeFlexL": 34,
-     "kneeFlexR": 34,
+     "kneeFlexR": null,
      "kneeFlex": 34,
      "pelvisDropCm": 0.2,
      "stanceOverLeg": 0.3494,
@@ -4209,6 +4162,7 @@
      "offArmDir": null,
      "offHandHeight": null,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
@@ -4218,8 +4172,8 @@
      "to": 8.4,
      "frames": 9,
      "kneeFlexL": 31,
-     "kneeFlexR": 31,
-     "kneeFlex": 31,
+     "kneeFlexR": 32,
+     "kneeFlex": 32,
      "pelvisDropCm": 0.7,
      "stanceOverLeg": null,
      "offElbowDeg": null,
@@ -4235,17 +4189,17 @@
      "from": 3.35,
      "to": 5.7,
      "frames": 7,
-     "kneeFlexL": 29.3,
+     "kneeFlexL": null,
      "kneeFlexR": 29.3,
      "kneeFlex": 29.3,
      "pelvisDropCm": 1.7,
      "stanceOverLeg": 0.4359,
-     "offElbowDeg": 121,
+     "offElbowDeg": 105,
      "offArmDir": {
-      "el": -0.64,
-      "az": 38.3
+      "el": 29.13,
+      "az": 39.72
      },
-     "offHandHeight": -0.3,
+     "offHandHeight": 0.126,
      "fallback": [
       "interpolated"
      ],
@@ -4255,17 +4209,17 @@
      "from": 3.35,
      "to": 5.7,
      "frames": 7,
-     "kneeFlexL": 26.4,
+     "kneeFlexL": null,
      "kneeFlexR": 26.4,
      "kneeFlex": 26.4,
      "pelvisDropCm": 1.8,
      "stanceOverLeg": 0.4359,
-     "offElbowDeg": 115.4,
+     "offElbowDeg": 105,
      "offArmDir": {
-      "el": 9.78,
-      "az": 38.8
+      "el": 29.13,
+      "az": 39.72
      },
-     "offHandHeight": -0.1,
+     "offHandHeight": 0.126,
      "fallback": [
       "interpolated"
      ],
@@ -4275,8 +4229,8 @@
      "from": 6.3,
      "to": 6.6,
      "frames": 7,
-     "kneeFlexL": 25.7,
-     "kneeFlexR": 25.7,
+     "kneeFlexL": 34,
+     "kneeFlexR": 21,
      "kneeFlex": 25.7,
      "pelvisDropCm": 1.2,
      "stanceOverLeg": 0.4359,
@@ -4295,8 +4249,8 @@
      "from": 6.3,
      "to": 6.6,
      "frames": 7,
-     "kneeFlexL": 30.1,
-     "kneeFlexR": 30.1,
+     "kneeFlexL": 34,
+     "kneeFlexR": 21,
      "kneeFlex": 30.1,
      "pelvisDropCm": 0.7,
      "stanceOverLeg": 0.4359,
@@ -4325,15 +4279,15 @@
     "pushOffSource": "measured",
     "offArms": {
      "takeback": {
-      "reach": 0.9205,
+      "reach": 0.9763,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.5471966122853077,
-        -0.42261826174069944,
-        0.7224746863017086
+        0.4210100716628344,
+        0.08715574274765817,
+        0.9028590122851735
        ],
-       "reach": 0.9205,
+       "reach": 0.9763,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -4347,15 +4301,15 @@
       }
      },
      "drop": {
-      "reach": 0.8704,
+      "reach": 0.7934,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.6197403668809148,
-        -0.011169874929422188,
-        0.7847274122600599
+        0.5582094081865885,
+        0.4867928198029176,
+        0.6718891331166942
        ],
-       "reach": 0.8704,
+       "reach": 0.7934,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -4413,18 +4367,16 @@
      "to": 131.35,
      "frames": 7,
      "kneeFlexL": 16,
-     "kneeFlexR": 16,
+     "kneeFlexR": null,
      "kneeFlex": 16,
      "pelvisDropCm": 0,
      "stanceOverLeg": 0.4061,
-     "offElbowDeg": 107,
-     "offArmDir": {
-      "el": 0.88,
-      "az": 64.25
-     },
-     "offHandHeight": 0.006,
+     "offElbowDeg": null,
+     "offArmDir": null,
+     "offHandHeight": null,
      "fallback": [
-      "off-from-2d@132"
+      "knee-flex-R-unmeasured",
+      "off-arm-unmeasured"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -4432,19 +4384,21 @@
      "from": 131.7,
      "to": 132.3,
      "frames": 7,
-     "kneeFlexL": 12,
-     "kneeFlexR": 12,
+     "kneeFlexL": null,
+     "kneeFlexR": null,
      "kneeFlex": 12,
      "pelvisDropCm": 0.6,
      "stanceOverLeg": 0.4142,
-     "offElbowDeg": 82,
+     "offElbowDeg": 107,
      "offArmDir": {
-      "el": -25,
-      "az": 49.2
+      "el": 0.88,
+      "az": 64.25
      },
-     "offHandHeight": -0.374,
+     "offHandHeight": 0.006,
      "fallback": [
-      "off-from-2d@133"
+      "knee-flex-L-unmeasured",
+      "knee-flex-R-unmeasured",
+      "off-from-2d@132"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -4453,7 +4407,7 @@
      "to": 133.4,
      "frames": 9,
      "kneeFlexL": 17,
-     "kneeFlexR": 17,
+     "kneeFlexR": null,
      "kneeFlex": 17,
      "pelvisDropCm": 0.1,
      "stanceOverLeg": 0.4188,
@@ -4464,6 +4418,7 @@
      },
      "offHandHeight": -0.374,
      "fallback": [
+      "knee-flex-R-unmeasured",
       "off-from-2d@133"
      ],
      "source": "depth+2d-bootstrap"
@@ -4473,18 +4428,19 @@
      "to": 135.4,
      "frames": 9,
      "kneeFlexL": 27,
-     "kneeFlexR": 27,
+     "kneeFlexR": null,
      "kneeFlex": 27,
      "pelvisDropCm": 2.1,
      "stanceOverLeg": 0.4576,
-     "offElbowDeg": 82,
+     "offElbowDeg": 149,
      "offArmDir": {
       "el": -25,
-      "az": 49.2
+      "az": 25.34
      },
-     "offHandHeight": -0.374,
+     "offHandHeight": -0.726,
      "fallback": [
-      "off-from-2d@133"
+      "knee-flex-R-unmeasured",
+      "off-from-2d@135"
      ],
      "source": "depth+2d-bootstrap"
     },
@@ -4492,17 +4448,17 @@
      "from": 131.35,
      "to": 131.7,
      "frames": 7,
-     "kneeFlexL": 14.2,
-     "kneeFlexR": 14.2,
+     "kneeFlexL": 16,
+     "kneeFlexR": null,
      "kneeFlex": 14.2,
      "pelvisDropCm": 0.3,
      "stanceOverLeg": 0.4061,
-     "offElbowDeg": 95.8,
+     "offElbowDeg": 107,
      "offArmDir": {
-      "el": -10.77,
-      "az": 57.48
+      "el": 0.88,
+      "az": 64.25
      },
-     "offHandHeight": -0.2,
+     "offHandHeight": 0.006,
      "fallback": [
       "interpolated"
      ],
@@ -4512,17 +4468,17 @@
      "from": 131.35,
      "to": 131.7,
      "frames": 7,
-     "kneeFlexL": 13.4,
-     "kneeFlexR": 13.4,
+     "kneeFlexL": 16,
+     "kneeFlexR": null,
      "kneeFlex": 13.4,
      "pelvisDropCm": 0.4,
      "stanceOverLeg": 0.4061,
-     "offElbowDeg": 90.9,
+     "offElbowDeg": 107,
      "offArmDir": {
-      "el": -15.75,
-      "az": 54.58
+      "el": 0.88,
+      "az": 64.25
      },
-     "offHandHeight": -0.2,
+     "offHandHeight": 0.006,
      "fallback": [
       "interpolated"
      ],
@@ -4532,17 +4488,17 @@
      "from": 132.3,
      "to": 132.6,
      "frames": 7,
-     "kneeFlexL": 13.8,
-     "kneeFlexR": 13.8,
+     "kneeFlexL": 17,
+     "kneeFlexR": null,
      "kneeFlex": 13.8,
      "pelvisDropCm": 0.4,
      "stanceOverLeg": 0.4142,
-     "offElbowDeg": 82,
+     "offElbowDeg": 98,
      "offArmDir": {
-      "el": -25,
-      "az": 49.2
+      "el": -8.44,
+      "az": 58.83
      },
-     "offHandHeight": -0.4,
+     "offHandHeight": -0.1,
      "fallback": [
       "interpolated"
      ],
@@ -4552,24 +4508,24 @@
      "from": 132.3,
      "to": 132.6,
      "frames": 7,
-     "kneeFlexL": 15.5,
-     "kneeFlexR": 15.5,
+     "kneeFlexL": 17,
+     "kneeFlexR": null,
      "kneeFlex": 15.5,
      "pelvisDropCm": 0.3,
      "stanceOverLeg": 0.4142,
-     "offElbowDeg": 82,
+     "offElbowDeg": 89.5,
      "offArmDir": {
-      "el": -25,
-      "az": 49.2
+      "el": -17.24,
+      "az": 53.72
      },
-     "offHandHeight": -0.4,
+     "offHandHeight": -0.3,
      "fallback": [
       "interpolated"
      ],
      "source": "interpolated"
     }
    },
-   "rearKneeExtensionDeg": 4,
+   "rearKneeExtensionDeg": null,
    "stanceOverLeg": 0.4061,
    "peakKneeFlexion": 16,
    "mapping": {
@@ -4577,20 +4533,21 @@
     "stanceSource": "hand-times-knee-boost",
     "stanceBoost": 1,
     "handStanceFallback": 1.02,
-    "pushOffPitch": 6.6,
-    "pushOffScale": 0.55,
-    "pushOffSource": "measured",
+    "pushOffPitch": 12,
+    "pushOffScale": 1,
+    "pushOffSource": "fallback",
+    "pushOffFlag": "rear-knee-missing",
     "offArms": {
      "takeback": {
-      "reach": 0.9659,
+      "reach": 0.9763,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.8972708105937321,
+        0.4210100716628344,
         0.08715574274765817,
-        0.432792062037384
+        0.9028590122851735
        ],
-       "reach": 0.9659,
+       "reach": 0.9763,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -4604,15 +4561,15 @@
       }
      },
      "drop": {
-      "reach": 0.742,
+      "reach": 0.8039,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.828350998663603,
-        -0.18686696452163298,
-        0.5281243798419861
+        0.9005920059766607,
+        0.015358293574952919,
+        0.4343940165211764
        ],
-       "reach": 0.742,
+       "reach": 0.8039,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -4626,15 +4583,15 @@
       }
      },
      "contact": {
-      "reach": 0.6561,
+      "reach": 0.8039,
       "source": "measured",
       "arm": {
        "wrist": [
-        0.6860705136854292,
-        -0.42261826174069944,
-        0.5922001816064236
+        0.9005920059766607,
+        0.015358293574952919,
+        0.4343940165211764
        ],
-       "reach": 0.6561,
+       "reach": 0.8039,
        "hinge": [
         0.7547319081399414,
         -0.5534700659692904,
@@ -4652,7 +4609,7 @@
    "fallback": [
     "bootstrap-from-depth-and-2d",
     "ready-depth",
-    "takeback-off-straight-floor"
+    "rearKneeExtension"
    ]
   }
  }
