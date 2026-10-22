@@ -16,6 +16,8 @@
     "spec:check": "vitest run apps/server/src/contract.test.ts",
     "service": "tsx apps/server/src/serve.ts",
     "protocol:example": "tsx scripts/export-pose-package.mts",
+    "forehand:generate": "tsx scripts/generate-player-forehands.mts",
+    "forehand:check": "tsx scripts/generate-player-forehands.mts --check",
     "package-to-glb": "tsx scripts/package-to-glb.mts",
     "bench": "tsx scripts/bench-workshop.mts",
     "qa": "node scripts/browser-qa.mjs",
