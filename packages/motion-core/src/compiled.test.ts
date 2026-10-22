@@ -6,10 +6,13 @@ import {HumanRig} from './rig';
 import {attachRacket} from './props/racket';
 import {motionFileById} from './motion-files';
 import {sampleTimes,solveWorkshop} from './pose-package';
+import {buildPelvisSchedule,pelvisSampleCount} from './pelvis-schedule';
 import {probeFrames} from './quality-probe';
 import {WORKSHOP_REVISION,workshopMeta} from './protocol';
 import {compileMotion,defaultDocument,flattenPose,frameAt,frameAtCompiled,sampleMotion,samplePose,
  serializeDoc,sortedKeys,type WorkshopDoc} from './document';
+import {measurePelvisCorrection,solvePose} from './solver';
+import {VALIDATION_LIMITS} from './validate';
 import {mulberry32,randomDoc} from './random-document';
 
 /* PR-B (issue #10): the compiled sampling snapshot. compileMotion clones and
@@ -23,7 +26,9 @@ import {mulberry32,randomDoc} from './random-document';
  * The call-count pin works through vi.mock('./document'): pose-package,
  * quality-probe and random-document all import './document' relatively, so
  * their calls route through the counting wrappers too. Solver modules import
- * only types/toV — they can never inflate the frameAt count. */
+ * only types/toV — they can never inflate the frameAt count. The pelvis
+ * schedule samples `frameAtCompiled` on its own 120 Hz grid; that cost is
+ * part of the compiled count below, and `frameAt` stays at zero. */
 const calls=vi.hoisted(()=>({compile:0,frameAt:0,compiled:0}));
 vi.mock('./document',async importOriginal=>{
  const m=await importOriginal<typeof import('./document')>();
@@ -68,7 +73,7 @@ describe('compile once, sample many — batch consumers go through the snapshot'
   /* capture()'s extraTimes pass re-samples every key instant AFTER the
    * uniform grid — a key coinciding with a grid point is visited twice
    * (pose-package.ts), so the count is grid+keys, never deduplicated. */
-  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length+sortedKeys(doc).length);
+  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length+sortedKeys(doc).length+pelvisSampleCount(doc.duration));
   expect(calls.frameAt).toBe(0); // the per-call buildModel path stays cold
  });
  it('probeFrames compiles once and samples the uniform grid only',()=>{
@@ -76,8 +81,24 @@ describe('compile once, sample many — batch consumers go through the snapshot'
   resetCalls();
   probeFrames(rig,doc,fps,racket);
   expect(calls.compile).toBe(1);
-  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length); // no extraTimes pass
+  expect(calls.compiled).toBe(sampleTimes(doc.duration,fps).length+pelvisSampleCount(doc.duration)); // no extraTimes pass; the schedule grid is separate
   expect(calls.frameAt).toBe(0);
+ });
+ it('measures the same pelvis shift solvePose applies when no override is passed',()=>{
+  const doc=defaultDocument(rig.rest);
+  const f=frameAt(doc,doc.duration/2,origin());
+  const state={support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide};
+  expect(measurePelvisCorrection(rig,f.pose,f.constraints,state).shift).toBe(solvePose(rig,f.pose,f.constraints,state).pelvisShift);
+ });
+ it('reports the applied non-negative pelvis override',()=>{
+  const doc=defaultDocument(rig.rest),f=frameAt(doc,doc.duration/2,origin());
+  const state={support:f.support,gripAmount:f.gripAmount,clavicleLift:f.clavicleLift,gripSide:f.gripSide};
+  const negative=solvePose(rig,f.pose,f.constraints,{...state,pelvisShift:-.01});
+  const negativeRoot=rig.point('root').clone();
+  const zero=solvePose(rig,f.pose,f.constraints,{...state,pelvisShift:0});
+  expect(negative.pelvisShift).toBe(0);
+  expect(negativeRoot.distanceTo(rig.point('root'))).toBe(0);
+  expect(zero.pelvisShift).toBe(0);
  });
 });
 
@@ -171,5 +192,29 @@ describe('package identity',()=>{
   const a=JSON.stringify(solveWorkshop(rig,doc,fps,meta(doc,fps)));
   const b=JSON.stringify(solveWorkshop(rig,doc,fps,meta(doc,fps)));
   expect(a).toBe(b);
+ });
+ it('keeps a compiled loop root track position and velocity continuous through the real schedule path',()=>{
+  const doc=randomDoc(mulberry32(7),rig.rest),fps=120;
+  expect(doc.loop).toBe(true);
+  const compiled=compileMotion(doc,origin());
+  const schedule=buildPelvisSchedule(rig,compiled);
+  // Seed 7 produces a loop whose raw correction exceeds the admissible track
+  // limits. This assertion pins the integration test to followLoopShift.
+  expect(schedule.passthrough).toBe(false);
+  expect(schedule.at(0)).toBeCloseTo(schedule.at(doc.duration),12);
+  const scheduledShifts=Array.from({length:13},(_,i)=>schedule.at(doc.duration*i/12));
+  expect(Math.max(...scheduledShifts)-Math.min(...scheduledShifts)).toBeGreaterThan(.005);
+  const pkg=solveWorkshop(rig,doc,fps,meta(doc,fps));
+  const {timestamps}=pkg.timeline,root=pkg.tracks.translation.values;
+  const n=timestamps.length,dim=3,dt0=timestamps[1]-timestamps[0],dt1=timestamps[n-1]-timestamps[n-2];
+  const first=[0,1,2].map(axis=>root[dim+axis]-root[axis]);
+  const last=[0,1,2].map(axis=>root[(n-1)*dim+axis]-root[(n-2)*dim+axis]);
+  expect(timestamps[0]).toBe(0);
+  expect(timestamps[n-1]).toBe(doc.duration);
+  for(let axis=0;axis<dim;axis++){
+   expect(Math.abs(root[(n-1)*dim+axis]-root[axis])).toBeLessThan(1e-6);
+   const seamAcceleration=Math.abs(first[axis]/dt0-last[axis]/dt1)/((dt0+dt1)/2);
+   expect(seamAcceleration).toBeLessThanOrEqual(VALIDATION_LIMITS.rootAccelMPerS2+1e-6);
+  }
  });
 });

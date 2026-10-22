@@ -21,6 +21,7 @@
     "forehand:semantics:check": "tsx scripts/build-forehand-semantics.mts --check",
     "package-to-glb": "tsx scripts/package-to-glb.mts",
     "bench": "tsx scripts/bench-workshop.mts",
+    "bench:pelvis": "tsx scripts/bench-pelvis-schedule.mts",
     "qa": "node scripts/browser-qa.mjs",
     "qa:pose-validity": "node scripts/pose-validity-qa.mjs",
     "assets": "python3 scripts/build-human.py && tsx scripts/retarget-walk.mjs",

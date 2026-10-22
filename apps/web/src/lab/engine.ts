@@ -9,6 +9,7 @@ import {canonical,rigManifestBody} from '@human3d/motion-core';
 import {attachProp,mountRacket,RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {checkPosePackageShape,posePackageSpec,rigMatches} from '@human3d/motion-core';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,createDynamicsSession,type DynamicsSession,type MotionSource} from '../playback/motion-source';
+import {bindSceneBackground} from '../theme/scene-background';
 import {subtleDigest} from '@human3d/motion-core';
 import type {PosePackage} from '@human3d/motion-core';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
@@ -44,7 +45,7 @@ export class HumanEngine{
  skeletonLines?:LineSegments;jointGroup=new Group();axesGroup=new Group();targetGroup=new Group();
  targetMarkers=new Map<string,Mesh>();trail?:Line;trailPoints:Vector3[]=[];
  previousPosition=new Vector3();view:ViewId='front';
- private floor?:Mesh;private grid?:GridHelper;private keyLight?:DirectionalLight;private clock=new Clock();private lastNotify=0;private resizeObserver:ResizeObserver;private raf=0;
+ private floor?:Mesh;private grid?:GridHelper;private keyLight?:DirectionalLight;private clock=new Clock();private lastNotify=0;private resizeObserver:ResizeObserver;private raf=0;private unbindTheme?:()=>void;
  onView?:(view:ViewId)=>void;onFrame?:(frame:FrameState)=>void;onReady?:(info:RigInfo)=>void;onError?:(error:Error)=>void;
  get source(){return this._source;}
  get isPhysics(){return this._source?.kind==='dynamics';}
@@ -59,7 +60,7 @@ export class HumanEngine{
   this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
   this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=PCFSoftShadowMap;
   this.renderer.domElement.setAttribute('aria-label','交互式三维人体，拖动旋转，滚轮缩放');this.renderer.domElement.setAttribute('role','img');this.host.appendChild(this.renderer.domElement);
-  this.scene.background=new Color('#f5f7fa');this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
+  this.unbindTheme=bindSceneBackground(this.scene);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
   const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
   const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
   const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);this.floor=floor;
@@ -329,5 +330,5 @@ export class HumanEngine{
   this.onFrame?.({time,duration:src.duration,phase,playing:this.playing,knee:d?.knee??0,elbow:d?.elbow??0,gripError:d?.gripError??0});
  }
  render(){this.renderer.render(this.scene,this.camera);}
- dispose(){this.disposed=true;for(const s of this.sources.values())s.dispose?.();cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();this.controls.dispose();this.mixer?.stopAllAction();this.scene.traverse(o=>{if(o instanceof Mesh||o instanceof LineSegments||o instanceof Line){o.geometry.dispose();const materials=Array.isArray(o.material)?o.material:[o.material];materials.forEach(m=>m.dispose());}});this.renderer.dispose();this.renderer.domElement.remove();}
+ dispose(){this.disposed=true;this.unbindTheme?.();for(const s of this.sources.values())s.dispose?.();cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();this.controls.dispose();this.mixer?.stopAllAction();this.scene.traverse(o=>{if(o instanceof Mesh||o instanceof LineSegments||o instanceof Line){o.geometry.dispose();const materials=Array.isArray(o.material)?o.material:[o.material];materials.forEach(m=>m.dispose());}});this.renderer.dispose();this.renderer.domElement.remove();}
 }

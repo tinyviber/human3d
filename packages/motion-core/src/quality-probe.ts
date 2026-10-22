@@ -19,6 +19,7 @@ import {Quaternion,Vector3} from 'three';
 import type {HumanRig} from './rig';
 import {DEG,WRIST_BEND_LIMIT_DEG,solveTwoBone} from './kinematics';
 import {DORSI_LIMIT_DEG,analyzePose,solveEffectiveFrame} from './solver';
+import {buildPelvisSchedule} from './pelvis-schedule';
 import {compileMotion,frameAtCompiled,sortedKeys,toV,type WorkshopDoc} from './document';
 import {sampleTimes} from './pose-package';
 import {footGeometry,type Side} from './foot';
@@ -226,6 +227,7 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
  /* The document is stable for the whole sweep — one compiled snapshot
   * instead of a buildModel per frame (same frames the compat path yields). */
  const compiled=compileMotion(doc,origin);
+ const schedule=buildPelvisSchedule(rig,compiled);
  /* Gripping side read once: compiled.gripSide is the compile-time copy of
   * doc.gripSide — identical while the doc is fixed, and the value every
   * sampled frame itself reports. */
@@ -234,7 +236,7 @@ export function probeFrames(rig:HumanRig,doc:WorkshopDoc,fps:number,tip?:ProbeTi
  const frames:ProbeFrame[]=[];
  for(const t of times){
   const f=frameAtCompiled(compiled,t);
-  const rep=solveEffectiveFrame(rig,f);
+  const rep=solveEffectiveFrame(rig,f,schedule.passthrough?undefined:schedule.at(t));
   // Deliberately the same analyzePose call solveWorkshop's sampler makes —
   // check items are identical with or without a tip object; the tip is
   // measured separately below.

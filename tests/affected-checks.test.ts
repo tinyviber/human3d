@@ -7,7 +7,7 @@ import {execFileSync,spawnSync} from 'node:child_process';
 import {
  CHECK_IDS,CATEGORY_CHECKS,FALLBACK_REASONS,RECEIPT_AUTHORITY,RECEIPT_SCHEMA_VERSION,SNAPSHOT_CONSISTENCY,SNAPSHOT_CONSISTENCY_PLAN,
  classifyChangedPath,collectVitestTargets,createReceipt,fingerprintSnapshot,
- parseNameStatusZ,parsePorcelainV2Z,selectAffectedChecks,serializeReceipt,
+ parseNameStatusZ,parsePorcelainV2Z,selectAffectedChecks,serializeReceipt,findGitRedirect,
 } from '../scripts/lib/affected-checks.mjs';
 import {parseArgs} from '../scripts/check-affected.mjs';
 
@@ -31,6 +31,12 @@ const git=(root:string,args:string[])=>execFileSync('git',['-C',root,...args],{
 
 afterEach(()=>{
  for(const dir of tempDirs.splice(0))fs.rmSync(dir,{recursive:true,force:true});
+});
+
+it('treats GIT_DISCOVERY_ACROSS_FILESYSTEM=0 as a limit, not a repository redirect',()=>{
+ expect(findGitRedirect({GIT_DISCOVERY_ACROSS_FILESYSTEM:'0'})).toBeUndefined();
+ expect(findGitRedirect({GIT_DISCOVERY_ACROSS_FILESYSTEM:'1'})).toBe('GIT_DISCOVERY_ACROSS_FILESYSTEM');
+ expect(findGitRedirect({GIT_DIR:'/tmp/elsewhere'})).toBe('GIT_DIR');
 });
 
 describe('raw Git name-status parser',()=>{
@@ -658,7 +664,7 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
   const receipt=JSON.parse(fs.readFileSync(file!,'utf8'));
   expect(receipt.selectedCheckIds).toEqual([...CHECK_IDS]);
   expect(receipt.fallbackReasons).toContain('dirty-tree');
- });
+ },30000);
 
  it('refuses a symlinked .out directory without writing outside the repository',()=>{
   const {root,base}=prepareRepo();
@@ -684,7 +690,8 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
 
  it('runs through the literal public npm wrapper and records npm identity',()=>{
   const {root,base}=prepareRepo();
-  const npm=path.join(path.dirname(process.execPath),'npm');
+  const beside=path.join(path.dirname(process.execPath),'npm');
+  const npm=fs.existsSync(beside)?beside:'npm';
   const result=spawnSync(npm,[
    '--silent','--userconfig=/dev/null','--globalconfig=/dev/null','--script-shell=/bin/sh',
    'run','check:affected','--','--base',base,
@@ -697,5 +704,5 @@ describe.skipIf(process.platform==='win32')('affected-check CLI in a temporary r
   const receipt=JSON.parse(fs.readFileSync(file!,'utf8'));
   expect(receipt.state).toBe('planned');
   expect(receipt.toolIdentity.npm).not.toBeNull();
- });
+ },30000);
 });

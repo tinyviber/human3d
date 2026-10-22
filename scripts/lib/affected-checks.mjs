@@ -478,6 +478,10 @@ export const GIT_REDIRECT_VARIABLES=Object.freeze([
 
 export function findGitRedirect(env=process.env){
  for(const name of Object.keys(env)){
+  // `0` only stops Git from walking into another filesystem. It does not
+  // point the tool at a different repository, and cloud images set it so
+  // discovery cannot hang. Any other value still counts as a redirect.
+  if(name==='GIT_DISCOVERY_ACROSS_FILESYSTEM'&&env[name]==='0')continue;
   if(GIT_REDIRECT_VARIABLES.includes(name))return name;
   if(/^GIT_CONFIG_(?:KEY|VALUE)_\d+$/.test(name))return name;
   if(/^GIT_(?:DIR|WORK_TREE|COMMON_DIR|INDEX_FILE|OBJECT_DIRECTORY|QUARANTINE_PATH|SHALLOW_FILE|GRAFT_FILE|REPLACE_REF_BASE|NAMESPACE)$/.test(name))return name;

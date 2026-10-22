@@ -1,7 +1,10 @@
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
+import {Group,Panel,Separator} from 'react-resizable-panels';
 import {Activity,ArrowDown,ArrowLeft,ArrowUp,Camera,Check,Copy,Download,FileBox,Film,FlipHorizontal2,LayoutGrid,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {LibraryList} from './chrome';
+import {useWorkshopUi} from './ui-store';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human3d/motion-core';
@@ -82,7 +85,7 @@ function KeyframeTimeInput({time,max,disabled,onCommit}:{time:number;max:number;
   onChange={e=>setDraft(e.target.value)} onBlur={e=>{if(!cancel.current)onCommit(e.currentTarget.valueAsNumber);cancel.current=false;setDraft(String(time));}}
   onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}else if(e.key==='Escape'){cancel.current=true;e.currentTarget.blur();}}}/>;
 }
-function Timeline({doc,time,selected,onSelect,onSeek,onRetime}:{doc:WorkshopDoc;time:number;selected:string;onSelect:(id:string)=>void;onSeek:(t:number)=>void;onRetime:(id:string,t:number)=>void}){
+function Timeline({doc,time,selected,onSelect,onSeek,onRetime,onBeginRetime,onEndRetime}:{doc:WorkshopDoc;time:number;selected:string;onSelect:(id:string)=>void;onSeek:(t:number)=>void;onRetime:(id:string,t:number)=>void;onBeginRetime:()=>void;onEndRetime:()=>void}){
  const track=useRef<HTMLDivElement>(null);
  const [dragKey,setDragKey]=useState<string|null>(null);
  const frac=(x:number)=>{const r=track.current!.getBoundingClientRect();return Math.max(0,Math.min(1,(x-r.left)/r.width));};
@@ -96,13 +99,13 @@ function Timeline({doc,time,selected,onSelect,onSeek,onRetime}:{doc:WorkshopDoc;
   onRetime(dragKey,Math.max(lo,Math.min(hi,frac(ev.clientX)*doc.duration)));
  };
  return <div className="ws-track-wrap">
-  <div ref={track} className="ws-track" onPointerDown={e=>{if(e.target===e.currentTarget)onSeek(frac(e.clientX)*doc.duration);}} onPointerMove={move} onPointerUp={()=>setDragKey(null)}>
+  <div ref={track} className="ws-track" onPointerDown={e=>{if(e.target===e.currentTarget)onSeek(frac(e.clientX)*doc.duration);}} onPointerMove={move} onPointerUp={()=>{setDragKey(null);onEndRetime();}} onPointerCancel={()=>{setDragKey(null);onEndRetime();}}>
    <div className="ws-progress" style={{width:`${time/doc.duration*100}%`}}/>
    <div className="ws-cursor" style={{left:`${time/doc.duration*100}%`}}/>
    {sortedKeys(doc).map(k=><button key={k.id} className={`ws-key ${k.id===selected?'sel':''} ${k.constraints.contact?'contact':''}`} style={{left:`${k.time/doc.duration*100}%`}}
      aria-label={`选择关键帧 ${k.label||fmt(k.time)}`} aria-pressed={k.id===selected}
      title={`${k.label||'关键帧'} · ${k.time.toFixed(2)}s`}
-     onPointerDown={e=>{e.stopPropagation();onSelect(k.id);setDragKey(k.id);(e.target as HTMLElement).setPointerCapture(e.pointerId);}}
+     onPointerDown={e=>{e.stopPropagation();onBeginRetime();onSelect(k.id);setDragKey(k.id);(e.target as HTMLElement).setPointerCapture(e.pointerId);}}
      onPointerMove={move} onPointerUp={()=>setDragKey(null)}
      onClick={()=>{onSelect(k.id);onSeek(k.time);}}/>)}
   </div>
@@ -115,8 +118,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const generationPreview=useRef<WorkshopDoc|null>(null),generationWorker=useRef<Worker|null>(null),generationLocked=useRef(false);
  if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),globalThis.localStorage).load();
  const [,bump]=useState(0);
- const [selected,setSelected]=useState(()=>sortedKeys(lib.current!.active())[0]?.id??'');
- const [newName,setNewName]=useState('');
+ const selected=useWorkshopUi(s=>s.selected),setSelected=useWorkshopUi(s=>s.setSelected);
+ const newName=useWorkshopUi(s=>s.newName),setNewName=useWorkshopUi(s=>s.setNewName);
  const [presetId,setPresetId]=useState(()=>BASIC_PRESETS[0]?.id??'');
  const [basicId,setBasicId]=useState(()=>BASIC_PRESETS[0]?.id??'');
  const [adjustmentTab,setAdjustmentTab]=useState<'left'|'right'|'common'>('common');
@@ -563,8 +566,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <div className="brand"><Activity size={25} strokeWidth={2}/><span>KINESIS</span><i/><h1>动作工作台</h1><small>姿态优先 · 关键帧 + 约束</small></div>
    <nav><a href="/" className="ws-back"><ArrowLeft size={14}/>返回实验室</a></nav>
   </header>
-  <main className="ws-main">
-   <aside className="ws-left">
+  <Group orientation="horizontal" className="ws-main" id="workshop-panes">
+   <Panel id="ws-library" className="ws-library-panel" defaultSize={250} minSize={200} maxSize={420}><aside className="ws-left">
     <section className="ws-card" inert={generationLockedUi}><h2>动作库 <small>{L.docs.length} 个动作</small></h2>
      <div className="ws-preset-entry">
       <label className="ws-field"><span>动作预设</span><select aria-label="初始动作预设" value={presetId} onChange={e=>setPresetId(e.target.value)}>
@@ -574,13 +577,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       </select></label>
       <button className="ws-preset-start" onClick={createFromPreset}><Plus size={14}/>从预设开始</button>
      </div>
-     <div className="ws-lib">
-      {L.docs.map(doc=><div key={doc.id} className={`ws-lib-row ${doc.id===d.id?'sel':''}`}>
-       <button className="ws-lib-name" onClick={()=>selectDoc(doc.id)} title={doc.id}><span>{doc.name}</span><small>{doc.keys.length} 关键帧 · {doc.duration.toFixed(2)}s</small></button>
-       <button aria-label={`复制 ${doc.name}`} title="复制" onClick={()=>duplicateDoc(doc.id)}><Plus size={12}/></button>
-       <button aria-label={`删除 ${doc.name}`} title="删除" onClick={()=>removeDoc(doc.id)}><Trash2 size={12}/></button>
-      </div>)}
-     </div>
+     <LibraryList docs={L.docs} activeId={d.id} onSelect={selectDoc} onDuplicate={duplicateDoc} onRemove={removeDoc} onReorder={(active,over)=>{L.reorder(active,over);bump(v=>v+1);}}/>
      <div className="ws-row">
       <input className="ws-newname" aria-label="新动作名称" value={newName} placeholder="新动作名称（可选）…" onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')createDoc();}}/>
       <button onClick={createDoc}><Plus size={13}/>新建</button>
@@ -744,15 +741,17 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      <p><i style={{background:'#d23c3c'}}/>拍头 · <em style={{color:'#f0b429'}}>触球点</em></p>
      <p className="ws-note">直接拖动末端，IK 自动解算整条链；在空白处拖动仍是旋转视角。</p>
     </section>
-   </aside>
-   <section className="ws-viewport">
+   </aside></Panel>
+   <Separator className="pane-resize"/>
+   <Panel id="ws-stage" className="ws-stage" defaultSize="auto" minSize={320}><section className="ws-viewport">
     <div ref={mount} className="ws-canvas"/>
     <div className="ws-view-heading"><h2>{displayDoc.name}</h2><p>{frame.label||'—'} · {displayDoc.inbetweens?'连续补间预览':'关键帧步进'}{candidateSession?` · ${previewSide==='source'?'A 源动作':'B 候选'}`:''}</p></div>
     <div className="ws-cameras">{([['front','正面'],['side','侧面'],['threeQuarter','45°'],['back','背面']] as [ViewId,string][]).map(([v,l])=><button key={v} aria-pressed={view===v} onClick={()=>{setView(v);engine.current?.setView(v);}}>{l}</button>)}</div>
     <div className="ws-hint"><span className="status-dot"/>{info?'拖动彩色手柄调整姿态 · 编辑写入选中或自动新建的关键帧':'加载中'}</div>
     {!info?<div className="ws-loading"><div className="loading-orbit"/><strong>{error?'加载失败':'正在读取人体模型'}</strong><p>{error}</p></div>:null}
-   </section>
-   <aside className="ws-right" inert={generationLockedUi}>
+   </section></Panel>
+   <Separator className="pane-resize"/>
+   <Panel id="ws-inspector" className="ws-inspector-panel" defaultSize={272} minSize={220} maxSize={480} inert={generationLockedUi}><aside className="ws-right" inert={generationLockedUi}>
     <section className="ws-card ws-key-card"><h2>选中关键帧 {sel?<small>@{sel.time.toFixed(2)}s</small>:null}</h2>
      {sel?<div className="ws-adjustment-tabs" role="group" aria-label="关键帧调整分类">
       {([['left','左侧调整'],['right','右侧调整'],['common','通用调整']] as const).map(([tab,label])=><button key={tab} type="button" data-testid={`adjustment-tab-${tab}`} aria-pressed={adjustmentTab===tab} onClick={()=>setAdjustmentTab(tab)}>{label}</button>)}
@@ -869,8 +868,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       {opts.onionMode==='step'?<label className="ws-field"><span>步长 s</span><input type="number" min={.02} max={1} step={.02} value={opts.onionStep} onChange={e=>{const v=Math.max(.02,Math.min(1,Number(e.target.value)||.1));setOpts(o=>({...o,onionStep:v}));engine.current?.setOptions({onionStep:v});}}/></label>:null}
      </>:null}
     </section>
-   </aside>
-  </main>
+   </aside></Panel>
+  </Group>
   <footer className="ws-footer" inert={generationLockedUi}>
    <div className="ws-transport">
     <button className="ws-play" aria-label={frame.playing?'暂停':'播放'} onClick={()=>engine.current?.setPlaying(!frame.playing)} disabled={!info}>{frame.playing?<Pause size={21} fill="currentColor"/>:<Play size={21} fill="currentColor"/>}</button>
@@ -879,7 +878,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     <button aria-label="重做" title="重做 (Ctrl+Shift+Z)" disabled={!books.current.of(d.id).canRedo()} onClick={redo}><Redo2 size={17}/></button>
     <span className="ws-time">{fmt(frame.time)}<i>/</i>{fmt(d.duration)}</span>
    </div>
-   <Timeline doc={displayDoc} time={frame.time} selected={sel?.id??''} onSelect={selectKey} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>changeKeyTime(id,t,false)}/>
+   <Timeline doc={displayDoc} time={frame.time} selected={sel?.id??''} onSelect={selectKey} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>changeKeyTime(id,t,false)} onBeginRetime={()=>engine.current?.beginInteractiveEdit()} onEndRetime={()=>engine.current?.endInteractiveEdit()}/>
    <div className="ws-actions">
     <button onClick={addKey} disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>

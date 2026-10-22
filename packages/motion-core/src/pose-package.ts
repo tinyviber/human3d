@@ -2,6 +2,7 @@ import {Quaternion} from 'three';
 import {HumanRig} from './rig';
 import {compileMotion,frameAtCompiled,sortedKeys,type WorkshopDoc} from './document';
 import {analyzePose,solveEffectiveFrame,type CheckItem} from './solver';
+import {buildPelvisSchedule} from './pelvis-schedule';
 import {RIG_ID} from './protocol';
 import {POSE_PACKAGE_KIND,POSE_PACKAGE_SCHEMA_VERSION} from './package-const';
 
@@ -128,9 +129,13 @@ export function solveWorkshop(rig:HumanRig,doc:WorkshopDoc,fps:number,
   * input here, so the per-sample buildModel frameAt would rerun is hoisted
   * into compileMotion — same EffectiveFrame per instant, byte-identical. */
  const compiled=compileMotion(doc,origin);
+ // One schedule for the capture. Admissible documents pass through, so the
+ // per-sample solve stays on the historical statement; a folding correction
+ // is replaced by the same shift(t) the workshop and the lab apply.
+ const schedule=buildPelvisSchedule(rig,compiled);
  const sample:Sampler=t=>{
   const f=frameAtCompiled(compiled,t);
-  solveEffectiveFrame(rig,f);
+  solveEffectiveFrame(rig,f,schedule.passthrough?undefined:schedule.at(t));
   return analyzePose(rig,f.pose,f.constraints).items;
  };
  const keyTimes=sortedKeys(doc).map(k=>k.time);
