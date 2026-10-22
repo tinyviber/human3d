@@ -53,11 +53,16 @@ type PlayerPreset={
  duration:number;back:number;contact:number;follow:number;
  hipTurn:number;shoulderTurn:number;reach:number;dip:number;forward:number;
  stance:number;stagger:number;balance:number;step?:number;
- /** Sagittal trunk lean (°, + forward) at 准备/引拍/击球/随挥/恢复, fitted to the side-on video. */
+ /** Sagittal trunk lean (°, + forward) at 准备/引拍/击球/随挥/恢复, fitted to the side-on video.
+  * Felix was softened from the b4b5fe6 fit (引拍 −15 → −3, 击球 37 → 24): the old 0.39 s rise ran
+  * at ~120°/s with kinks at both ends; the smoothed video lean (MediaPipe, 0.25 s median) peaks near 36° but is noisy. */
  trunkLean?:[number,number,number,number,number];
  /** Rig coupling of chest twist with forward bend: a sideways shoulder shift of ≈0.04°/°² that the
   * generator cancels with pose.side = sideCoupling × chest × lean on every key (see buildDoc). */
  sideCoupling?:number;
+ /** Hermite (C1) instead of linear on the 引拍→落拍 segment, so the trunk lean
+  * leaves the takeback without a velocity kink. Off-arm keys 落拍→击球 stay linear. */
+ leadInHermite?:boolean;
  focus:[string,string,string];
 };
 const players:PlayerPreset[]=[
@@ -77,7 +82,7 @@ const players:PlayerPreset[]=[
  {id:'karen-khachanov-forehand',name:'Karen Khachanov',order:21,video:'多人正手.mp4',frames:[360,363,366,369,372],duration:2.08,back:.8,contact:1.18,follow:1.59,hipTurn:1.08,shoulderTurn:1.1,reach:1.1,dip:.026,forward:.032,stance:1.14,stagger:.02,balance:.012,focus:['深幅引拍','开放站位','伸展随挥']},
  {id:'jakub-mensik-forehand',name:'Jakub Mensik',order:22,video:'多人正手.mp4',frames:[384,387,390,393,396],duration:2.02,back:.77,contact:1.15,follow:1.53,hipTurn:1.05,shoulderTurn:1.05,reach:1.1,dip:.026,forward:.022,stance:1.11,stagger:.02,balance:.014,step:.06,focus:['长幅引拍','前侧击球','肩上随挥']},
  {id:'ignacio-buse-forehand',name:'Ignacio Buse',order:23,video:'多人正手.mp4',frames:[417,420,423,426,429],duration:1.96,back:.71,contact:1.09,follow:1.46,hipTurn:1,shoulderTurn:1.01,reach:.97,dip:.035,forward:.03,stance:1.04,stagger:.01,balance:.01,focus:['紧凑引拍','稳定支撑','快速回位']},
- {id:'felix-auger-aliassime-forehand',name:'Felix Auger-Aliassime',order:24,video:'多人正手.mp4',frames:[441,447,453,459,465],duration:2.02,back:.76,contact:1.15,follow:1.54,hipTurn:1.09,shoulderTurn:1.09,reach:1.09,dip:.032,forward:.04,stance:1.12,stagger:.02,balance:.018,trunkLean:[-6.5,-15.1306,37.4026,4.7097,5],sideCoupling:0.0437,focus:['宽站位','充分转体','高位随挥']},
+ {id:'felix-auger-aliassime-forehand',name:'Felix Auger-Aliassime',order:24,video:'多人正手.mp4',frames:[441,447,453,459,465],duration:2.02,back:.76,contact:1.15,follow:1.54,hipTurn:1.09,shoulderTurn:1.09,reach:1.09,dip:.032,forward:.04,stance:1.12,stagger:.02,balance:.018,trunkLean:[-6.5,-3,24,8,3],sideCoupling:0.0437,leadInHermite:true,focus:['宽站位','充分转体','高位随挥']},
 ];
 const root=process.cwd();
 const request=JSON.parse(fs.readFileSync(path.join(root,'spec/examples/forehand-study.request.json'),'utf8'));
@@ -442,7 +447,7 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // 落拍 → 前挥 → 击球. Linear outgoing curves prevent Hermite tangent overshoot
  // from pushing the interpolated wrist beyond the shoulder-to-wrist reach.
  if(player.sideCoupling!=null)for(const k of keys)k.pose.side=player.sideCoupling*k.pose.chest*k.pose.lean;
- keys[1].interpolation='linear';
+ keys[1].interpolation=player.leadInHermite?'hermite':'linear';
  keys[2].interpolation='linear';
  keys[3].interpolation='linear';
  // Lead-foot step: planted through 引拍, released at 落拍 (that release key
@@ -498,6 +503,9 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // OFF_REACH_SCALE only on the trunk-turn keys (落拍/前挥) where a full-reach
  // straight off arm grazes the chest — takeback and contact keep measured reach.
  const CLEAR=OFF_REACH_SCALE;
+ // Palm roll (forearm pronation/supination) at the racket keys, degrees, from the
+ // semantics layer (racketHand.palmRollDeg). Zero when unmeasured or not specified.
+ const rollAt=(phase:'takeback'|'drop'|'foreSwing')=>+(sem?.racketHand?.palmRollDeg?.[phase]??0);
  // 准备: relaxed ready; the off hand starts half-way to its takeback guard.
  setHand(keys[0].pose.handR,racket(0,READY_RACKET));
  setHand(keys[0].pose.handL,blendArm(off(0,offTake),off(0,offDrop),.25));
@@ -506,14 +514,14 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  const takeUp=wristAdjust(TAKE_UP,{lateral:.72,reach:.96}); // 677621d takeback — elevation locked for C-path
  const takeDrop=wristAdjust(TAKE_DROP,{lateral:.55,up:.98,forward:1.03,reach:.95,lift:.012});
  const ball=wristAdjust(BALL,{lateral:1.0,up:1.02,forward:1.06,reach:1.0,lift:.01});
- setHand(keys[1].pose.handR,racket(1,takeUp));
+ setHand(keys[1].pose.handR,palmRoll(racket(1,takeUp),rollAt('takeback')));
  setHand(keys[1].pose.handL,off(1,offTake,1));
- setHand(keys[2].pose.handR,racket(2,takeDrop));
+ setHand(keys[2].pose.handR,palmRoll(racket(2,takeDrop),rollAt('drop')));
  setHand(keys[2].pose.handL,off(2,offDrop,offDrop.reach>=0.90?CLEAR:1));
  // 前挥: a real mid key makes the long off arm follow the chest turn.
  const swingR=interpolateTorsoArm(takeDrop,ball,.35);
  const swingOff=interpolateTorsoArm(offDrop,offHit,.35);
- setHand(keys[3].pose.handR,racket(3,{...swingR,lift:(takeDrop.lift+ball.lift)*.35}));
+ setHand(keys[3].pose.handR,palmRoll(racket(3,{...swingR,lift:(takeDrop.lift+ball.lift)*.35}),rollAt('foreSwing')));
  setHand(keys[3].pose.handL,off(3,swingOff,swingOff.reach>=0.85?CLEAR:1));
  // 击球: authored racket pose; off arm from video (often retracting).
  setHand(keys[4].pose.handR,racket(4,ball));
@@ -579,6 +587,15 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
 function handPose(hand:{target:{x:number;y:number;z:number};pole:{x:number;y:number;z:number};forward:{x:number;y:number;z:number};normal:{x:number;y:number;z:number}}):ArmPose{
  const v=(a:{x:number;y:number;z:number})=>new Vector3(a.x,a.y,a.z);
  return {target:v(hand.target),pole:v(hand.pole),forward:v(hand.forward),normal:v(hand.normal)};
+}
+/** Palm roll (forearm pronation/supination). The palm frame turns about the racket
+ * forearm (elbow→wrist) by `deg`: the wrist and the elbow stay put, the bend is
+ * unchanged, and the racket turns with the hand. Only the 引拍–前挥 racket keys use it,
+ * so the contact pose (the anchor) is untouched. */
+function palmRoll(pose:ArmPose,deg:number):ArmPose{
+ if(!deg||!pose.fore)return pose;
+ const q=new Quaternion().setFromAxisAngle(pose.fore.clone().normalize(),deg*Math.PI/180);
+ return {...pose,forward:pose.forward.clone().applyQuaternion(q),normal:pose.normal.clone().applyQuaternion(q)};
 }
 /** Racket wrist and head axis of a placed racket-arm pose. */
 function racketOf(pose:ArmPose){return {wrist:pose.target.clone(),axis:handAxis(pose,'R')};}

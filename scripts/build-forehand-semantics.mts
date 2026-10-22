@@ -109,6 +109,11 @@ const handStance: Record<string, number> = {
 };
 
 const profiles: Record<string, unknown> = {};
+// Carry hand-authored palm-roll data (racketHand) across rebuilds: it comes from
+// the video cross-check and the user's sweep, not from the 2D bootstrap.
+const priorProfiles: Record<string, {racketHand?: unknown}> = fs.existsSync(path.join(root, 'evidence/forehand-semantics.json'))
+  ? JSON.parse(fs.readFileSync(path.join(root, 'evidence/forehand-semantics.json'), 'utf8')).profiles ?? {}
+  : {};
 for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][]) {
   const lm = landmarks.profiles[id];
   const lefty = id.includes('shelton');
@@ -285,6 +290,7 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
       },
     },
     fallback,
+    racketHand: priorProfiles[id]?.racketHand ?? null,
   };
 }
 
