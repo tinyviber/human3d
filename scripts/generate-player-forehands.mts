@@ -53,6 +53,11 @@ type PlayerPreset={
  duration:number;back:number;contact:number;follow:number;
  hipTurn:number;shoulderTurn:number;reach:number;dip:number;forward:number;
  stance:number;stagger:number;balance:number;step?:number;
+ /** Sagittal trunk lean (°, + forward) at 准备/引拍/击球/随挥/恢复, fitted to the side-on video. */
+ trunkLean?:[number,number,number,number,number];
+ /** Rig coupling of chest twist with forward bend: a sideways shoulder shift of ≈0.04°/°² that the
+  * generator cancels with pose.side = sideCoupling × chest × lean on every key (see buildDoc). */
+ sideCoupling?:number;
  focus:[string,string,string];
 };
 const players:PlayerPreset[]=[
@@ -72,7 +77,7 @@ const players:PlayerPreset[]=[
  {id:'karen-khachanov-forehand',name:'Karen Khachanov',order:21,video:'多人正手.mp4',frames:[360,363,366,369,372],duration:2.08,back:.8,contact:1.18,follow:1.59,hipTurn:1.08,shoulderTurn:1.1,reach:1.1,dip:.026,forward:.032,stance:1.14,stagger:.02,balance:.012,focus:['深幅引拍','开放站位','伸展随挥']},
  {id:'jakub-mensik-forehand',name:'Jakub Mensik',order:22,video:'多人正手.mp4',frames:[384,387,390,393,396],duration:2.02,back:.77,contact:1.15,follow:1.53,hipTurn:1.05,shoulderTurn:1.05,reach:1.1,dip:.026,forward:.022,stance:1.11,stagger:.02,balance:.014,step:.06,focus:['长幅引拍','前侧击球','肩上随挥']},
  {id:'ignacio-buse-forehand',name:'Ignacio Buse',order:23,video:'多人正手.mp4',frames:[417,420,423,426,429],duration:1.96,back:.71,contact:1.09,follow:1.46,hipTurn:1,shoulderTurn:1.01,reach:.97,dip:.035,forward:.03,stance:1.04,stagger:.01,balance:.01,focus:['紧凑引拍','稳定支撑','快速回位']},
- {id:'felix-auger-aliassime-forehand',name:'Felix Auger-Aliassime',order:24,video:'多人正手.mp4',frames:[441,447,453,459,465],duration:2.02,back:.76,contact:1.15,follow:1.54,hipTurn:1.09,shoulderTurn:1.09,reach:1.09,dip:.032,forward:.04,stance:1.12,stagger:.02,balance:.018,focus:['宽站位','充分转体','高位随挥']},
+ {id:'felix-auger-aliassime-forehand',name:'Felix Auger-Aliassime',order:24,video:'多人正手.mp4',frames:[441,447,453,459,465],duration:2.02,back:.76,contact:1.15,follow:1.54,hipTurn:1.09,shoulderTurn:1.09,reach:1.09,dip:.032,forward:.04,stance:1.12,stagger:.02,balance:.018,trunkLean:[-6.5,-15.1306,37.4026,4.7097,5],sideCoupling:0.0437,focus:['宽站位','充分转体','高位随挥']},
 ];
 const root=process.cwd();
 const request=JSON.parse(fs.readFileSync(path.join(root,'spec/examples/forehand-study.request.json'),'utf8'));
@@ -263,6 +268,7 @@ function skeleton(player:PlayerPreset):WorkshopDoc{
   key.time=times[i];
   pose.yaw*=player.hipTurn;pose.chest*=player.shoulderTurn;pose.side*=player.shoulderTurn;
   pose.lean+=player.dip*100*[0,.14,.2,.1,0][i];
+  if(player.trunkLean)pose.lean=player.trunkLean[i];
   // Legs. The pelvis carries the measured crouch and the weight transfer; the
   // foot IK bends the knees. `root.y` is filled in after the arm keys are
   // placed (useMeasuredDepth), once every other target is final.
@@ -291,13 +297,17 @@ function skeleton(player:PlayerPreset):WorkshopDoc{
  * the net (the 蹬转 drive), released again through 随挥 and planted flat at 恢复.
  * A planted run holds its first key's contact, so the release/replant pair is
  * what lets the heel rise; the flat 准备 contact is kept at both ends. */
-/** Base push-off table at the Notion T3 12° contact heel. Per-player pitch is
- * scaled from measured rear-knee extension / pelvis rise (semantics mapping)
+/** Contact heel-lift floor (°). The per-player contact pitch is max(semantics estimate, this):
+ * 18° keeps the back-ankle root acceleration well under the 36 m/s² service limit for all 17 players
+ * (20° reached 32 m/s² on Mensik). */
+const HEEL_LIFT_DEG=18;
+/** Base push-off table at the 12° reference contact heel. Per-player pitch is
+ * scaled to the contact pitch (the semantics estimate, floored at HEEL_LIFT_DEG)
  * without changing the yaw/dx/dz footprint that the ankle guard was tuned for. */
 const PUSH_OFF_BASE:[number,number,number,number,number][]=[
  // [key, pitch°, yaw°, dx, dz] — pitch + = toes down / heel up.
  [3,6,-1,.006,.01],
- [4,12,6,.01,.02],
+ [4,12,6,.01,-.06], // 击球: rear foot 6 cm behind the 准备 stance (was +2 cm)
  [7,6,2,.01,.02],
 ];
 /** Sole clearance (m) held above the ground at the pivot: the planted toe sits
@@ -396,8 +406,9 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
   semanticsNotes.push(`站距 ${player.stance.toFixed(2)}→${stance.toFixed(2)}（膝屈曲增强 ${sem.mapping.stanceBoost ?? 1}）`);
  }
  const playerAdj={...player,stance};
- const pushPitch=sem?.mapping?.pushOffPitch ?? 12;
- if(Math.abs(pushPitch-12)>1e-3)semanticsNotes.push(`蹬地脚跟 ${pushPitch}°（语义层）`);
+ const semPitch=sem?.mapping?.pushOffPitch ?? 12;
+ const pushPitch=Math.max(semPitch,HEEL_LIFT_DEG);
+ semanticsNotes.push(`蹬地脚跟 ${pushPitch}°（语义 ${semPitch}°，下限 ${HEEL_LIFT_DEG}°）`);
  const base=skeleton(playerAdj);
  const racketArm=armLengths(rig,'R'),offArm=armLengths(rig,'L');
  const finishReach=Math.min(1.05,Math.max(.9,player.reach));
@@ -430,6 +441,7 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  // Straight off-arm targets cross the chest during the quick torso turn from
  // 落拍 → 前挥 → 击球. Linear outgoing curves prevent Hermite tangent overshoot
  // from pushing the interpolated wrist beyond the shoulder-to-wrist reach.
+ if(player.sideCoupling!=null)for(const k of keys)k.pose.side=player.sideCoupling*k.pose.chest*k.pose.lean;
  keys[1].interpolation='linear';
  keys[2].interpolation='linear';
  keys[3].interpolation='linear';
