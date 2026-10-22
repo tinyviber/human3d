@@ -37,7 +37,9 @@ export interface HandLike{target:V3Like;pole:V3Like;forward:V3Like;normal:V3Like
 export interface ArmLengths{upper:number;fore:number}
 export type Side='L'|'R';
 export interface TorsoFrame{side:Side;racketShoulder:Vector3;offShoulder:Vector3;out:Vector3;up:Vector3;front:Vector3}
-export interface ArmPose{target:Vector3;pole:Vector3;forward:Vector3;normal:Vector3}
+/** `fore` is the unit forearm direction (elbow→wrist) of a placed racket arm; the
+ * palm roll (forearm pronation/supination) turns the hand frame about it. */
+export interface ArmPose{target:Vector3;pole:Vector3;forward:Vector3;normal:Vector3;fore?:Vector3}
 export interface ArmChain{upper:Vector3;fore:Vector3;forward:Vector3;normal:Vector3}
 /** One arm shape in torso coordinates: `wrist` a unit direction from the
  * shoulder, `reach` its length as a fraction of the arm length (a shorter rig
@@ -213,7 +215,7 @@ export function placeRacketArm(f:TorsoFrame,arm:ArmLengths,c:TorsoArm,opts:{reac
  const {forward,normal}=frameFromAxis(torsoDir(f,...c.axis),bones.fore,f.side);
  const wrist=S.clone().addScaledVector(bones.upper,arm.upper).addScaledVector(bones.fore,arm.fore);
  wrist.y+=lift;
- return {target:wrist,pole:S.clone().addScaledVector(hinge,.45).add(new Vector3(0,lift*.5,0)),forward,normal};
+ return {target:wrist,pole:S.clone().addScaledVector(hinge,.45).add(new Vector3(0,lift*.5,0)),forward,normal,fore:bones.fore.clone().normalize()};
 }
 /** Off arm from torso coefficients; the off hand's fingers follow its own
  * forearm (there is no racket on that side). */

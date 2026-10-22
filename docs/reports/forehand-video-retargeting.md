@@ -214,7 +214,9 @@
 
 `depthTargets`（`scripts/lib/forehand-depth.mts`，生成器与回归测试共用）从五个阶段中位数推出 9 个键的目标：中间键按生成器自身的时间比例插值；各键限制在 [0, 引拍深度]；某阶段可用帧 < 3 时取各球员该阶段中位数，不再沿用引拍深度（沿用会让随挥释放时骨盆仍蹲着，Alcaraz 后踝因此达 23°）。生成器在手臂放置完成后，按真实求解路径（`frameAt → solveEffectiveFrame`）二分每个键的 `root.y`，使求解后髋高与目标一致，然后把双手目标按同一骨盆位移平移，手臂的躯干相对形状保持不变。位移取**求解后**的骨盆（含求解器自身的骨盆后移），不是写入的 `root`：手臂放置时种子的深蹲触发了求解器后移（Cilic、Federer 准备→前挥 1.4–6.8 cm），深度改浅后后移消失，按 `root` 平移会让 Cilic、Federer 的持拍腕在引拍处差 4–5 mm 够不到（`measure-player-forehands` 的 residMax 由 0 变 4–5 mm）；改后 17 个预设残差回到 0。
 
-**站姿下限**：前后错开且转体的站姿下双腿无法同时伸直，因此存在最浅可达深度（约 0.3–2.3 cm，随键与球员站姿而变）。浅于该值的目标按下限求解：先把引拍重心左右移回中，仍不够则停在双腿刚好够得着的高度。受此影响的是测量接近直立的 6 位球员：Tiafoe 求解 2.2（测 1.3）、Cilic 2.0（1.2）、Khachanov 1.5（−1.1，按 0）、Mensik 2.1（1.3）、Djokovic 2.3（1.7）、Federer 1.1（0.0），偏差 0.6–1.5 cm。其余 11 人求解值与测量值相差 < 0.01 cm。
+**站姿下限**：前后错开且转体的站姿下双腿无法同时伸直，因此每个键都有最浅可达深度（随键与球员站姿而变）。目标浅于该下限的键按下限求解：先把引拍重心左右移回中，仍不够则停在双腿刚好够得着的高度。下限是守卫后的可达极限（与裁剪同一余量 `REACH_TOLERANCE`），在求解之外单独计算；回执 `evidence/forehand-presets.json` 的 `stanceFloor` 记录（键、研究目标、下限）。门限（第十轮起）：可达键的求解深度与目标相差不超过 0.05 cm；下限键须满足下限高于目标（> 0.05 cm）、不高于 `GATES.stanceFloorMaxCm = 4` cm，且求解深度与下限相差不超过 0.05 cm。第十轮前，下限取自求解深度本身，相差恒为 0，门限对下限键不起作用；2.4 cm 近直立上限还放行了可达键（见第十轮）。此前 PR 头（`8b6a87f`）的门限为 4 cm，对全部键放宽，既不记录也不区分下限键。
+
+当前（第十轮后）：11 位球员、15 个键受下限影响，下限 0.91–3.49 cm，比目标深 0.12–2.05 cm：Djokovic 击球 1.8→1.92、恢复 1.6→2.51；Alcaraz 恢复 2.1→3.06；Zverev 恢复 1.6→3.12；Medvedev 准备 0.3→2.35；Rune 准备 1.0→2.28、恢复 1.7→2.85；De Minaur 准备 0.7→1.83；Cilic 准备 0→0.91、击球 0.3→1.53、延伸 1.34→1.48；Khachanov 恢复 1.6→2.70；Federer 击球 0.6→1.48；Tiafoe 击球 0.6→1.26；Buse 随挥 3.3→3.49。其余 138 个键的求解深度与目标相差不超过 0.02 cm。
 
 ### 后踝限位：作用在换脚段，不在引拍
 
@@ -224,15 +226,17 @@
 
 ### 结果（17 个预设）
 
-- 引拍深度：11 人与测量一致，6 人受站姿下限，偏差 ≤ 1.47 cm（Khachanov）。
-- 击球段（前挥/击球/延伸）屈膝损失 0（求解深度不浅于目标，守卫不改髋高）；旧守卫此处损失 0.6–2.4 cm。目标 ≥ 2.4 cm 的键与目标相差 < 0.01 cm；目标接近 0 的键（Tiafoe、Cilic、Khachanov、Mensik、Djokovic、Federer）停在站姿下限，比目标深 0.1–2.1 cm。
+（第五轮结果。引拍与击球段两条已按第八轮回执更新；当前范围见「当前数值」表。）
+
+- 引拍深度：17 人解算值与（地板后）目标逐人精确一致，偏差 0.00 cm。16 人原始测量 0–7.3 cm 被抬到 8 cm 地板；Felix 13.3 cm 不受地板影响。引拍键不在站姿下限名单内。
+- 击球段（前挥/击球/延伸）：每键深度不浅于目标 − 0.05 cm，即屈膝损失为 0（守卫不改髋高）；旧守卫此处损失 0.6–2.4 cm（第五轮数据）。目标 ≥ 2.4 cm 的非下限键与目标相差 ≤ 0.01 cm；击球键中 Federer、Tiafoe、Cilic 为站姿下限（见上），其余按目标求解（Djokovic 击球超出 0.12 cm，见上）。
 - 后踝背屈峰值（240 采样）≤ 20.04°。
 - 服务 `POST /v1/motions`：40 Hz（默认）与 60 Hz（上限）全部 200，语义错误 0；根加速度 40 Hz ≤ 12.6 m/s²、60 Hz ≤ 16.1 m/s²（HEAD 为 20.9 / 28.8）；支撑脚滑移 ≤ 1.4 mm（HEAD 最大 8.6 mm）。
 - 240 fps 质量探针：骨盆修正饱和帧 16 个预设为 0、Medvedev 15 帧（折肘→随挥，左腿残差 1.4 mm，即上面的滑移；HEAD 为 0–207 帧、残差最大 11 mm）；脚底穿插 0；根加速度最大 52.6 m/s²（Felix，击球落脚），HEAD 最大 97.6。
 
 ### 限制
 
-- **36 m/s² 只在服务采样率（40/60 Hz）下满足**。240 fps 探针中仍有 6 个预设在击球落脚处（0.95–1.21 s）超过 36：Felix 52.6、Medvedev 50.4、De Minaur 49.7、Mensik 49.0、Shelton 45.9、Fokina 37.4。来源是求解器骨盆修正在落脚时随支撑权重 smoothstep 进入的拐点；HEAD 同一口径下有 11 个超过 36、最大 97.6。消除它需要改求解器的支撑权重或修正方式，属于共享求解语义（需 bump `SERVICE_VERSION`），不在本 issue 范围。
+- **36 m/s² 只在服务采样率（40/60 Hz）下满足**。240 fps 探针中仍有 6 个预设在击球落脚处（0.95–1.21 s）超过 36：Felix 52.6、Medvedev 50.4、De Minaur 49.7、Mensik 49.0、Shelton 45.9、Fokina 37.4。**（状态更新：以上为 `66ceefb` 的数字；HEAD 为 16 个，见第七轮）**来源是求解器骨盆修正在落脚时随支撑权重 smoothstep 进入的拐点；HEAD 同一口径下有 11 个超过 36、最大 97.6。消除它需要改求解器的支撑权重或修正方式，属于共享求解语义（需 bump `SERVICE_VERSION`），不在本 issue 范围。
 - **准备键浅于部分测量**：Khachanov 准备 17.8 cm、Felix 12.8 cm、Cobolli 9.9 cm 等是分步落地的下蹲，深于引拍；按「不超过引拍深度」规则被截断，未建模分步。
 - **Alcaraz 击球 14.6 cm**：仅 7 帧可用，且脚在画面边缘；按规则截断为引拍深度 7.3 cm。
 - **Felix 骨盆后移 22 cm**：其引拍 13.3 cm、恢复 13.1 cm 都很深，后踝在全程需要大幅后移才能保持 20°。动作可求解、无 422，但视觉上重心明显偏后，需要视频对照确认。
@@ -241,7 +245,231 @@
 ### 验证记录（第五轮）
 
 - 已执行：`npx tsx scripts/measure-forehand-depth.mts --write`（17 人全部可测、站立核对通过）；`npx tsx scripts/generate-player-forehands.mts`。
-- 已执行：新增 `scripts/forehand-depth.test.ts`（9 项：纯分析单元 3 项；预设覆盖、引拍 ±1.5 cm 与逐键目标、击球段屈膝损失 ≤ 0.6 cm、双腕仍够到目标（≤ 1 mm）、后踝 ≤ 20.05°（240 采样）、服务 40/60 Hz 无 422 且根加速度 ≤ 36、滑移 ≤ 9 mm）。用 HEAD 资产运行该测试会失败 2 项（Djokovic 引拍偏差 4.3 cm、Alcaraz 前挥损失 2.45 cm）；用按 `root` 平移双手的中间版本资产运行，腕部一项失败（Federer 3.5 mm @0.73 s），确认能抓住这两类问题。
+- 已执行：新增 `scripts/forehand-depth.test.ts`（9 项：纯分析单元 3 项；预设覆盖、引拍 ±1.5 cm 与逐键目标、击球段屈膝损失 ≤ 0.6 cm（**更正：该项不可能失败，已由逐键下界取代，见第七轮**）、双腕仍够到目标（≤ 1 mm）、后踝 ≤ 20.05°（240 采样）、服务 40/60 Hz 无 422 且根加速度 ≤ 36、滑移 ≤ 9 mm）。用 HEAD 资产运行该测试会失败 2 项（Djokovic 引拍偏差 4.3 cm、Alcaraz 前挥损失 2.45 cm）；用按 `root` 平移双手的中间版本资产运行，腕部一项失败（Federer 3.5 mm @0.73 s），确认能抓住这两类问题。
 - 已执行：`npx tsc -b`、`npm run build`、`npm run spec:check`、`npm run docs:check`、`npx tsx scripts/measure-player-forehands.mts`（无肘钳位、无手臂—躯干交叉、腕残差 0 mm）；全量 `npm test -- --maxWorkers=3`：29 个文件、570 通过、2 跳过。默认并发下有 1–2 个与本改动无关的用例在 5 s 超时（`tests/affected-checks.test.ts` 的 CLI 用例、`generate.test.ts` 的一项），单独运行均通过。
 - 未执行：`npm run qa` / `npm run qa:pose-validity` / `node scripts/pose-visual-qa.mjs` 浏览器验收与截图，视觉判定（尤其 Felix 的后移）未做；`npm run bench`。
 - 移交：求解器落脚拐点（240 fps 根加速度）需单独切片，并 bump `SERVICE_VERSION`。
+
+## 第六轮（2026-10-21 夜）：`codex/forehand-legs-v5` 下蹲地板、蹬地 12°、腕轻度内收
+
+Notion overnight 验收（基线 tip = issue #17 的 3D 深度 + 「不抬骨盆」后踝守卫）：
+
+- **引拍深度地板**：`MIN_TAKEBACK_CM = 8`。浅于 8 cm 的 MediaPipe 引拍抬到 8 cm（目视下蹲）；Felix 保持 13.3 cm。被抬高时随挥释放地板 ≥4 cm；**follow→recover 上升最多 3.5 cm**（Mensik 实测随挥 14.4 cm 钳到 8 后恢复段原差 6+ cm，导致前脚滑移 1.3 cm）。
+- **蹬地角**：`PUSH_OFF` 击球脚跟 **12°**（前挥/随挥释放 6°）。**（更正：实际应用 18°，见第七轮）**#17 后验骨盆后移写入关键帧后，Frances 12° 不再出现 42 m/s² 拐点。
+- **落地比例**：`LAND_SCALE` 0.7 → 0.55，配合恢复上升上限，17 预设 40 Hz 滑移 ≤ 9 mm。
+- **腕部（用户要求纳入范围）**：不对 2D 做重映射；对躯干系 `TAKE_UP` / `TAKE_DROP` / `BALL` 做 `wristAdjust`（lateral 0.85 / 0.60 / 0.88，落拍/击球略抬与前送）。引拍过强内收会破坏 pose-validity「上臂先下落后击球」门限，故引拍仅轻度侧向阻尼。IK 相对作者目标残差仍为 0；pose-validity 全过。
+- **未改**：`DORSI_LIMIT_DEG=20` / `ANKLE_MAX=20.05`；不放宽 `validate.ts`；不手改 `assets/motions/*-forehand.json`（均由生成器重写）。
+
+验证：`npx tsx scripts/generate-player-forehands.mts`；17 预设 `POST /v1/motions` 40 Hz 全 200；`npx tsc -b`；全量 `vitest` 575 通过 / 3 跳过；`pose-validity` + `forehand-depth` 定向通过。报告：`/workspace/forehand-legs-v5-report.md`。
+
+
+## 第七轮：框架加固、来源修正与 240 Hz 回退核查（`codex/forehand-legs-v5`）
+
+本轮不改关键帧：17 个预设的 `document` 与第六轮逐字节一致（jq 规范化比较）。变化只有三类：`notes` 来源标注（`notes` 参与服务端动作定义哈希，因此 17 个动作的 revision 随之变化）、生成器的门限与回执、测试。
+
+### 返工与失误模式
+
+1. **二维与三维来源混淆**：引拍与离地数字在 2D 自举与 3D 测量之间反复改动。off-arm 引拍至今仍是 2D 自举（`evidence/forehand-semantics.json` 的 profile 全部为 `bootstrap-depth-2d`），而 notes 曾写成“测量”。
+2. **门限只在服务端、发现得晚**：本报告前文记载，上一代 17 个预设中有 7 个在 `POST /v1/motions` 返回 422（落脚处根加速度超过 40 m/s²）。生成器事先并不知道这条门限。
+3. **同一数字多处手写**：蹬地角、根加速度 40/36、滑移 10/9 mm 分别写在报告、测试、生成器与 PR 正文中。第六轮后已不一致：报告与 PR 正文仍写 12°，实际应用 18°。
+4. **“测量”其实是地板后的目标**：16/17 的引拍原始测量为 0–7.3 cm，抬到 8.0 cm 地板后 notes 仍写“测量”。
+5. **补偿只看结果、没有棘轮**：骨盆后移（守卫烘焙）与站姿 knee-boost 会改变其他指标，却没有与历史值比较的门限。第六轮的 240 Hz 回退因此没有被拦下（见下）。
+6. **死断言**：第五轮的“击球段屈膝损失 ≤ 0.6 cm”不可能失败，逐键下界（深度 ≥ 目标 − 0.05 cm）严格包含它。
+7. **不可复现的中间数据**：腕部残差的依据在 `.out/analysis` 与工作区外的报告里，仓库内无法重放。
+
+### 新增能力（均有测试）
+
+| 能力 | 位置 | 防止的问题 |
+|---|---|---|
+| 门限单一来源 `GATES`，并与服务端 `VALIDATION_LIMITS` 做余量对照 | `scripts/lib/forehand-gates.mts` | 数字漂移（模式 3） |
+| 测量库：腿部静止、解算深度、后踝峰值、腕残差、240 Hz 探针、服务端判定 | `scripts/lib/forehand-measure.mts` | 生成器与测试各写一份公式（模式 6、7） |
+| 失败即封闭：任一门限失败则**一个文件都不写**，输出原因，退出码 1 | `scripts/generate-player-forehands.mts` | 发现得晚（模式 2） |
+| 回执 `evidence/forehand-presets.json`；`npm run forehand:check` 与 `scripts/forehand-presets.test.ts` 检查新鲜度 | 同上 | 手改资产，或回执与生成器脱节（模式 1、3） |
+| 棘轮：240 Hz 根加速度、骨盆后移、站姿只能下降；上调需 `--rebaseline`，回执 diff 可见 | `forehand-gates.mts`（`nextCeiling`、`ratchetFailures`） | 补偿被静默加码（模式 5） |
+| 逐键深度下界取代死断言 | `scripts/forehand-depth.test.ts`、`scripts/forehand-gates.test.ts` | 死断言（模式 6） |
+| notes 来源修正：地板值、off-arm 二维、蹬地 18° 说明 | 17 个 `assets/motions/*-forehand.json` | 推断写成测量（模式 1、4） |
+
+回执数值保留 3 位小数，比较时容差 1.5e-3，以吸收舍入边界与跨 Node 版本的末位差（CI 用 Node 22，本地为 24）；资产数值容差 1e-6。`sha256` 用于检出手改。
+
+### 当前数值（以 `evidence/forehand-presets.json` 为准，此处只列范围）
+
+| 指标（17 人） | 范围 | 门限 / 处理 |
+|---|---|---|
+| 后踝背屈峰值（240 采样） | 19.92–20.00° | ≤ 20.05° |
+| 击球腕残差 | 0 mm | ≤ 1 mm |
+| 引拍深度原始测量 | 0–7.3 cm（16 人）；Felix 13.3 cm | 地板 8.0 cm 为目标；解算值与目标差 0.00 cm（门限 1.5 cm） |
+| 蹬地脚跟（应用，工程下限） | 18°（17/17） | 下限 18° 为补偿值，非视频测量；语义测得 8 人为 6.6–8.4°，9 人无语义测量（记 12°）；17 人均被下限覆盖 |
+| 骨盆后移（守卫烘焙） | 0–19.7 cm；8 人 ≥ 6 cm | 棘轮（±0.05 cm） |
+| 站姿（应用） | 1.02–1.568（Alcaraz、Felix 最高） | 棘轮（±0.005） |
+| 服务 40 Hz 根加速度 | 4.9–20.8 m/s²（Djokovic 最低，Buse 最高） | ≤ 36 |
+| 服务 60 Hz 根加速度 | 8.3–23.1 m/s²（Buse 最高） | ≤ 36 |
+| 服务 40 Hz 支撑滑移 | 0–0.40 mm（60 Hz 0–0.40 mm；第十轮起最高均为 Tiafoe） | ≤ 9 mm |
+| 240 Hz 探针根加速度 | 21.1–53.3 m/s²；10/17 > 36（第七轮为 16/17） | 仅棘轮，见下 |
+| 站姿下限键（回执 `stanceFloor`） | 15 键 / 11 人；下限 0.91–3.49 cm（第十轮） | 下限 ≤ 4 cm；求解 = 下限 ± 0.05 cm；其余键求解 = 目标 ± 0.05 cm |
+
+### 240 Hz 回退：归因与部分修复（第八轮）
+
+第七轮把 16 个预设超过 36 m/s² 的 240 Hz 峰值记为未解决。第八轮用替换对照做了归因，修复其中一个成因；其余 10 个保留为限制。
+
+| 版本 | 超过 36 m/s² 的预设 | 最大值 |
+|---|---|---|
+| `66ceefb`（第五轮；与该轮报告一致） | 6 | 52.6（Felix） |
+| `3e23da1`（第六轮首个提交：8 cm 引拍地板 + 12° 蹬地） | 7 | 73.2（Cobolli） |
+| `8b6a87f`（第七轮结束时的 PR 头，改动前） | 16 | 90.3（Cobolli） |
+| 第八轮：引拍→落拍段统一为 Hermite | 10 | 53.3（Khachanov） |
+
+- 改动前，16 个中 6 个（Djokovic、Federer、Cobolli、Tiafoe、Khachanov、Mensik）峰值落在引拍键附近（0.73–0.81 s），其余 10 个落在引拍至击球段（0.85–1.13 s）。
+- 成因（对照）：引拍→落拍段在 16 人的资产中为线性插值，只有 Felix 使用 Hermite（`leadInHermite`）。改为统一 Hermite（生成器 `keys[1].interpolation = 'hermite'`，删除 `leadInHermite` 开关；`keys[2]`、`keys[3]` 仍为线性）后，超过 36 的预设由 16 个降到 10 个，最大值由 90.3 降到 53.3。机制未做逐帧拆解，结论来自替换对照。
+- 残余 10 个仍超过 36：Federer 37.0、Buse 39.2、Zverev 40.6、Rune 41.8、Medvedev 42.0、Davidovich Fokina 43.7、Shelton 43.8、Alcaraz 48.2、Cilic 49.8、Khachanov 53.3。棘轮（只降不升）把各自当前值记为上限，只防止进一步恶化，不代表已修复。
+- 服务采样率 40 / 60 Hz 全部通过（60 Hz 最大 23.2 m/s²），因此服务门限拦不住 240 Hz 尖峰；240 Hz 只是工程探针，服务从不提供该采样率。
+- 未修复部分：消除剩余尖峰需要改变引拍或骨盆修正的轨迹，属于视觉设计变更，视觉验收（`npm run qa`）未做；若改求解器，还需 bump `SERVICE_VERSION` 并全量重验。修复后重新生成即可下调棘轮。
+
+### 有意未做
+
+- 不改关键帧与设计参数（8 cm 引拍地板、18° 蹬地下限、站姿与骨盆烘焙）：属于视觉设计，需视觉验收。
+- 不修剩余 10 个超过 36 m/s² 的 240 Hz 尖峰（见上）。
+- 不重跑 3D MediaPipe 语义提取。off-arm 继续按二维自举计，并已在 notes 中标注。
+- 不把 `scripts/` 纳入 `tsc -b`：既有脚本（如 `forehand-depth.mts`、`forehand-semantics.test.ts`、生成器）已有类型错误；本轮新增文件已用临时配置单独检查通过。
+- 不编辑 PR #22 正文、不改草稿状态、不合并。`codex/forehand-semantics-p1` 仅作参考，未合并、变基或摘取提交。
+
+### 验证记录（第七轮）
+
+- `npm run forehand:check`：通过（17 个资产与回执一致）。
+- 负向测试（均已恢复）：手改资产 → 报 sha256 不一致并拒绝；棘轮上限降到 30 → 报“超过记录上限”、退出码 1；`rootAccelMax` 收紧到 20 → 拒绝且不写任何文件。
+- `npm test`（本地 Node 24）：32 个文件，603 通过 / 3 跳过（第六轮基线 590 / 3；新增门限测试 13 项、回执测试 1 项；移除死断言 1 项）。
+- `npm run docs:check`：55 个 Markdown，155 条相对链接，0 死链。
+- `npx tsc -b`、`npm run spec:check`（22 通过）、`npm run build`：通过。
+- 未跑：`dynamics` 作业（草稿 PR 在 CI 中跳过，本轮未改动力学源码）；`npm run qa` 视觉验收。
+
+## 第八轮：PR #22 评审返工（`codex/forehand-legs-v5`）
+
+评审结论为 REWORK（B1–B4 必修，A1–A4 建议）。逐项处理：
+
+| 评审项 | 处理 | 位置 |
+|---|---|---|
+| B1：240 Hz 回退未修复 | 引拍→落拍段统一为 Hermite；超过 36 m/s² 的预设 16→10，剩余 10 个保留为限制（见「240 Hz 回退」） | `scripts/generate-player-forehands.mts`（`keys[1].interpolation`） |
+| B2：站姿下限门限放宽到 4 cm | 全局门限恢复 2.4 cm；13 个下限键写入回执 `stanceFloor` 并单独验收（下限 ≤ 4 cm，求解 = 下限 ± 0.05 cm） | `scripts/lib/forehand-gates.mts`、`scripts/forehand-depth.test.ts` |
+| B3：`--rebaseline` 不生效 | 带 `--rebaseline` 时棘轮不判失败，并把新值记为上限；新增测试 | `ratchetFailures`、`generate()`、`scripts/forehand-gates.test.ts` |
+| B4：文档规则与测试不符（击球段 0.6 cm） | 改为逐键规则，与测试一致（见「结果」与「站姿下限」） | `AGENTS.md`、本报告 |
+| A1：脚本注释 | 已改为历史说明 | — |
+| A4：未用导入 | 删除生成器中未使用的 `RATCHET_KEYS` 导入 | `scripts/generate-player-forehands.mts` |
+| A2：`package.json` 中 esbuild 的 allowScripts 配置 | 未处理 | — |
+| A3：`semanticDepthTargets` 与 `depthTargets` 重复 | 未处理 | — |
+
+### 验证记录（第八轮）
+
+- `npm run forehand:generate`：退出 0；17 个资产与回执重写，未加 `--rebaseline`（棘轮只降不升）。`npm run forehand:check`：通过。
+- `npx vitest run`（全量）：32 个文件，606 通过 / 3 跳过（第七轮 603 / 3；新增 3 项门限测试：普通键不放宽、下限回退到记录值且封顶、`--rebaseline` 语义）。
+- 定向测试（包含在全量运行中）：`scripts/forehand-depth.test.ts` 11 项、`scripts/forehand-gates.test.ts` 16 项通过。
+- `npx tsx scripts/measure-player-forehands.mts`：退出 0；17 个预设的腕锥钳位、手臂—躯干交叉、肘角钳位均为 0，腕残差 0 mm。
+- `npx tsc -b`：退出 0。`npm run docs:check`：55 个 Markdown，155 条相对链接，0 死链。
+- 未跑：`npm run qa` 视觉验收（剩余 240 Hz 尖峰的修复需要它）；`dynamics` 作业（未改动力学源码）；`npm run build`（未改 web 源码）。
+- 未合并 main。main（`6e72a05`）比本 PR 头 `8b6a87f` 多 2 个提交（#19、#20 的合并；`SERVICE_VERSION` 0.8.0），本 PR 头另有 11 个提交不在 main 上。回执 `solver.serviceVersion` 仍为 0.7.0；合并 main 后需重新生成。
+
+## 第九轮：第二份 PR #22 评审（Request changes，头 `8b6a87f`）
+
+第二份评审引用的 240 Hz 数值来自 `8b6a87f`，已被第八轮的 Hermite 修复改变。以下数值以当前回执和重新生成的 [指标报告](forehand-semantics-metrics.md) 为准。
+
+### 评审项处理
+
+| 评审项 | 处理 | 结果 |
+|---|---|---|
+| P1-1：Solver Validity 覆盖虚假 | 第一类改为 motion 级：走生产回放（`frameAt` → `solveEffectiveFrame` → `PoseValidityChecker`，每动作 16 个均匀采样加全部关键帧），并加入回执的 40/60 Hz 服务判定与踝峰值。旧的逐格检查（NaN 计为 0/34）已退役。不确定帧单列，不计为通过 | definite 检查 17/17。407 个采样帧中 104 个不确定（每动作 3–12 个；肩/腋皮肤与躯干接触，判定器未分类） |
+| P1-2：Video Reconstruction 用 2D 对 3D | 第三类只比较 3D 对 3D：骨盆深度 ≤ 2 cm，膝屈曲 ≤ 10°，参考为 `evidence/forehand-depth.json`（MediaPipe worldLandmarks，单目估计，非真值）。2D 站姿、肘角、手臂方向仅作诊断，不计入通过率 | 10/34（29.4%）。2D 诊断中 31/34 超过旧 2D 阈值，仅作注记 |
+| P1-3：蹬地脚跟 18° 被当作语义测量 | 18° 明确为工程下限（补偿值，非视频测量）。回执新增 `semanticDeg`、`source`、`floorDeg`、`floored`、`appliedDeg`；17 个 notes 写明语义测得值与下限的关系 | 17/17 受下限约束。语义测得 6.6–8.4°（8 人）；9 人无语义测量，语义值记 12°，均被 18° 覆盖。未做调参或测试；用脚部轨迹替代下限列为后续 |
+| P1/P2-4：240 Hz 根加速度尖峰 | 保留为开放风险，不宣称已修复。240 Hz 只是工程探针，服务从不提供该采样率，因此服务门限拦不住它 | 10/17 > 36 m/s²，最大 53.3（Khachanov）。服务 40 / 60 Hz 最大 20.8 / 23.2 m/s² |
+| P2-5：「全 3D 重提取」表述不实；racketHand 读取自身输出 | 文档与 `method` 改为实情：未做 3D 重提取；左右手由球员表给定，无逐帧左右判定。racketHand 改读独立输入 `evidence/forehand-semantic-overrides.json` | 用 `npx tsx scripts/build-forehand-semantics.mts --write` 重建后，17 个 profile 与 HEAD 逐项一致，仅 `method` 变化 |
+| P2-6：`detectSwap` 误判交叉步 | 核查：仅被 `readSemanticsFrame` / `analyzeSemantics` 调用，生产 bootstrap 不调用。测试中的交叉步断言已标注为「已知误判」，不代表期望行为 | 未改代码，列为延后风险 |
+| CI：Full / Dynamics 作业被跳过（`draft_deferred`） | 草稿 PR 的 CI 设计。标记 ready for review 由用户决定，本轮未改草稿状态 | 待用户决定 |
+
+### 指标结果（重新生成）
+
+| 类别 | 结果 | 说明 |
+|---|---|---|
+| 一、Solver Validity（motion 级，17 预设） | 17/17（definite） | 240 Hz 探针 10/17 > 36，开放风险。通过 40/60 Hz 不代表动作平滑 |
+| 二、Rig Target Tracking（cell 级，34） | 26/34 | 求解结果对生成器自身目标的跟踪，不是视频真值 |
+| 三、Video Reconstruction（3D，34） | 10/34 | 仅 3D 对 3D；2D 诊断不计入 |
+
+### 修改范围
+
+- `scripts/_metrics-semantics.mts`：三类分别计分；第一类走生产回放；第三类去掉 2D 门限；第一类状态列标注为 definite。
+- `scripts/generate-player-forehands.mts`：脚跟下限的回执字段与 notes（17 个资产仅 `notes` 变化）。
+- `scripts/build-forehand-semantics.mts`、`evidence/forehand-semantic-overrides.json`（新增）：racketHand 改为独立输入；`method` 修正。
+- `scripts/measure-forehand-semantics.mts`：docstring 修正（薄封装，不是 ≥30 Hz 重提取）。
+- `scripts/forehand-semantics.test.ts`：交叉步断言加注「已知误判」（断言本身未变）。
+- `docs/reports/forehand-semantics-metrics.md`：重新生成。
+
+### 未做（延后）
+
+- 全量 3D MediaPipe 重提取：未实现，off-arm 仍为二维自举。
+- `detectSwap` 与逐帧左右判定（时间连续性）：未实现。生产不调用，不影响现有 17 个资产，但不可用于动态步法。
+- 240 Hz 尖峰（10/17）：消除需要改变引拍或骨盆修正轨迹，属视觉设计变更，需 `npm run qa` 视觉验收（未做）。若改求解器，还需 bump `SERVICE_VERSION` 并全量重验。
+- 脚跟 18°：用脚部轨迹推导接触脚跟俯仰以替代工程下限，未做。
+- 不确定帧（104/407）：需要皮肤—躯干接触的判定器，未做。
+- 内置 `forehand`（非预设）扫描结果：10 次腕锥钳位、11 个不确定帧。本轮未改动，已记入指标报告。
+- 第一轮遗留：A2（`package.json` 中 esbuild 的 allowScripts）与 A3（`semanticDepthTargets` 与 `depthTargets` 重复）仍未处理。
+- 不编辑 PR 正文，不改草稿状态，不合并 main。
+
+### 验证记录（第九轮）
+
+- `npm run forehand:generate`：退出 0。17 个资产仅 `notes` 变化（其余字段逐一一致）；回执仅 `sha256`、`inputs` 与新增 `heel` 字段变化，棘轮数值不变。`npm run forehand:check`：通过。
+- `npx tsx scripts/build-forehand-semantics.mts --write`：17 个 profile 与 HEAD 一致，仅 `method` 变化。
+- `npx tsx scripts/_metrics-semantics.mts`：退出 0（17/17、26/34、10/34）。
+- `npx tsx scripts/measure-player-forehands.mts`：退出 0；17 个预设的腕锥钳位、手臂—躯干交叉、肘角钳位与肩方向失败均为 0，腕残差 0 mm。
+- `npx tsc -b`：退出 0。`npm run docs:check`：55 个 Markdown，155 条相对链接，0 死链。`npm run spec:check`：22 通过。
+- `npx vitest run`（全量）：32 个文件，606 通过 / 3 跳过（与第八轮相同）。
+- `npm run build`：退出 0。
+- `npm run dynamics:validate`、`npm run dynamics:test`：均退出 0（先按 `scripts/requirements-dynamics.txt` 安装依赖，与 CI 的 Dynamics 作业相同）。
+
+## 第十轮：第三份 PR #22 评审（仍建议小幅返工，头 `ecb51d3`）
+
+评审头 `ecb51d3` 与本地 `12fe9cc` 的树相同（远端对应提交 `ecb51d32`）。本轮只改站姿下限门限与语义报告的新鲜度检查，不改关键帧与设计参数。
+
+### 评审项处理
+
+| 评审项 | 处理 | 结果 |
+|---|---|---|
+| P2-A：站姿下限掩盖深度偏差 | (1) 下限独立测量：`highestReachRoot(doc, i, REACH_TOLERANCE)`，与裁剪使用同一余量（原为 0）；回执 `floorCm` 不再取求解值。(2) 删除 2.4 cm 近直立上限：它使目标低于 2.4 cm 的可达键可以求解到 2.45 cm 而不被记录。(3) 门限改为双向：可达键的求解深度与目标之差的绝对值 ≤ 0.05 cm；下限键须下限比目标高 0.05 cm 以上、且不超过 4 cm，并且求解深度与下限之差的绝对值 ≤ 0.05 cm。(4) 新增 `resolveHeights`：守卫后按真实求解路径（`frameAt` → `solveEffectiveFrame`）逐键重解 `root.y`，使回执下限与最终资产一致。首次严格运行时，Buse 随挥求解为 3.38 cm，而守卫后的可达下限为 3.49 cm，生成器按门限失败关闭；修复是重解髋高，门限未放宽 | 下限键 13 → 15：新增 Djokovic 击球（1.80 → 1.92 cm）与 Cilic 延伸（1.34 → 1.48 cm）；11 人不变；下限范围 0.86–3.38 → 0.91–3.49 cm。非下限键求解与目标之差最大 0.02 cm（Federer 键 5） |
+| P2-B：语义报告新鲜度无人检查 | `build-forehand-semantics.mts` 拆出纯函数 `buildSemanticsReport`；新增 `--check`：重算后与已提交文件比较（忽略 `generated` 时间戳，数值容差 1e-9）；新增 `npm run forehand:semantics:check`；新增 5 项测试（一致；忽略日期；覆盖文件变化、深度变化、落点帧变化各判为过期） | 17 个 profile 与已提交文件一致，无需重写。`docs/engineering/test-matrix.md` 同步 |
+| PR 正文与草稿状态 | 未改 | 正文中的陈旧 SHA 与「12° 脚跟」（现为 18° 工程下限）待用户决定；草稿状态不变 |
+
+### 结果变化
+
+| 项目 | 第十轮前（`12fe9cc`） | 第十轮后 |
+|---|---|---|
+| 站姿下限键（回执 `stanceFloor`） | 13 键 / 11 人，下限 0.86–3.38 cm；下限取自求解值，二者之差恒为 0 | 15 键 / 11 人，下限 0.91–3.49 cm；独立测量，求解与下限之差为 0.00 cm |
+| Buse 随挥 | 求解 3.38 cm | 求解 = 下限 3.49 cm（骨盆下移 1.9 mm） |
+| 服务 40 Hz 滑移最大 | 0.461 mm（Buse） | 0.396 mm（Tiafoe）；Buse 为 0，与随挥髋高重解同次变更 |
+| 服务 60 Hz 滑移最大 | 0.64 mm（Buse） | 0.404 mm（Tiafoe）；Buse 为 0 |
+| 服务 40 / 60 Hz 根加速度最大 | 20.83 / 23.19 m/s²（Buse） | 20.81 / 23.06 m/s²（Buse） |
+| 240 Hz 探针 | 10/17 > 36 m/s²，最大 53.3（Khachanov） | 不变 |
+| 棘轮（240 Hz 根加速度、骨盆后移、站姿） | 基线 | 回执棘轮字段与 HEAD 逐项一致；未使用 `--rebaseline` |
+
+资产文件：15 个 JSON 有差异。实质变化两处：Buse 随挥关键帧骨盆下移 1.9 mm，Cilic 准备关键帧骨盆下移约 0.45 mm（均为新下限的结果）。Djokovic、Cilic、Buse 的 `notes` 写入了新下限数值（一位小数）。其余仅为 5 µm 以下的浮点差异。回执中若干非下限键的求解值变化 0.01 cm，是两位小数舍入边界上的翻转（例如 Shelton 键 2：资产 `root.y` 为 −0.07145 m，正处于 7.145 cm 的边界），不是求解结果的变化。
+
+### 修改范围
+
+- `scripts/generate-player-forehands.mts`：`stanceFloorOn` 改用 `highestReachRoot`（同 `REACH_TOLERANCE`）；`buildEnvelope` 的下限取独立的 `floorCm`；新增 `resolveHeights`（守卫后、手臂携带前，逐键重解 `root.y`）。
+- `scripts/lib/forehand-gates.mts`：删除 `GATES.stanceFloorCm`（2.4 cm）；可达键门限改为双向；下限键门限重写。
+- `scripts/forehand-gates.test.ts`、`scripts/forehand-depth.test.ts`：Djokovic 击球 1.80 → 1.92 与 Cilic 延伸 1.34 → 1.48（旧门限下放行）改为失败用例；伪造下限（求解 3.7 cm、下限 2.5 cm）须失败。
+- `scripts/build-forehand-semantics.mts`、`scripts/build-forehand-semantics.test.ts`（新增）、`package.json`（`forehand:semantics:check`）。
+- `evidence/forehand-presets.json` 与 15 个资产 JSON（见上）。
+- `docs/engineering/test-matrix.md`；`docs/reports/forehand-semantics-metrics.md` 重新生成（仅 Buse 服务行与时间戳变化）；本报告的站姿下限段与第七轮数值表。
+
+### 未做（延后）
+
+- `npm run qa` 视觉验收：未做。Buse 与 Cilic 的骨盆位移虽小，但在视觉验收前不宣称视觉无变化。
+- 240 Hz 尖峰（10/17）：未修复，消除需要改变引拍或骨盆修正轨迹，属视觉设计变更（同第九轮）。
+- 不编辑 PR 正文，不改草稿状态，不合并 main。
+- 第一轮遗留：A2（`package.json` 中 esbuild 的 allowScripts）与 A3（`semanticDepthTargets` 与 `depthTargets` 重复）仍未处理。
+- 第九轮延后项仍延后：全量 3D 重提取、`detectSwap` 与逐帧左右判定、皮肤—躯干接触判定器（104 个不确定帧）、以脚部轨迹替代脚跟 18° 下限。
+
+### 验证记录（第十轮）
+
+- `npm run forehand:generate`：退出 0（约 19 秒）。重跑后 15 个资产与回执与生成结果逐字节一致（生成器可复现）。
+- `npm run forehand:check`：17 个资产与回执一致。`npm run forehand:semantics:check`：17 个 profile 与输入一致。
+- `npx tsx scripts/_metrics-semantics.mts`：17/17、26/34、10/34，与第九轮相同。
+- `npx tsx scripts/measure-player-forehands.mts`：退出 0。
+- 首次严格门限运行失败（Buse 随挥 3.38 cm vs 下限 3.49 cm）：已修复（重解髋高），见上。
+- Node 24（本地）：`npx tsc -b`、`npm run docs:check`、`npm run spec:check`、`npm run forehand:check`、`npm run forehand:semantics:check`、`npm run build`、`npx tsx scripts/measure-player-forehands.mts`、`npm run dynamics:validate`、`npm run dynamics:test` 均退出 0。`npx vitest run`（全量）：33 个文件，611 通过 / 3 跳过（第九轮 606，新增 5 项语义 `--check` 测试）。
+- Node 22（与 CI 同版本）：`tsc`、`docs:check`、`spec:check`、`forehand:check`、`forehand:semantics:check`、`build`、全量 `vitest run` 均退出 0；全量为 33 个文件，611 通过 / 3 跳过。
