@@ -27,7 +27,7 @@
     "stance": 0.005
   },
   "inputs": {
-    "scripts/generate-player-forehands.mts": "fe4baa04327fbfc0fedef48b67709d6cc5da9b214be377185a4dd52b860370e4",
+    "scripts/generate-player-forehands.mts": "90eb0683b8b9073df036cb2c183d8fca47aa0588373d6aca2c605ab2e0f76592",
     "scripts/lib/forehand-arms.mts": "dd5b34d28b81d5d8edcb2130149cb49ba60402d502e4a28ccae5f1084c31b7bb",
     "scripts/lib/forehand-depth.mts": "4ce8e3765a95b3267ba8d79935c0c61f3c5c878cfb9f527cf3b8c2cd11f79d41",
     "scripts/lib/forehand-semantics.mts": "8c612adcb017675e49db1cece62c054b8839cd1cffb8d63475a5af2e6cd9b137",
@@ -36,14 +36,14 @@
     "scripts/forehand-arm-reference.json": "42d417ce4a37d470367a29cdec036279d2dc9bcff08c1f0d0eab79b5bfa3a4fe",
     "spec/examples/forehand-study.request.json": "f55134d326c50223f6e0f796367f99bc058a8d62e08da812b261f81d81e39d20",
     "evidence/forehand-depth.json": "9718541719035cee8efedfcacf1353d26ee97d3c057b4a4be5fa191667ed4c3c",
-    "evidence/forehand-semantics.json": "aaa3b8fb1042a10ca7c9276439b329f59e3b6d3d8c36152973c829919ae6919d",
+    "evidence/forehand-semantics.json": "67b016d384cdc249a8ca68482b703a1b10e7d99be497001c7aec7c485b67b251",
     "public/models/human.glb": "3bc226778269d2e93a35c1fc8073db4df359c82f54dfb48c01be42497f4e1956",
     "public/models/rig.json": "0013a5867deb2b2092e6114d323d37bee6d95c612576ce2b1ebd9154cfce527b"
   },
   "presets": {
     "novak-djokovic-forehand": {
       "file": "assets/motions/novak-djokovic-forehand.json",
-      "sha256": "e07f22ad21cad8c0b148914007a49c98681418bcedc9f2a32bcdc6a8002a8853",
+      "sha256": "3fdee35cd5243954c894344bf0e1c12f8f4d5c608fd6a7f0c21c3f34ca1171cf",
       "takeback": {
         "rawCm": 1.7,
         "targetCm": 8,
@@ -99,6 +99,8 @@
       "heel": {
         "semanticDeg": 7.2,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -131,7 +133,7 @@
     },
     "roger-federer-forehand": {
       "file": "assets/motions/roger-federer-forehand.json",
-      "sha256": "12d18edd0dc68cfbea5e105625664842308bf8bcea226681b23b6f21a42ff9b7",
+      "sha256": "b917655e10f565e7124ff53bdafd67f355c4add9f6b53c37cc6ea4fe314550f5",
       "takeback": {
         "rawCm": 0,
         "targetCm": 8,
@@ -187,6 +189,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -219,7 +223,7 @@
     },
     "carlos-alcaraz-forehand": {
       "file": "assets/motions/carlos-alcaraz-forehand.json",
-      "sha256": "4cb1a7877bfe0aaac135c1564988d07da1d3d4de7567d255e7137d8e1a09b8c7",
+      "sha256": "1d0d9f3dbc2097db8459f1c0be6914c1c2b6e2e636088ca329b8ac3ed0c03a9c",
       "takeback": {
         "rawCm": 7.3,
         "targetCm": 8,
@@ -275,6 +279,8 @@
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -307,7 +313,7 @@
     },
     "alexander-zverev-forehand": {
       "file": "assets/motions/alexander-zverev-forehand.json",
-      "sha256": "097595352ea1aa54b47fce4097b938acbbd6c8602eebdd7a5bdf1ded7cafcb93",
+      "sha256": "88343cb295f947457c07c9e2c28dc7fca2164688ff275acf01f0e6c2e5d1d97c",
       "takeback": {
         "rawCm": 4.1,
         "targetCm": 8,
@@ -363,6 +369,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -395,7 +403,7 @@
     },
     "daniil-medvedev-forehand": {
       "file": "assets/motions/daniil-medvedev-forehand.json",
-      "sha256": "2a8efa0a95e0d87ccb79df2232a6176565f46271e4bca2a7a940e7dc144e1ab2",
+      "sha256": "fb6a4b8b5ee2fabb28cbab33aa7c6eb4d203f4709b063901599113fc961ed091",
       "takeback": {
         "rawCm": 4.7,
         "targetCm": 8,
@@ -451,6 +459,8 @@
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -483,7 +493,7 @@
     },
     "ben-shelton-forehand": {
       "file": "assets/motions/ben-shelton-forehand.json",
-      "sha256": "66dc6afb374324df0ab2cf2c0e4f695f37c63465248c729d06d6009d20d867c1",
+      "sha256": "e6aa60ae723db5c573108323b2704a045ca011f357e1432d44dff175c271d4af",
       "takeback": {
         "rawCm": 2.6,
         "targetCm": 8,
@@ -532,6 +542,8 @@
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -564,7 +576,7 @@
     },
     "alexander-bublik-forehand": {
       "file": "assets/motions/alexander-bublik-forehand.json",
-      "sha256": "d591fbc0cf351076b920f6e560fded8cb86d7ded4bdfb8a2fe7c1459b6205351",
+      "sha256": "88d475b053e73bb23c269c1ee72fb87e0db743545213b581b3786506eded05c1",
       "takeback": {
         "rawCm": 1.8,
         "targetCm": 8,
@@ -613,6 +625,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -645,7 +659,7 @@
     },
     "frances-tiafoe-forehand": {
       "file": "assets/motions/frances-tiafoe-forehand.json",
-      "sha256": "dd8cf0359df0147da35a3f13d1237bd393512e7836e8f61de24f3784578d9b4a",
+      "sha256": "a625b4edd189a6a0801def22987d94b1ccdb7ae04abeb21adcc48577117e65e6",
       "takeback": {
         "rawCm": 1.3,
         "targetCm": 8,
@@ -701,6 +715,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -733,7 +749,7 @@
     },
     "holger-rune-forehand": {
       "file": "assets/motions/holger-rune-forehand.json",
-      "sha256": "ee9425d5a2141bc6a62c6e53b57a66b783d9b27b2e8e9b03759ad88935f1a23c",
+      "sha256": "db802d95e68055e7cd6424876d7354ff5cad3fe3535158f502fb3191097e5b6e",
       "takeback": {
         "rawCm": 4.3,
         "targetCm": 8,
@@ -795,6 +811,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -827,7 +845,7 @@
     },
     "alex-de-minaur-forehand": {
       "file": "assets/motions/alex-de-minaur-forehand.json",
-      "sha256": "0c3010cf7d28c5c2e3f12dadf41e5b0cc9dcc017a87471ad925c6f19a0dfc9e6",
+      "sha256": "d25090a8ee70d9e63299ec5b109e6124ca4fc80f34de0e5cad908375a674accc",
       "takeback": {
         "rawCm": 2.4,
         "targetCm": 8,
@@ -883,6 +901,8 @@
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -915,7 +935,7 @@
     },
     "alejandro-davidovich-fokina-forehand": {
       "file": "assets/motions/alejandro-davidovich-fokina-forehand.json",
-      "sha256": "8e79a1f224677b49518eda5a3fce137157637d350f91557e1088480a22c25fb7",
+      "sha256": "14da1c2f3b02096b255be6356b0c3cc9453b385b393a8dd2b54f85e67eecf224",
       "takeback": {
         "rawCm": 2.8,
         "targetCm": 8,
@@ -964,6 +984,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -996,7 +1018,7 @@
     },
     "flavio-cobolli-forehand": {
       "file": "assets/motions/flavio-cobolli-forehand.json",
-      "sha256": "533dcaec0e0c2a4dc06eba7c268eb95f91c284c4798ea89ef49bf344e5bb91b4",
+      "sha256": "e15f7b008842ec5e9e5fecab47877a278d49151d9f3c7c69af4483a1b4290231",
       "takeback": {
         "rawCm": 4.2,
         "targetCm": 8,
@@ -1045,6 +1067,8 @@
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -1077,7 +1101,7 @@
     },
     "marin-cilic-forehand": {
       "file": "assets/motions/marin-cilic-forehand.json",
-      "sha256": "85ab9c5bc01a53c63446c5e5f74c80c372bdcdafdbe55d92832a3c4d3aabe718",
+      "sha256": "2cf835da34ded51b04e1d85e1c66e3704e9124352565aa5bcca996822e644a94",
       "takeback": {
         "rawCm": 1.2,
         "targetCm": 8,
@@ -1139,6 +1163,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -1171,7 +1197,7 @@
     },
     "karen-khachanov-forehand": {
       "file": "assets/motions/karen-khachanov-forehand.json",
-      "sha256": "8a72f6911ac0c14417bc68aa4dbc184879c38d41c82373e617c038e50770bf40",
+      "sha256": "d2811ac3b9214cd356d3ad4f7fa1d5a459edf4237c794d478bbc641218a8b6d7",
       "takeback": {
         "rawCm": 0,
         "targetCm": 8,
@@ -1227,6 +1253,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -1259,7 +1287,7 @@
     },
     "jakub-mensik-forehand": {
       "file": "assets/motions/jakub-mensik-forehand.json",
-      "sha256": "d8a0b12bcb369c11df2b428d0fb0f760d51921df1d6adf9c2d4e62f63432b99c",
+      "sha256": "8e4a72e6e0a1f5eff5030fd043a867b2d1f70671a4c02e5bf74189081a9f443e",
       "takeback": {
         "rawCm": 1.3,
         "targetCm": 8,
@@ -1308,6 +1336,8 @@
       "heel": {
         "semanticDeg": 12,
         "source": "fallback",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -1340,7 +1370,7 @@
     },
     "ignacio-buse-forehand": {
       "file": "assets/motions/ignacio-buse-forehand.json",
-      "sha256": "26f5d1c2d2940160a25cdd331f19952f284a8c3452dd8b0059500682955c1f37",
+      "sha256": "0ae5058172642dbe2d4898e722bbbc8e726fe5983fefeed3ed9fc024b273d1d5",
       "takeback": {
         "rawCm": 5,
         "targetCm": 8,
@@ -1396,6 +1426,8 @@
       "heel": {
         "semanticDeg": 6.6,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {
@@ -1428,7 +1460,7 @@
     },
     "felix-auger-aliassime-forehand": {
       "file": "assets/motions/felix-auger-aliassime-forehand.json",
-      "sha256": "653df43bace9df90b430a47f1725a3b317221b653d4ab62a7d3ce2304d58bae0",
+      "sha256": "45ff34eb966ee71a7f4474db33fc8b7677c6a4fdbafdc18bbfd57d7bb73c350a",
       "takeback": {
         "rawCm": 13.3,
         "targetCm": 13.3,
@@ -1477,6 +1509,8 @@
       "heel": {
         "semanticDeg": 8.4,
         "source": "measured",
+        "floorDeg": 18,
+        "floored": true,
         "appliedDeg": 18
       },
       "stance": {

@@ -38,7 +38,7 @@
   "notes": [
     "参考 多人正手.mp4 @ 345–356s；关键帧秒数：345, 348, 351, 354, 356。",
     "手臂来自手捏参考姿态的躯干系系数（不是 2D 关键点）：单目视频关节点无法决定三维手臂目标，此前的映射把持拍臂折进躯干（见 docs/reports/forehand-video-retargeting.md）。后脚蹬地枢转与重心左右移是骨架近似；持拍腕在引拍/落拍/击球处按二维关节点相对肩的侧向/高度残差对躯干系系数做了分阶段启发式调整（内收/抬低/前送；非二维重映射），球拍朝向仍是近似。",
-    "下肢深度来自源视频 MediaPipe worldLandmarks（evidence/forehand-depth.json）经语义层映射（evidence/forehand-semantics.json）：引拍髋部视频测量下降 1.2 cm（原始值），低于 8 cm 最小引拍下限，目标取下限 8.0 cm，求解后 8.0 cm；各键目标/求解（cm）0.0/0.9、8.0/8.0、4.5/4.5、3.1/3.1、0.3/1.5、1.3/1.5、2.3/2.3、3.2/3.2、1.9/1.9。过深目标已回退（follow-release-floor），未放宽校验门限。站姿下双腿无法完全伸直：浅于站姿下限的目标按下限求解（准备 0.0→0.9 cm、击球 0.3→1.5 cm），未放宽校验门限。蹬地脚跟 18°（语义未测，默认 12°，下限 18°）。非持拍手引拍 reach 0.97（二维关节点引导，未经三维复测）。逐键数值与门限回执见 evidence/forehand-presets.json。",
+    "下肢深度来自源视频 MediaPipe worldLandmarks（evidence/forehand-depth.json）经语义层映射（evidence/forehand-semantics.json）：引拍髋部视频测量下降 1.2 cm（原始值），低于 8 cm 最小引拍下限，目标取下限 8.0 cm，求解后 8.0 cm；各键目标/求解（cm）0.0/0.9、8.0/8.0、4.5/4.5、3.1/3.1、0.3/1.5、1.3/1.5、2.3/2.3、3.2/3.2、1.9/1.9。过深目标已回退（follow-release-floor），未放宽校验门限。站姿下双腿无法完全伸直：浅于站姿下限的目标按下限求解（准备 0.0→0.9 cm、击球 0.3→1.5 cm），未放宽校验门限。蹬地脚跟 18°：工程下限（语义未测，默认 12°，低于下限故取下限；下限为补偿值，非视频测量）。非持拍手引拍 reach 0.97（二维关节点引导，未经三维复测）。逐键数值与门限回执见 evidence/forehand-presets.json。",
     "背屈校准：把求解器的骨盆后移写入关键帧，并在支撑切换处最多再后移 6 cm（本动作最大后移 0.4 cm），骨盆高度不变，后脚踝背屈峰值 ≤ 20.05°（工程门限 20°）。"
   ],
   "license": "Project-authored motion approximation; source video frames are not redistributed.",

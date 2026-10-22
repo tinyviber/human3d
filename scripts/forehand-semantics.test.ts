@@ -165,6 +165,11 @@ describe('forehand semantics (pure analysis)', () => {
     // 3. Cross-over step (交叉步 / closed stance):
     // In a deep closed stance or cross step, the player's front/lead foot crosses
     // the midline in 2D image coordinates, so ankleOrder flips sign vs shoulderOrder.
+    // KNOWN FALSE POSITIVE, pinned here on purpose so it cannot pass unnoticed: this
+    // expectation is NOT desired behaviour. detectSwap is only reached via
+    // readSemanticsFrame/analyzeSemantics, which the production bootstrap
+    // (scripts/build-forehand-semantics.mts) does not call. Do not rely on it for
+    // dynamic footwork until a temporal or 3D check replaces the single-frame test.
     const crossStep = pose();
     crossStep.image![27].x = crossStep.image![28].x - 0.05;
     expect(detectSwap(crossStep.image)).toBe(true);

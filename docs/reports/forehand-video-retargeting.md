@@ -298,7 +298,7 @@ Notion overnight 验收（基线 tip = issue #17 的 3D 深度 + 「不抬骨盆
 | 后踝背屈峰值（240 采样） | 19.92–20.00° | ≤ 20.05° |
 | 击球腕残差 | 0 mm | ≤ 1 mm |
 | 引拍深度原始测量 | 0–7.3 cm（16 人）；Felix 13.3 cm | 地板 8.0 cm 为目标；解算值与目标差 0.00 cm（门限 1.5 cm） |
-| 蹬地脚跟（应用） | 18°（17/17） | 下限 18°；语义测量 8 人为 6.6–8.4°，回退 9 人为 12° |
+| 蹬地脚跟（应用，工程下限） | 18°（17/17） | 下限 18° 为补偿值，非视频测量；语义测得 8 人为 6.6–8.4°，9 人无语义测量（记 12°）；17 人均被下限覆盖 |
 | 骨盆后移（守卫烘焙） | 0–19.7 cm；8 人 ≥ 6 cm | 棘轮（±0.05 cm） |
 | 站姿（应用） | 1.02–1.568（Alcaraz、Felix 最高） | 棘轮（±0.005） |
 | 服务 40 Hz 根加速度 | 4.9–20.8 m/s²（Djokovic 最低，Buse 最高） | ≤ 36 |
@@ -365,3 +365,58 @@ Notion overnight 验收（基线 tip = issue #17 的 3D 深度 + 「不抬骨盆
 - `npx tsc -b`：退出 0。`npm run docs:check`：55 个 Markdown，155 条相对链接，0 死链。
 - 未跑：`npm run qa` 视觉验收（剩余 240 Hz 尖峰的修复需要它）；`dynamics` 作业（未改动力学源码）；`npm run build`（未改 web 源码）。
 - 未合并 main。main（`6e72a05`）比本 PR 头 `8b6a87f` 多 2 个提交（#19、#20 的合并；`SERVICE_VERSION` 0.8.0），本 PR 头另有 11 个提交不在 main 上。回执 `solver.serviceVersion` 仍为 0.7.0；合并 main 后需重新生成。
+
+## 第九轮：第二份 PR #22 评审（Request changes，头 `8b6a87f`）
+
+第二份评审引用的 240 Hz 数值来自 `8b6a87f`，已被第八轮的 Hermite 修复改变。以下数值以当前回执和重新生成的 [指标报告](forehand-semantics-metrics.md) 为准。
+
+### 评审项处理
+
+| 评审项 | 处理 | 结果 |
+|---|---|---|
+| P1-1：Solver Validity 覆盖虚假 | 第一类改为 motion 级：走生产回放（`frameAt` → `solveEffectiveFrame` → `PoseValidityChecker`，每动作 16 个均匀采样加全部关键帧），并加入回执的 40/60 Hz 服务判定与踝峰值。旧的逐格检查（NaN 计为 0/34）已退役。不确定帧单列，不计为通过 | definite 检查 17/17。407 个采样帧中 104 个不确定（每动作 3–12 个；肩/腋皮肤与躯干接触，判定器未分类） |
+| P1-2：Video Reconstruction 用 2D 对 3D | 第三类只比较 3D 对 3D：骨盆深度 ≤ 2 cm，膝屈曲 ≤ 10°，参考为 `evidence/forehand-depth.json`（MediaPipe worldLandmarks，单目估计，非真值）。2D 站姿、肘角、手臂方向仅作诊断，不计入通过率 | 10/34（29.4%）。2D 诊断中 31/34 超过旧 2D 阈值，仅作注记 |
+| P1-3：蹬地脚跟 18° 被当作语义测量 | 18° 明确为工程下限（补偿值，非视频测量）。回执新增 `semanticDeg`、`source`、`floorDeg`、`floored`、`appliedDeg`；17 个 notes 写明语义测得值与下限的关系 | 17/17 受下限约束。语义测得 6.6–8.4°（8 人）；9 人无语义测量，语义值记 12°，均被 18° 覆盖。未做调参或测试；用脚部轨迹替代下限列为后续 |
+| P1/P2-4：240 Hz 根加速度尖峰 | 保留为开放风险，不宣称已修复。240 Hz 只是工程探针，服务从不提供该采样率，因此服务门限拦不住它 | 10/17 > 36 m/s²，最大 53.3（Khachanov）。服务 40 / 60 Hz 最大 20.8 / 23.2 m/s² |
+| P2-5：「全 3D 重提取」表述不实；racketHand 读取自身输出 | 文档与 `method` 改为实情：未做 3D 重提取；左右手由球员表给定，无逐帧左右判定。racketHand 改读独立输入 `evidence/forehand-semantic-overrides.json` | 用 `npx tsx scripts/build-forehand-semantics.mts --write` 重建后，17 个 profile 与 HEAD 逐项一致，仅 `method` 变化 |
+| P2-6：`detectSwap` 误判交叉步 | 核查：仅被 `readSemanticsFrame` / `analyzeSemantics` 调用，生产 bootstrap 不调用。测试中的交叉步断言已标注为「已知误判」，不代表期望行为 | 未改代码，列为延后风险 |
+| CI：Full / Dynamics 作业被跳过（`draft_deferred`） | 草稿 PR 的 CI 设计。标记 ready for review 由用户决定，本轮未改草稿状态 | 待用户决定 |
+
+### 指标结果（重新生成）
+
+| 类别 | 结果 | 说明 |
+|---|---|---|
+| 一、Solver Validity（motion 级，17 预设） | 17/17（definite） | 240 Hz 探针 10/17 > 36，开放风险。通过 40/60 Hz 不代表动作平滑 |
+| 二、Rig Target Tracking（cell 级，34） | 26/34 | 求解结果对生成器自身目标的跟踪，不是视频真值 |
+| 三、Video Reconstruction（3D，34） | 10/34 | 仅 3D 对 3D；2D 诊断不计入 |
+
+### 修改范围
+
+- `scripts/_metrics-semantics.mts`：三类分别计分；第一类走生产回放；第三类去掉 2D 门限；第一类状态列标注为 definite。
+- `scripts/generate-player-forehands.mts`：脚跟下限的回执字段与 notes（17 个资产仅 `notes` 变化）。
+- `scripts/build-forehand-semantics.mts`、`evidence/forehand-semantic-overrides.json`（新增）：racketHand 改为独立输入；`method` 修正。
+- `scripts/measure-forehand-semantics.mts`：docstring 修正（薄封装，不是 ≥30 Hz 重提取）。
+- `scripts/forehand-semantics.test.ts`：交叉步断言加注「已知误判」（断言本身未变）。
+- `docs/reports/forehand-semantics-metrics.md`：重新生成。
+
+### 未做（延后）
+
+- 全量 3D MediaPipe 重提取：未实现，off-arm 仍为二维自举。
+- `detectSwap` 与逐帧左右判定（时间连续性）：未实现。生产不调用，不影响现有 17 个资产，但不可用于动态步法。
+- 240 Hz 尖峰（10/17）：消除需要改变引拍或骨盆修正轨迹，属视觉设计变更，需 `npm run qa` 视觉验收（未做）。若改求解器，还需 bump `SERVICE_VERSION` 并全量重验。
+- 脚跟 18°：用脚部轨迹推导接触脚跟俯仰以替代工程下限，未做。
+- 不确定帧（104/407）：需要皮肤—躯干接触的判定器，未做。
+- 内置 `forehand`（非预设）扫描结果：10 次腕锥钳位、11 个不确定帧。本轮未改动，已记入指标报告。
+- 第一轮遗留：A2（`package.json` 中 esbuild 的 allowScripts）与 A3（`semanticDepthTargets` 与 `depthTargets` 重复）仍未处理。
+- 不编辑 PR 正文，不改草稿状态，不合并 main。
+
+### 验证记录（第九轮）
+
+- `npm run forehand:generate`：退出 0。17 个资产仅 `notes` 变化（其余字段逐一一致）；回执仅 `sha256`、`inputs` 与新增 `heel` 字段变化，棘轮数值不变。`npm run forehand:check`：通过。
+- `npx tsx scripts/build-forehand-semantics.mts --write`：17 个 profile 与 HEAD 一致，仅 `method` 变化。
+- `npx tsx scripts/_metrics-semantics.mts`：退出 0（17/17、26/34、10/34）。
+- `npx tsx scripts/measure-player-forehands.mts`：退出 0；17 个预设的腕锥钳位、手臂—躯干交叉、肘角钳位与肩方向失败均为 0，腕残差 0 mm。
+- `npx tsc -b`：退出 0。`npm run docs:check`：55 个 Markdown，155 条相对链接，0 死链。`npm run spec:check`：22 通过。
+- `npx vitest run`（全量）：32 个文件，606 通过 / 3 跳过（与第八轮相同）。
+- `npm run build`：退出 0。
+- `npm run dynamics:validate`、`npm run dynamics:test`：均退出 0（先按 `scripts/requirements-dynamics.txt` 安装依赖，与 CI 的 Dynamics 作业相同）。

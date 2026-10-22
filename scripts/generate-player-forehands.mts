@@ -308,9 +308,11 @@ function skeleton(player:PlayerPreset):WorkshopDoc{
  * the net (the 蹬转 drive), released again through 随挥 and planted flat at 恢复.
  * A planted run holds its first key's contact, so the release/replant pair is
  * what lets the heel rise; the flat 准备 contact is kept at both ends. */
-/** Contact heel-lift floor (°). The per-player contact pitch is max(semantics estimate, this):
- * 18° keeps the back-ankle root acceleration well under the 36 m/s² service limit for all 17 players
- * (20° reached 32 m/s² on Mensik). */
+/** Engineering floor (°) on the contact heel lift. It is a compensation value, not a video
+ * measurement: the applied pitch is max(semantics estimate, this). 18° keeps the back-ankle root
+ * acceleration well under the 36 m/s² service limit for all 17 players (20° reached 32 m/s² on
+ * Mensik). Every current preset is bound by it (semantic estimates are 6.6–8.4° measured, 12° where
+ * unmeasured); the receipt records the floor and whether it bound. */
 const HEEL_LIFT_DEG=18;
 /** Base push-off table at the 12° reference contact heel. Per-player pitch is
  * scaled to the contact pitch (the semantics estimate, floored at HEEL_LIFT_DEG)
@@ -406,8 +408,11 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  const playerAdj={...player,stance};
  const semPitch=sem?.mapping?.pushOffPitch ?? 12;
  const pushPitch=Math.max(semPitch,HEEL_LIFT_DEG);
- const pitchSource=sem?.mapping?.pushOffSource==='fallback'?`语义未测，默认 ${semPitch}°`:`语义 ${semPitch}°`;
- semanticsNotes.push(`蹬地脚跟 ${pushPitch}°（${pitchSource}，下限 ${HEEL_LIFT_DEG}°）`);
+ const heelFloored=semPitch<HEEL_LIFT_DEG;
+ const pitchSource=sem?.mapping?.pushOffSource==='fallback'?`语义未测，默认 ${semPitch}°`:`语义测得 ${semPitch}°`;
+ semanticsNotes.push(heelFloored
+  ? `蹬地脚跟 ${pushPitch}°：工程下限（${pitchSource}，低于下限故取下限；下限为补偿值，非视频测量）`
+  : `蹬地脚跟 ${pushPitch}°（${pitchSource}，高于工程下限 ${HEEL_LIFT_DEG}°）`);
  const base=skeleton(playerAdj);
  const racketArm=armLengths(rig,'R'),offArm=armLengths(rig,'L');
  const finishReach=Math.min(1.05,Math.max(.9,player.reach));
@@ -579,7 +584,7 @@ function buildDoc(player:PlayerPreset):{doc:WorkshopDoc;guard:GuardResult;depth:
  for(const key of finished.keys)canonicalizeHands(key.pose);
  return {doc:normalizeDoc(finished),guard,depth,semanticsNotes,
   stance:{applied:stance,boost:sem?.mapping?.stanceBoost??1},
-  heel:{semantic:semPitch,source:sem?.mapping?.pushOffSource??'absent',applied:pushPitch}};
+  heel:{semantic:semPitch,source:sem?.mapping?.pushOffSource??'absent',applied:pushPitch,floor:HEEL_LIFT_DEG,floored:heelFloored}};
 }
 
 /** Stored hand → ArmPose, for feeding an already-written key back into an
@@ -704,7 +709,7 @@ export async function generate({rebaseline=false}:{rebaseline?:boolean}={}):Prom
    takeback:{rawCm:measured?round(measured.measuredTakeback,2):null,targetCm:round(takebackTarget,2),solvedCm:round(keyDepth[1],2),floored:measured?.floored??false},
    keys:facts.keys.map(k=>[round(k.targetCm,2),round(k.solvedCm,2)]),
    stanceFloor,
-   heel:{semanticDeg:built.heel.semantic,source:built.heel.source,appliedDeg:built.heel.applied},
+   heel:{semanticDeg:built.heel.semantic,source:built.heel.source,floorDeg:built.heel.floor,floored:built.heel.floored,appliedDeg:built.heel.applied},
    stance:{applied:round(built.stance.applied),boost:built.stance.boost,authored:player.stance},
    ankleDeg:round(facts.ankleDeg,3),wristMm:round(wrist*1000,3),posteriorCm:round(shift),
    service:Object.fromEntries(service.map(s=>[String(s.fps),{rootAccel:round(s.rootAccel),slipMm:round(s.slip*1000)}])),

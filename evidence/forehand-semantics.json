@@ -1,7 +1,7 @@
 {
  "schemaVersion": 1,
  "kind": "forehand-semantics-study",
- "method": "bootstrap from evidence/forehand-depth.json phases + scripts/player-forehand-landmarks.json 2D (confidence≥0.45, L/R-swap heuristic); full 3D re-extract via measure-forehand-semantics.mts preferred",
+ "method": "bootstrap: 3D depth study (evidence/forehand-depth.json phases) + 2D keyframes (scripts/player-forehand-landmarks.json, confidence≥0.45); handedness from the player table (lefty = Shelton), no per-frame L/R detection; no 3D re-extract yet (measure-forehand-semantics.mts only wraps this builder)",
  "generated": "2026-10-22",
  "profiles": {
   "carlos-alcaraz-forehand": {

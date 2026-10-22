@@ -106,10 +106,12 @@ const handStance: Record<string, number> = {
 };
 
 const profiles: Record<string, unknown> = {};
-// Carry hand-authored palm-roll data (racketHand) across rebuilds: it comes from
-// the video cross-check and the user's sweep, not from the 2D bootstrap.
-const priorProfiles: Record<string, {racketHand?: unknown}> = fs.existsSync(path.join(root, 'evidence/forehand-semantics.json'))
-  ? JSON.parse(fs.readFileSync(path.join(root, 'evidence/forehand-semantics.json'), 'utf8')).profiles ?? {}
+// Hand-authored palm-roll data (racketHand) is an input, not carried over from this
+// builder's previous output: it lives in evidence/forehand-semantic-overrides.json (video
+// cross-check and the user's sweep). A rebuild from clean inputs therefore reproduces the file.
+const overridesPath = path.join(root, 'evidence/forehand-semantic-overrides.json');
+const overrides: Record<string, {racketHand?: unknown}> = fs.existsSync(overridesPath)
+  ? JSON.parse(fs.readFileSync(overridesPath, 'utf8')).profiles ?? {}
   : {};
 for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][]) {
   const lm = landmarks.profiles[id];
@@ -305,14 +307,14 @@ for (const [id, depthProf] of Object.entries(depth.profiles) as [string, any][])
       },
     },
     fallback,
-    racketHand: priorProfiles[id]?.racketHand ?? null,
+    racketHand: overrides[id]?.racketHand ?? null,
   };
 }
 
 const report = {
   schemaVersion: 1,
   kind: SEMANTICS_KIND,
-  method: 'bootstrap from evidence/forehand-depth.json phases + scripts/player-forehand-landmarks.json 2D (confidence≥0.45, L/R-swap heuristic); full 3D re-extract via measure-forehand-semantics.mts preferred',
+  method: 'bootstrap: 3D depth study (evidence/forehand-depth.json phases) + 2D keyframes (scripts/player-forehand-landmarks.json, confidence≥0.45); handedness from the player table (lefty = Shelton), no per-frame L/R detection; no 3D re-extract yet (measure-forehand-semantics.mts only wraps this builder)',
   generated: new Date().toISOString().slice(0, 10),
   profiles,
 };
