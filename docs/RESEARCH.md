@@ -15,11 +15,17 @@
 
 ## 资产转换与坐标
 
-`scripts/build-human.py` 只读取 CC0 数据文件，不复用 MakeHuman 的 AGPL 程序代码。目标形态作用于包含关节定位辅助顶点的完整源网格，随后通过官方关节顶点集的均值计算关节中心。显示网格只导出 body 组，删除非人体辅助面。身高统一为 1.78 m。Blender 仅做一次 Catmull-Clark 细分。输出 163 根骨骼、53514 顶点与原始权重插值结果。每顶点保留最高四个影响并归一化；这是一项实时渲染近似，细节见生成的 rig.json。
+`scripts/build-human.py` 只读取 CC0 数据文件，不复用 MakeHuman 的 AGPL 程序代码。目标形态作用于包含关节定位辅助顶点的完整源网格，随后通过官方关节顶点集的均值计算关节中心。显示网格只导出 body 组，删除非人体辅助面。身高统一为 1.78 m。Blender 仅做一次 Catmull-Clark 细分。输出 163 根骨骼、53514 个几何顶点与原始权重插值结果。随后 `scripts/build-anatomy-surface.py` 恢复 hm08 原始面角 UV（细分处双线性插值），仅在 UV 接缝复制顶点，得到 55784 个渲染顶点；三角面顺序及每个角的位置、法线、骨骼索引与权重保持一致。自定义属性 `_SOURCE_VERTEX` 保留接缝两侧的原顶点身份，姿态诊断据此识别相邻面，避免将 UV 接缝误报为自交。`rig.json.vertices` 保留原几何顶点数。每顶点保留最高四个影响并归一化；这是一项实时渲染近似，细节见生成的 rig.json。
 
 工程坐标为右手系：X 左右，Y 向上，Z 身体前方。关节节点在绑定态具有单位世界旋转；局部平移与 inverseBindMatrices 保存源关节中心。不是 [ISB 临床关节坐标系](https://www.isbweb.org/standards/wrist.html)。界面的膝 / 肘角是骨段几何屈曲角，不能用于临床测量。
 
 骨架包括骨盆、五段躯干、三段颈部、头、锁骨与肩带、上下臂扭转分段、腕、掌骨与各指三段，双下肢及足趾。调试蓝线是蒙皮绑定骨架，并非骨骼表面的解剖几何。
+
+实验室与工作台默认使用统一暖灰白哑光表面。肌肉表面分区使用 Z-Anatomy 的实际解剖网格，替代早期 15 对手绘轮廓：462 个肌肉源组件按肌头/分部合并成 410 个可追溯条目；源清单包含未投影到皮肤的深层或未映射结构，不将其强行涂到表面。当前生成的表面分区数和面积以 `public/models/anatomy-regions.json` 的 `coverage` 为准。选择与许可依据、数据固定版本、来源哈希、重建方法见 [肌肉分区数据说明](../assets/anatomy/README.md)。
+
+分界来自解剖网格，跨模型对应仍是近似，不能视为 MakeHuman 人体的解剖标定；不显示真实肌肉激活或独立肌肉体积。鼠标悬停预览浅橙红高亮，点击或触摸轻点固定选择，空白处轻点或关闭按钮清除；旋转拖动、多指、取消手势与编辑手柄不触发选择。选择不写动作、撤销或持久化；静帧与拼图导出抑制交互高亮并恢复原选择。
+
+资产构建：`python3 scripts/build-anatomy-surface.py`（依赖 `scripts/requirements-anatomy.txt`，可直接处理当前 GLB）；`--check` 校验 GLB、遮罩和区域清单可重现。`scripts/build-human.py` 在 Blender 基础资产生成后自动执行该步骤。交互验收：启动 dev server 后运行 `QA_BROWSER_CHANNEL=chrome node scripts/anatomy-browser-qa.mjs --out-dir /tmp/human3d-anatomy-qa`；该脚本验证真实指针与模拟触摸，不代表真机结果。
 
 ## 关节活动范围
 

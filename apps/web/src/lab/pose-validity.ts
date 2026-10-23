@@ -4,7 +4,7 @@ import {angleAt,DEG,LIMITS} from '@human3d/motion-core';
 import type {SkinnedMesh} from 'three';
 
 type Side='L'|'R';
-type TriangleRecord={face:number;indices:[number,number,number];bounds:Box3};
+type TriangleRecord={face:number;indices:[number,number,number];sourceIndices:[number,number,number];bounds:Box3};
 type TriangleHit={first:TriangleRecord;second:TriangleRecord;position:[number,number,number]};
 type IntersectionSummary={side:Side;count:number;bones:string[];triangles:[number,number][];position:[number,number,number]|null;truncated:boolean};
 export type PoseValidityCheck={code:string;ok:boolean;bones:string[];value:number;limit:number;unit:string;detail:string};
@@ -86,7 +86,7 @@ function classifyFace(mesh:SkinnedMesh,indices:[number,number,number]){
  if(torso>=.58&&left<.12&&right<.12)return {region:'torso' as const};
  return {ambiguousSides:(['L','R'] as const).filter(side=>(side==='L'?left:right)>=.12&&torso>=.12)};
 }
-function sharesVertex(a:TriangleRecord,b:TriangleRecord){return a.indices.some(index=>b.indices.includes(index));}
+function sharesVertex(a:TriangleRecord,b:TriangleRecord){return a.sourceIndices.some(index=>b.sourceIndices.includes(index));}
 
 export class PoseValidityChecker{
  private positions:Vector3[];
@@ -95,14 +95,18 @@ export class PoseValidityChecker{
  private readonly ambiguous:{L:TriangleRecord[];R:TriangleRecord[]}={L:[],R:[]};
  private readonly worldMatrix=new Matrix4();
  constructor(private mesh:SkinnedMesh,private rig:HumanRig){
-  const position=mesh.geometry.getAttribute('position'),index=mesh.geometry.index;
+  const position=mesh.geometry.getAttribute('position'),index=mesh.geometry.index,sourceVertex=mesh.geometry.getAttribute('_source_vertex');
   if(!position)throw new Error('production mesh has no position attribute');
   this.positions=Array.from({length:position.count},()=>new Vector3());
   const count=index?index.count:position.count;
   if(count%3!==0)throw new Error('production mesh index count is not triangular');
   for(let i=0;i<count;i+=3){
    const indices:[number,number,number]=index?[index.getX(i),index.getX(i+1),index.getX(i+2)]:[i,i+1,i+2];
-   const classification=classifyFace(mesh,indices),record={face:i/3,indices,bounds:new Box3()};
+   // UV seams duplicate render vertices without separating the actual surface.
+   // Preserve adjacency using the authored source identity, never spatial welds
+   // which could hide real contact between otherwise disconnected surfaces.
+   const sourceIndices=indices.map(i=>sourceVertex?sourceVertex.getX(i):i) as [number,number,number];
+   const classification=classifyFace(mesh,indices),record={face:i/3,indices,sourceIndices,bounds:new Box3()};
    if(!('region'in classification)){
     for(const side of classification.ambiguousSides)this.ambiguous[side].push(record);
    }else if(classification.region==='torso')this.torso.push(record);

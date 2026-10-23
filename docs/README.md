@@ -15,6 +15,7 @@
 | 选最小验证集 | [engineering/test-matrix.md](engineering/test-matrix.md) | 改动面 → 定向测试映射 |
 | 开 worktree/并行任务 | [engineering/worktree-policy.md](engineering/worktree-policy.md) | 依赖/端口/测试发现防串线 |
 | 协议设计动机 | [ANIMATION-PROTOCOL-PLAN.md](ANIMATION-PROTOCOL-PLAN.md) | v1 MVP 边界、未实现项 |
+| 改肌肉显示/解剖数据 | [肌肉分区来源与构建](../assets/anatomy/README.md) | 原始网格身份、跨模型近似、16 位分区、数据许可 |
 | 技术选型依据 | [RESEARCH.md](RESEARCH.md)、[LICENSES.md](LICENSES.md) | 资产来源与许可 |
 
 ## 目录结构

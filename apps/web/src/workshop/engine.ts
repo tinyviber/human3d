@@ -11,7 +11,8 @@ import {analyzePose,solveEffectiveFrame,type Analysis} from '@human3d/motion-cor
 import type {PelvisSchedule} from '@human3d/motion-core';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from '@human3d/motion-core';
 import {bindSceneBackground} from '../theme/scene-background';
-import {applyAnatomySkin} from '../theme/anatomy-skin';
+import {loadAnatomyAtlas} from '../theme/anatomy-skin';
+import {AnatomySelection} from '../theme/anatomy-selection';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
 export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean;onion:boolean;onionCount:number;onionMode:'keys'|'step';onionStep:number}
@@ -108,6 +109,7 @@ interface Handle{kind:DragKind;side?:'L'|'R';mesh:Mesh;keyId?:string;passive?:bo
 export class WorkshopEngine{
   scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
   model?:Group;rig?:HumanRig;racket?:Group;ready=false;disposed=false;
+  anatomy?:AnatomySelection;
   playing=true;speed=1;time=0;view:ViewId='threeQuarter';
   /** Review mode (false) hides handles and refuses every pointer pick, so a
    * camera gesture can never write the document (issue #23 PR-A). */
@@ -193,10 +195,11 @@ export class WorkshopEngine{
   }
   async load(){
     try{
-      const [gltf,info]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>})]);
-      if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
+      const [gltf,info,atlas]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),loadAnatomyAtlas()]);
+      if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
-      const rig=this.rig;this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;applyAnatomySkin(o,rig);}});
+      this.anatomy=new AnatomySelection(this.host,this.renderer.domElement,this.camera,atlas,event=>this.capturing||!this.ready||!!this.drag||!!this.pick(event));
+      this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;this.anatomy!.add(o);}});
       this.racket=attachProp(this.rig,'racket',this.getDoc().gripSide==='L'?'L':'R');this.racketSide=this.getDoc().gripSide==='L'?'L':'R';this.racket.visible=false;
       this.footGeo={L:footGeometry(this.rig.rest,'L'),R:footGeometry(this.rig.rest,'R')};
       this.makeHandles();this.makeMarkers();this.makeOnion();
@@ -644,6 +647,7 @@ export class WorkshopEngine{
     // Depth, not a flag: only the LAST endCapture (the outer session's, after
     // a sheet's own toBlob) re-opens the overlay/drag windows.
     this.captureDepth++;
+    this.anatomy?.setSuspended(true);
     if(saved.overlays){
       this.handleGroup.visible=false;
       for(const l of this.trajectories.values())l.visible=false;
@@ -657,6 +661,7 @@ export class WorkshopEngine{
   }
   private endCapture(saved:CaptureSnapshot){
     this.captureDepth=Math.max(0,this.captureDepth-1);
+    this.anatomy?.setSuspended(this.capturing);
     const o=saved.overlays;
     if(o){
       this.handleGroup.visible=o.handles;
@@ -692,7 +697,7 @@ export class WorkshopEngine{
       if(a)this.updateBalance(a);
       this.lastNotify+=dt;if(this.lastNotify>.07){this.lastNotify=0;this.notify(false,a);}
     }
-    this.controls.update();this.renderer.render(this.scene,this.camera);
+    this.controls.update();this.anatomy?.update(dt);this.renderer.render(this.scene,this.camera);
   };
   private notify(force:boolean,a?:Analysis){
     const doc=this.getDoc(),keys=sortedKeys(doc);
@@ -700,7 +705,7 @@ export class WorkshopEngine{
     if(force||a)this.onFrame?.({time:this.time,duration:doc.duration,playing:this.playing,label,analysis:a});
   }
   dispose(){
-    this.disposed=true;this.unbindTheme?.();cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();
+    this.disposed=true;this.anatomy?.dispose();this.unbindTheme?.();cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();
     const dom=this.renderer.domElement;
     dom.removeEventListener('pointerdown',this.onPointerDown);dom.removeEventListener('pointermove',this.onPointerMove);dom.removeEventListener('pointerup',this.onPointerUp);dom.removeEventListener('pointercancel',this.onPointerUp);
     // Everything in this scene was created by the workshop (handles, markers,

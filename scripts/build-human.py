@@ -5,6 +5,7 @@ import sys, pathlib, subprocess, json, struct
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 if '--inside-blender' not in sys.argv:
     subprocess.run(['blender','--background','--factory-startup','--python',str(pathlib.Path(__file__).resolve()),'--','--inside-blender'],check=True)
+    subprocess.run([sys.executable,str(ROOT/'scripts/build-anatomy-surface.py')],check=True)
     sys.exit()
 import bpy
 import numpy as np
