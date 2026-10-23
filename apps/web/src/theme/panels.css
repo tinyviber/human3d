@@ -13,11 +13,3 @@
  .workspace[data-group] .viewport{height:65dvh;min-height:450px}
  .workspace[data-group] .motion-panel,.workspace[data-group] .inspector{height:auto;max-height:none !important;overflow:visible !important}
 }
-@media(max-width:760px){
- .ws-shell{height:auto;min-height:100dvh;overflow:visible;display:flex;flex-direction:column}
- .ws-main[data-group]{flex-direction:column !important;height:auto !important;overflow:visible !important}
- .ws-main[data-group]>[data-panel]{flex-basis:auto !important;flex-grow:0 !important;width:100% !important;height:auto !important}
- .ws-main[data-group]>[data-separator]{display:none !important}
- .ws-main[data-group] .ws-viewport{height:65dvh;min-height:420px}
- .ws-main[data-group] .ws-left,.ws-main[data-group] .ws-right{height:auto;max-height:none !important}
-}

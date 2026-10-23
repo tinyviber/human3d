@@ -10,6 +10,8 @@ import {attachProp,mountRacket,RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {checkPosePackageShape,posePackageSpec,rigMatches} from '@human3d/motion-core';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,createDynamicsSession,type DynamicsSession,type MotionSource} from '../playback/motion-source';
 import {bindSceneBackground} from '../theme/scene-background';
+import {loadAnatomyAtlas} from '../theme/anatomy-skin';
+import {AnatomySelection} from '../theme/anatomy-selection';
 import {subtleDigest} from '@human3d/motion-core';
 import type {PosePackage} from '@human3d/motion-core';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
@@ -29,6 +31,7 @@ const sha256Hex=async(s:string):Promise<string|undefined>=>{
 export class HumanEngine{
  scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
  model?:Group;rig?:HumanRig;mixer?:AnimationMixer;
+ anatomy?:AnatomySelection;
  /** The one and only playhead, in seconds of the active source. */
  time=0;activeId:MotionId='idle';playing=true;speed=1;private _loop=true;disposed=false;ready=false;
  private sources=new Map<MotionId,MotionSource>();private specs=new Map<MotionId,MotionSpec>();
@@ -74,13 +77,13 @@ export class HumanEngine{
  async load(){
   try{
    const clipSpecs=MOTIONS.filter(m=>m.source?.kind==='clip');
-   const [gltf,rigText,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),...clipSpecs.map(async m=>{
+   const [gltf,rigText,atlas,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),loadAnatomyAtlas(),...clipSpecs.map(async m=>{
     const s=m.source as {kind:'clip';clip:string;meta?:string};
     const data=await fetch(s.clip).then(r=>{if(!r.ok)throw new Error('动作片段加载失败');return r.json()});
     const meta=s.meta?await fetch(s.meta).then(r=>r.json()):undefined;
     return {id:m.id as MotionId,clip:AnimationClip.parse(data),stride:new Vector3().fromArray(meta?.stride??[0,0,0])};
    })]);
-   if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
+   if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
    const info=JSON.parse(rigText) as RigInfo;
    this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
    // Local identities for the pose-package import gate — the same
@@ -95,7 +98,8 @@ export class HumanEngine{
     const h=await sha256Hex(canonical(motionDefinitionPayload(f)));
     if(h!==undefined)this.envelopeDefHash.set(f.id,h);
    }
-   this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
+   this.anatomy=new AnatomySelection(this.host,this.renderer.domElement,this.camera,atlas,()=>!this.ready||!this.debug.surface);
+   this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;this.anatomy!.add(o);}});
    // Sclerae at the original MakeHuman eye pivots, keeping facial silhouette intact.
    for(const side of ['L','R']){
     const eye=this.rig.bone(`eye_${side}`);const sclera=new Mesh(new SphereGeometry(.0105,20,12),new MeshStandardMaterial({color:0xbdcbd2,roughness:.5}));eye.add(sclera);
@@ -244,7 +248,7 @@ export class HumanEngine{
  }
  private animate=()=>{
   if(this.disposed)return;this.raf=requestAnimationFrame(this.animate);const dt=Math.min(this.clock.getDelta(),.1);
-  this.tick(dt);this.controls.update();this.render();
+  this.tick(dt);this.controls.update();this.anatomy?.update(dt);this.render();
  };
  tick(dt:number){
   const dyn=this.dynamicsSource();
@@ -330,5 +334,5 @@ export class HumanEngine{
   this.onFrame?.({time,duration:src.duration,phase,playing:this.playing,knee:d?.knee??0,elbow:d?.elbow??0,gripError:d?.gripError??0});
  }
  render(){this.renderer.render(this.scene,this.camera);}
- dispose(){this.disposed=true;this.unbindTheme?.();for(const s of this.sources.values())s.dispose?.();cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();this.controls.dispose();this.mixer?.stopAllAction();this.scene.traverse(o=>{if(o instanceof Mesh||o instanceof LineSegments||o instanceof Line){o.geometry.dispose();const materials=Array.isArray(o.material)?o.material:[o.material];materials.forEach(m=>m.dispose());}});this.renderer.dispose();this.renderer.domElement.remove();}
+ dispose(){this.disposed=true;this.anatomy?.dispose();this.unbindTheme?.();for(const s of this.sources.values())s.dispose?.();cancelAnimationFrame(this.raf);this.resizeObserver.disconnect();this.controls.dispose();this.mixer?.stopAllAction();this.scene.traverse(o=>{if(o instanceof Mesh||o instanceof LineSegments||o instanceof Line){o.geometry.dispose();const materials=Array.isArray(o.material)?o.material:[o.material];materials.forEach(m=>m.dispose());}});this.renderer.dispose();this.renderer.domElement.remove();}
 }

@@ -3,6 +3,7 @@
 | 资源 | 作者 / 来源 | 许可证 / 条件 | 本地用途 |
 |---|---|---|---|
 | base.obj、default.mhskel、default_weights.mhw、三份成年男性形态 target | MakeHuman Team；Data Collection AB / Joel Palmius / Jonas Hauquier 等；见源文件头 | CC0；[官方说明](https://static.makehumancommunity.org/about/license.html)，原许可副本 assets/source/MAKEHUMAN-LICENSE.md | 导出 public/models/human.glb 与 rig.json |
+| Z-Anatomy 肌肉/骨骼/皮肤几何缓存、派生肌肉 ID 遮罩与清单 | Gauthier Kervyn / Z-Anatomy；原始 BodyParts3D © DBCLS；固定网格转换：SeemaBansal1，见 [数据来源记录](../assets/anatomy/README.md) | **CC BY-SA 4.0**；[上游许可与署名](../assets/anatomy/z-anatomy/UPSTREAM-LICENSE.txt)；保留数据署名及同许可分发；不使用其内耳/肾脏器官层 | 网格推导的肌肉表面选择；1003 个离线结构中，462 个肌肉组件全部保留身份。源码原有 MIT 许可独立 |
 | 35_01.bvh walk（当前）；136_20.bvh（旧版参考） | CMU Graphics Lab，NSF EIA-0196217；Bruce Hahne 的 BVH 转换；[镜像说明](https://github.com/una-dinosauria/cmu-mocap) | 可复制、修改并用于产品；不可单独销售数据（包括转换形式）；见原说明 assets/source/READMEFIRST.txt 及[原站](https://mocap.cs.cmu.edu/) | 单个步态周期重定向为 walk.json，非整个数据集转售 |
 | 124_01.bvh Baseball Pitch；02_05.bvh punch/strike | CMU Graphics Lab；BVH 转换说明：[una-dinosauria/cmu-mocap](https://github.com/una-dinosauria/cmu-mocap)；[CMU 原站](https://mocap.cs.cmu.edu/) | CMU 数据库允许用于产品，但禁止单独转售数据（包括转换形式）；尊重原数据库致谢要求 | 124_01 用于无球投掷身体参考；02_05 用于通用 punch/strike 参考；手指关键帧是项目工程近似 |
 | Three.js | Three.js authors | MIT | 渲染、glTF、动画与 OrbitControls |

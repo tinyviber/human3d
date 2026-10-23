@@ -9,13 +9,16 @@ const HISTORY_LIMIT=100;
 export class DocHistory{
   private past:string[]=[];private future:string[]=[];
   constructor(private limit=HISTORY_LIMIT){}
-  /** Remember the state before an edit. Repeated identical snapshots collapse. */
+  /** Remember the state before an edit. Repeated identical snapshots
+   * collapse; returns whether a new step was pushed. */
   record(doc:WorkshopDoc){
     const snap=serializeDoc(doc);
-    if(this.past[this.past.length-1]===snap)return;
+    if(this.past[this.past.length-1]===snap)return false;
     this.past.push(snap);if(this.past.length>this.limit)this.past.shift();
-    this.future=[];
+    this.future=[];return true;
   }
+  /** Forget the newest past step — a cancelled preview whose record() pushed it. */
+  dropLast(){this.past.pop();}
   canUndo(){return this.past.length>0;}
   canRedo(){return this.future.length>0;}
   /** Step back: returns the restored document, or undefined when nothing is left. */

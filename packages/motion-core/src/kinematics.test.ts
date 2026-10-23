@@ -49,7 +49,7 @@ describe('constant-length IK',()=>{
  });
 });
 describe('real authored asset and animation data',()=>{
- it('has a skinned continuous human surface, 163 bones and complete fingers',()=>{let mesh:SkinnedMesh|undefined;rig.model.traverse(o=>{if(o instanceof SkinnedMesh)mesh=o;});expect(mesh).toBeDefined();expect(mesh!.geometry.getAttribute('position').count).toBe(53514);expect(rig.bones.size).toBe(163);for(const side of ['L','R'])for(let f=1;f<=5;f++)for(let j=1;j<=3;j++)expect(rig.bones.has(`finger${f}-${j}_${side}`)).toBe(true);const w=mesh!.geometry.getAttribute('skinWeight');for(let i=0;i<w.count;i++)expect(w.getX(i)+w.getY(i)+w.getZ(i)+w.getW(i)).toBeCloseTo(1,5);});
+ it('has a skinned continuous human surface, 163 bones and complete fingers',()=>{let mesh:SkinnedMesh|undefined;rig.model.traverse(o=>{if(o instanceof SkinnedMesh)mesh=o;});expect(mesh).toBeDefined();expect(mesh!.geometry.getAttribute('position').count).toBe(55784);expect(mesh!.geometry.getAttribute('uv').count).toBe(55784);expect(rig.bones.size).toBe(163);for(const side of ['L','R'])for(let f=1;f<=5;f++)for(let j=1;j<=3;j++)expect(rig.bones.has(`finger${f}-${j}_${side}`)).toBe(true);const w=mesh!.geometry.getAttribute('skinWeight');for(let i=0;i<w.count;i++)expect(w.getX(i)+w.getY(i)+w.getZ(i)+w.getW(i)).toBeCloseTo(1,5);});
  it('resolves all bundled motion files and drives every rig bone',()=>{
   // The envelopes are the lab's motion list; walk references a clip asset,
   // and the two dynamics-motion envelopes replay MyoSim records rather than
