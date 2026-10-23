@@ -201,6 +201,11 @@
 .ws-chip-row button,.ws-semantic-steps button{font-size:11px;padding:6px 11px;border-radius:999px;background:var(--pill);color:var(--fg-2);min-height:30px}
 .ws-chip-row button[aria-pressed=true],.ws-semantic-steps button[aria-pressed=true]{background:var(--fg);color:var(--card)}
 .ws-chip-row button[aria-pressed=true]:hover,.ws-semantic-steps button[aria-pressed=true]:hover{color:var(--card)}
+/* Quick-pose / racket rows: one click = one relative change, no select step. */
+.ws-quick-poses{display:flex;flex-wrap:wrap;align-items:center;gap:5px;margin:8px 0 2px}
+.ws-quick-poses .ws-quick-label{font-size:11px;color:var(--muted);width:100%}
+.ws-quick-poses button{font-size:11px;padding:6px 11px;border-radius:999px;background:var(--pill);color:var(--fg);min-height:30px}
+.ws-quick-poses button:disabled{opacity:.45}
 .ws-semantic-amount{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;gap:8px;margin-top:2px}
 .ws-semantic-amount>button{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--pill);color:var(--fg)}
 .ws-semantic-amount input{width:100%;accent-color:var(--fg)}

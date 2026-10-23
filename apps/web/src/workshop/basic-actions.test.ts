@@ -19,7 +19,7 @@ beforeAll(async()=>{
 
 describe('basic action library',()=>{
  it('leads with the basic actions (≤3 keys each); racket motions and older motions follow in their own groups',()=>{
-  expect(BASIC_PRESETS.map(p=>p.id)).toEqual(['basic-half-squat','basic-full-squat','basic-lunge','basic-weight-shift','basic-push-turn']);
+  expect(BASIC_PRESETS.map(p=>p.id)).toEqual(['basic-half-squat','basic-full-squat','basic-lunge','basic-weight-shift','basic-push-turn','basic-wide-squat','basic-forward-fold','basic-arms-up']);
   for(const p of BASIC_PRESETS){
    expect(p.document!.keys.length,p.id).toBeLessThanOrEqual(3);
    expect(p.capabilities,p.id).toBeUndefined();
@@ -145,6 +145,31 @@ describe('insertBasicAction',()=>{
    expect(doc.duration,`${basic.id}->${motion.id}`).toBeCloseTo(d+ins!.span,9);
    expect(validateDocShape(doc),`${basic.id}->${motion.id}`).toEqual([]);
   }
+ });
+
+ it('carry-hands templates translate the hand target/pole and keep the wrist orientation',()=>{
+  const doc=docOf('roger-federer-forehand');
+  const t=.37;
+  const before=frameAt(structuredClone(doc),t,origin());
+  const ins=insertBasicAction(doc,basicOf('basic-arms-up'),t,origin(),{carryHands:true})!;
+  const [k0,k1]=ins.keyIds.map(id=>keyAt(doc,id)!);
+  // The authored offset from the template's standing start: wrist up ~.82 m, slightly inward.
+  const tpl=basicOf('basic-arms-up').keys;
+  expect(k1.pose.handL.target.y-k0.pose.handL.target.y).toBeCloseTo(tpl[1].pose.handL.target.y-tpl[0].pose.handL.target.y,9);
+  expect(k1.pose.handR.target.x-k0.pose.handR.target.x).toBeCloseTo(tpl[1].pose.handR.target.x-tpl[0].pose.handR.target.x,9);
+  expect(k1.pose.handL.pole.z-k0.pose.handL.pole.z).toBeCloseTo(tpl[1].pose.handL.pole.z-tpl[0].pose.handL.pole.z,9);
+  // Orientation is preserved verbatim, not differenced.
+  expect(k1.pose.handL.forward).toEqual(k0.pose.handL.forward);
+  expect(k1.pose.handR.normal).toEqual(k0.pose.handR.normal);
+  expect(validateDocShape(doc)).toEqual([]);
+ });
+
+ it('without carryHands the same template leaves the hands untouched',()=>{
+  const doc=docOf('idle');
+  const ins=insertBasicAction(doc,basicOf('basic-arms-up'),0,origin())!;
+  const [k0,k1]=ins.keyIds.map(id=>keyAt(doc,id)!);
+  expect(k1.pose.handL).toEqual(k0.pose.handL);
+  expect(k1.pose.handR).toEqual(k0.pose.handR);
  });
 
  it('refuses without touching the document when the key or duration limit would be exceeded',()=>{

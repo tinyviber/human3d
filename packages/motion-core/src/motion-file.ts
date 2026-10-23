@@ -22,6 +22,11 @@ export interface MotionFile{
   /** Library grouping. `basic` marks the reusable basic actions (半蹲, 弓步 …)
    * the workshop inserts at a frame; absent means a sport/legacy motion. */
   category?:'basic';
+  /** Basic-action insertion metadata: the template moves its hand targets
+   * too, so insertion applies the hand target/pole offsets on top of the
+   * playhead state (wrist orientation still stays as authored there). Absent
+   * keeps the arms exactly where the playhead found them. */
+  carryHands?:boolean;
   notes?:string[];license?:string;oneShot?:boolean;capabilities?:MotionCapabilities;
   document?:WorkshopDoc;clip?:{url:string;meta?:string};
   dynamics?:{action:MuscleActionFile;records:DynamicsRecords};
@@ -66,6 +71,7 @@ export function validateMotionFileShape(raw:unknown):string[]{
   // one would sort before t=0). Applies to workshop- and clip-motion alike.
   else if(isNum(f.duration)&&f.phases.some(p=>p.time<0||p.time>f.duration))e.push('phases.time 必须在 0–duration 内');
   if(f.category!==undefined&&f.category!=='basic')e.push('category 必须是 basic');
+  if(f.carryHands!==undefined&&typeof f.carryHands!=='boolean')e.push('carryHands 必须是布尔值');
   if(f.notes!==undefined&&(!Array.isArray(f.notes)||f.notes.some(x=>typeof x!=='string')))e.push('notes 必须是字符串数组');
   if(f.license!==undefined&&typeof f.license!=='string')e.push('license 必须是字符串');
   if(f.oneShot!==undefined&&typeof f.oneShot!=='boolean')e.push('oneShot 必须是布尔值');

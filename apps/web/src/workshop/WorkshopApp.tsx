@@ -390,21 +390,30 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  };
  const addKey=()=>insertAt(engine.current?.time??frame.time);
  const insertAfterKey=()=>{if(insertTime!==undefined)insertAt(insertTime,insertDuration);};
- const basicFile=BASIC_PRESETS.find(p=>p.id===basicId);
- const basicDoc=basicFile?.document;
- const basicRefusal=basicDoc&&info?basicInsertRefusal(d,basicDoc,frame.time):undefined;
- /** Insert the chosen basic action at the playhead state: one ripple edit, one undo step. */
- const insertBasic=()=>{
-  const e=engine.current;
+ /** One-click basic action: the button IS the preset. One ripple edit, one
+  * undo step; carry-hands templates move the hand targets on top of the
+  * playhead state (wrist orientation untouched). */
+ const insertBasicPreset=(p:(typeof BASIC_PRESETS)[number])=>{
+  const e=engine.current,basicDoc=p.document;
   if(generationLocked.current||!info||!basicDoc||!e)return;
   const time=e.time,refusal=basicInsertRefusal(d,basicDoc,time);
   if(refusal){setHint(refusal);return;}
   const box:{value?:BasicInsertion}={};
-  editKeyStructure(doc=>{box.value=insertBasicAction(doc,basicDoc,time,e.restRoot());});
+  editKeyStructure(doc=>{box.value=insertBasicAction(doc,basicDoc,time,e.restRoot(),{carryHands:p.carryHands===true});});
   const inserted=box.value;
   if(!inserted){setHint('插入失败：请调整时刻后重试。');return;}
   selectKey(inserted.keyIds[0]);
-  setHint(`已在 ${inserted.time.toFixed(2)}s 插入「${basicFile?.name??'基础动作'}」，后续关键帧后移 ${inserted.span.toFixed(2)}s。`);
+  setHint(`已在 ${inserted.time.toFixed(2)}s 插入「${p.name}」，后续关键帧后移 ${inserted.span.toFixed(2)}s。`);
+ };
+ /** Quick racket: one click turns grip on for every key (the racket follows
+  * the gripping hand) or takes it off; one structural undo step. */
+ const setGrip=(side:'L'|'R'|null)=>{
+  if(generationLocked.current)return;
+  editKeyStructure(doc=>{
+   if(side)doc.gripSide=side;else delete doc.gripSide;
+   for(const k of doc.keys)k.constraints.grip=side!==null;
+  });
+  setHint(side?`已切换为${side==='L'?'左':'右'}手持拍：所有关键帧显示球拍，可撤销。`:'已卸下球拍：所有关键帧不再握拍，可撤销。');
  };
  const duplicateKey=(id:string)=>{
   if(generationLocked.current)return;
@@ -679,11 +688,21 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button type="button" data-testid="keyframe-add-current" disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys} onClick={addKey}><Plus size={12}/>当前时刻添加</button>
       <button type="button" data-testid="keyframe-insert-after" disabled={!info||insertTime===undefined||d.keys.length>=WORKSHOP_LIMITS.maxKeys} title={insertTime===undefined?'选中帧后没有可用时间；可在前面的时间段添加':'在下一时间点前插入；末帧后可延长动作'} onClick={insertAfterKey}><Plus size={12}/>在选中帧后插入</button>
      </div>
-     <div className="ws-row ws-basic-insert">
-      <label className="ws-field"><span>基础动作</span><select aria-label="插入基础动作" data-testid="basic-insert-select" value={basicId} onChange={e=>setBasicId(e.target.value)} disabled={!info}>{BASIC_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</select></label>
-      <button type="button" data-testid="basic-insert" disabled={!info||!basicDoc||!!basicRefusal} title={basicRefusal??'从播放头所在姿态开始插入；之后的关键帧整体后移，可撤销'} onClick={insertBasic}><Plus size={12}/>在当前帧插入</button>
+     <div className="ws-quick-poses" role="group" aria-label="快速姿态（一键插入）">
+      <span className="ws-quick-label">快速姿态</span>
+      {BASIC_PRESETS.map(p=>{
+       const refusal=info&&p.document?basicInsertRefusal(d,p.document,frame.time):undefined;
+       return <button key={p.id} type="button" data-testid={`basic-insert-${p.id}`} disabled={!info||!p.document||!!refusal}
+        title={refusal??`在当前帧一键插入「${p.name}」：从播放头姿态开始变化，后续关键帧整体后移，可撤销`}
+        onClick={()=>insertBasicPreset(p)}>{p.name}</button>;
+      })}
      </div>
-     {basicRefusal?<p className="ws-note" data-testid="basic-insert-refusal">{basicRefusal}</p>:null}
+     <div className="ws-quick-poses" role="group" aria-label="球拍（一键持拍）">
+      <span className="ws-quick-label">球拍</span>
+      <button type="button" data-testid="racket-right" disabled={!info} title="所有关键帧改为右手握拍并显示球拍，可撤销" onClick={()=>setGrip('R')}>右手持拍</button>
+      <button type="button" data-testid="racket-left" disabled={!info} title="所有关键帧改为左手握拍并显示球拍，可撤销" onClick={()=>setGrip('L')}>左手持拍</button>
+      <button type="button" data-testid="racket-off" disabled={!info} title="所有关键帧不再握拍，可撤销" onClick={()=>setGrip(null)}>卸下球拍</button>
+     </div>
      <p className="ws-note">点击帧名，在右侧编辑名称、时间与姿态。上移 / 下移保留时间点，整帧换序。</p>
      {d.keys.length>=WORKSHOP_LIMITS.maxKeys?<p className="ws-note">已达关键帧数量上限，请先删除不需要的帧。</p>:null}
     </section>
