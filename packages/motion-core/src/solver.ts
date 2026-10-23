@@ -155,11 +155,18 @@ export function rotateHandFrame(h:{forward:{x:number;y:number;z:number};normal:{
  * can reach the whole sphere. The solver still owns all final bone writes. */
 export function rotateArmJoint(rig:HumanRig,p:PoseParams,side:Side,joint:'upper'|'forearm',kind:'lift'|'swing'|'twist',degrees:number){
   const shoulder=rig.point(`upperarm01_${side}`),elbow=rig.point(`lowerarm01_${side}`),wrist=rig.point(`wrist_${side}`);
-  const pivot=joint==='upper'?shoulder:elbow;
   const direction=joint==='upper'?elbow.clone().sub(shoulder):wrist.clone().sub(elbow);
   const body=rig.bone(`upperarm01_${side}`).parent!.getWorldQuaternion(new Quaternion());
   const axis=kind==='twist'?direction.normalize():new Vector3(kind==='lift'?1:0,kind==='swing'?1:0,0).applyQuaternion(body);
-  const turn=new Quaternion().setFromAxisAngle(axis.normalize(),degrees*DEG);
+  rotateArmAbout(rig,p,side,joint,axis,degrees);
+}
+/** rotateArmJoint with an explicit world axis (through the shoulder for
+ * 'upper', through the elbow for 'forearm'). Same encoding and preconditions:
+ * the rig must be solved at the edited key. */
+export function rotateArmAbout(rig:HumanRig,p:PoseParams,side:Side,joint:'upper'|'forearm',axis:Vector3,degrees:number){
+  const shoulder=rig.point(`upperarm01_${side}`),elbow=rig.point(`lowerarm01_${side}`),wrist=rig.point(`wrist_${side}`);
+  const pivot=joint==='upper'?shoulder:elbow;
+  const turn=new Quaternion().setFromAxisAngle(axis.clone().normalize(),degrees*DEG);
   const end=wrist.sub(pivot).applyQuaternion(turn).add(pivot);
   const mid=joint==='upper'?elbow.sub(pivot).applyQuaternion(turn).add(pivot):elbow;
   const hand=side==='L'?p.handL:p.handR;

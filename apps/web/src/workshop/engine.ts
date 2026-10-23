@@ -11,6 +11,7 @@ import {analyzePose,solveEffectiveFrame,type Analysis} from '@human3d/motion-cor
 import type {PelvisSchedule} from '@human3d/motion-core';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from '@human3d/motion-core';
 import {bindSceneBackground} from '../theme/scene-background';
+import {applyAnatomySkin} from '../theme/anatomy-skin';
 
 export interface WorkshopFrame{time:number;duration:number;playing:boolean;label:string;analysis?:Analysis}
 export interface WorkshopOptions{handles:boolean;trajectories:boolean;balance:boolean;onion:boolean;onionCount:number;onionMode:'keys'|'step';onionStep:number}
@@ -108,6 +109,9 @@ export class WorkshopEngine{
   scene=new Scene();camera=new PerspectiveCamera(35,1,.01,120);renderer:WebGLRenderer;controls:OrbitControls;
   model?:Group;rig?:HumanRig;racket?:Group;ready=false;disposed=false;
   playing=true;speed=1;time=0;view:ViewId='threeQuarter';
+  /** Review mode (false) hides handles and refuses every pointer pick, so a
+   * camera gesture can never write the document (issue #23 PR-A). */
+  editable=true;
   options:WorkshopOptions={handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys',onionStep:.1};
   private clock=new Clock();private raf=0;private lastNotify=0;private resizeObserver:ResizeObserver;private unbindTheme?:()=>void;
   private keyLight?:DirectionalLight;
@@ -168,11 +172,14 @@ export class WorkshopEngine{
   onEditEnd?:()=>void;
   constructor(public host:HTMLElement,private getDoc:()=>WorkshopDoc){
     this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
-    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
+    // Mobile profile: touch-first devices render at ≤1.5× and a 1024² shadow
+    // map. shortcut: chosen from GPU-fill reasoning, not a device benchmark; tune after real-device measurement.
+    const coarse=window.matchMedia?.('(pointer:coarse)').matches??false;
+    this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,coarse?1.5:2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=PCFSoftShadowMap;
     this.renderer.domElement.setAttribute('aria-label','动作工作台三维编辑视图');this.host.appendChild(this.renderer.domElement);
     this.unbindTheme=bindSceneBackground(this.scene);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
-    const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
+    const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.setScalar(coarse?1024:2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
     const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
     const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);
     const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;(grid.material as LineBasicMaterial).transparent=true;(grid.material as LineBasicMaterial).opacity=.45;this.scene.add(grid);
@@ -189,7 +196,7 @@ export class WorkshopEngine{
       const [gltf,info]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>})]);
       if(this.disposed){gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
-      this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
+      const rig=this.rig;this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;applyAnatomySkin(o,rig);}});
       this.racket=attachProp(this.rig,'racket',this.getDoc().gripSide==='L'?'L':'R');this.racketSide=this.getDoc().gripSide==='L'?'L':'R';this.racket.visible=false;
       this.footGeo={L:footGeometry(this.rig.rest,'L'),R:footGeometry(this.rig.rest,'R')};
       this.makeHandles();this.makeMarkers();this.makeOnion();
@@ -242,10 +249,28 @@ export class WorkshopEngine{
     this.pointer.set(((ev.clientX-rect.left)/rect.width)*2-1,-((ev.clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.pointer,this.camera);
     const hits=this.raycaster.intersectObjects([...this.handleGroup.children,...this.contactMarkers].filter(o=>o.visible),false);
-    const o=hits.find(x=>!x.object.userData.ref?.passive)?.object;return o?o.userData.ref as Handle|undefined:undefined;
+    const o=hits.find(x=>!x.object.userData.ref?.passive)?.object;if(o)return o.userData.ref as Handle|undefined;
+    // Touch hit proxy: a fingertip cannot land on a 2 cm sphere, so the
+    // nearest active handle within 28 CSS px on screen wins. Geometry is untouched.
+    if(ev.pointerType!=='touch')return undefined;
+    let best:Handle|undefined,bestD=28;
+    for(const obj of [...this.handleGroup.children,...this.contactMarkers]){
+      const h=obj.userData.ref as Handle|undefined;if(!obj.visible||!h||h.passive)continue;
+      const p=obj.getWorldPosition(new Vector3()).project(this.camera);if(p.z>1)continue;
+      const d=Math.hypot((p.x+1)/2*rect.width-(ev.clientX-rect.left),(1-p.y)/2*rect.height-(ev.clientY-rect.top));
+      if(d<bestD){bestD=d;best=h;}
+    }
+    return best;
+  }
+  setEditable(v:boolean){
+    this.editable=v;
+    if(!v&&this.drag){this.drag=undefined;this.controls.enabled=true;this.onEditEnd?.();}
+    for(const m of this.contactMarkers)m.visible=v&&!this.capturing;
+    if(this.latestFrame)this.updateHandles(this.latestFrame);
   }
   private onPointerDown=(ev:PointerEvent)=>{
-    if(ev.button!==0||!this.ready||this.capturing)return;
+    // Non-primary pointers (a second finger) belong to the camera gesture.
+    if(ev.button!==0||!ev.isPrimary||!this.editable||!this.ready||this.capturing)return;
     const h=this.pick(ev);if(!h)return;
     const doc=this.getDoc();
     const time=h.keyId?doc.keys.find(k=>k.id===h.keyId)?.time??this.time:this.time;
@@ -278,7 +303,7 @@ export class WorkshopEngine{
     this.controls.enabled=false;try{this.renderer.domElement.setPointerCapture(ev.pointerId);}catch{/* synthetic events have no pointer */}
   };
   private onPointerMove=(ev:PointerEvent)=>{
-    if(!this.drag||!this.rig||this.capturing)return;
+    if(!this.drag||!ev.isPrimary||!this.rig||this.capturing)return;
     const rect=this.renderer.domElement.getBoundingClientRect();
     this.pointer.set(((ev.clientX-rect.left)/rect.width)*2-1,-((ev.clientY-rect.top)/rect.height)*2+1);
     this.raycaster.setFromCamera(this.pointer,this.camera);
@@ -351,6 +376,11 @@ export class WorkshopEngine{
     const side=f.gripSide==='L'?'L':'R';
     if(this.racket&&side!==this.racketSide){mountRacket(this.rig,this.racket,side);this.racketSide=side;}
   }
+  /** The pelvis shift the viewport solves time `t` with (undefined = argmin). */
+  pelvisShiftAt(t:number){
+    if(!this.rig)return undefined;
+    const s=this.scheduleFor(this.getDoc());return s.passthrough?undefined:s.at(t);
+  }
   /** Lowest ankle height keeping the sole on or above the rest sole plane. */
   private minAnkleY(side:Side,f:{yaw:number;pitch:number},y:number){
     const g=this.footGeo?.[side];
@@ -370,7 +400,7 @@ export class WorkshopEngine{
     if(!this.rig)return;
     const p=f.pose,doc=this.getDoc();
     const put=(kind:DragKind,side:'L'|'R'|undefined,where:Vector3,visible=true)=>{
-      const h=this.handles.find(x=>x.kind===kind&&x.side===side);if(!h)return;h.mesh.visible=visible&&this.options.handles;h.mesh.position.copy(where);
+      const h=this.handles.find(x=>x.kind===kind&&x.side===side);if(!h)return;h.mesh.visible=visible&&this.options.handles&&this.editable;h.mesh.position.copy(where);
     };
     put('root',undefined,this.rig.point('root'));
     put('hand','L',this.rig.point('wrist_L'));put('hand','R',this.rig.point('wrist_R'));
@@ -389,7 +419,7 @@ export class WorkshopEngine{
       const release=isReleaseKey(doc,i,side);
       const bone=this.handles.find(x=>x.kind==='foot'&&x.side===side),sw=this.handles.find(x=>x.kind==='swing'&&x.side===side);
       if(bone)bone.passive=release;
-      if(sw){sw.mesh.visible=release&&this.options.handles;if(release){sw.keyId=keys[i].id;sw.mesh.position.copy(toV(keys[i].pose[foot].target));}}
+      if(sw){sw.mesh.visible=release&&this.options.handles&&this.editable;if(release){sw.keyId=keys[i].id;sw.mesh.position.copy(toV(keys[i].pose[foot].target));}}
     }
   }
   private rebuildAux(){
@@ -425,7 +455,7 @@ export class WorkshopEngine{
       const ring=new Mesh(new RingGeometry(.035,.042,28),new MeshBasicMaterial({color:0xf0b429,side:DoubleSide,depthTest:false,transparent:true,opacity:.8}));
       ring.rotation.x=-Math.PI/2;ring.renderOrder=21;ball.add(ring);
       const h:Handle={kind:'contact',mesh:ball,keyId:k.id};ball.userData.ref=h;ball.userData.handle=true;
-      ball.visible=!this.capturing; // rebuilt markers default visible — keep them out of an in-flight capture
+      ball.visible=!this.capturing&&this.editable; // rebuilt markers default visible — keep them out of an in-flight capture
       this.contactMarkers.push(ball);this.scene.add(ball);
     }
     /* INVARIANT (issue #10 PR-C): no reader or render can observe the rig

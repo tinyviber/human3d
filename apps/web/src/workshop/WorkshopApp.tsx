@@ -1,8 +1,8 @@
-import {useEffect,useRef,useState} from 'react';
+import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {Group,Panel,Separator} from 'react-resizable-panels';
-import {Activity,ArrowDown,ArrowLeft,ArrowUp,Camera,Check,Copy,Download,FileBox,Film,FlipHorizontal2,LayoutGrid,Package,Pause,Play,Plus,Redo2,RotateCcw,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {Activity,ArrowDown,ArrowLeft,ArrowUp,Camera,Check,ChevronLeft,ChevronRight,ClipboardCopy,Copy,Download,Eye,FileBox,Film,FlipHorizontal2,Hand,LayoutGrid,ListVideo,MessageSquareWarning,Package,Pause,Play,Plus,Redo2,RotateCcw,SlidersHorizontal,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {LibraryList} from './chrome';
 import {useWorkshopUi} from './ui-store';
 import {WorkshopEngine} from './engine';
@@ -12,6 +12,7 @@ import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlocker
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
 import {HistoryBook,RecordGate} from './history';
+import {SemanticPanel,type SemanticHost} from './semantic-panel';
 import {copyKeyframe,keyframeInsertSlot,keyframeTimeProblem,moveKeyframe,removeKeyframe} from './keyframes';
 import {clampDuration,WORKSHOP_LIMITS} from '@human3d/motion-core';
 import {ankleYForLift,footLift,type Side} from '@human3d/motion-core';
@@ -29,6 +30,15 @@ type CandidateSession={source:WorkshopDoc;candidate:MotionCandidateSummary;resul
 type GenerationReport={source:WorkshopDoc;result:MotionGenSummary};
 type GenerationProgress=MotionGenProgress|{evals:0;maxEvals:number;phase:'loading'};
 
+/** Phone / short-landscape layout. Mirrors the CSS breakpoint in workshop.css. */
+const COMPACT_QUERY='(max-width: 760px), (pointer: coarse) and (max-height: 540px)';
+function useMedia(query:string){
+ return useSyncExternalStore(cb=>{const m=globalThis.matchMedia?.(query);m?.addEventListener('change',cb);return()=>m?.removeEventListener('change',cb);},()=>globalThis.matchMedia?.(query).matches??false);
+}
+/** Session-only review note (issue #23 PR-D): never written into WorkshopDoc. */
+interface ReviewNote{id:string;docId:string;keyId:string;keyLabel:string;time:number;view:string;part:string;issue:string;text:string}
+const NOTE_PARTS=['右臂','左臂','右手腕','左手腕','躯干','骨盆','右腿','左腿','右脚','左脚','球拍'];
+const NOTE_ISSUES=['手臂穿身','拍头方向','支撑脚漂移','关节过屈 / 反折','姿态与参考不符','时机不对','其他'];
 const fmt=(t:number)=>`${Math.floor(t/60)}:${(Math.floor(t%60)).toString().padStart(2,'0')}.${Math.floor(t*100%100).toString().padStart(2,'0')}`;
 const metricLabels:Record<string,string>={
  'cost.endEffectorJerk':'末端加加速度积分','cost.angularJerk':'角运动加加速度积分',
@@ -85,29 +95,37 @@ function KeyframeTimeInput({time,max,disabled,onCommit}:{time:number;max:number;
   onChange={e=>setDraft(e.target.value)} onBlur={e=>{if(!cancel.current)onCommit(e.currentTarget.valueAsNumber);cancel.current=false;setDraft(String(time));}}
   onKeyDown={e=>{if(e.key==='Enter'){e.preventDefault();e.currentTarget.blur();}else if(e.key==='Escape'){cancel.current=true;e.currentTarget.blur();}}}/>;
 }
-function Timeline({doc,time,selected,onSelect,onSeek,onRetime,onBeginRetime,onEndRetime}:{doc:WorkshopDoc;time:number;selected:string;onSelect:(id:string)=>void;onSeek:(t:number)=>void;onRetime:(id:string,t:number)=>void;onBeginRetime:()=>void;onEndRetime:()=>void}){
+/** Key → seek on tap; a key moves only after a 6 px horizontal drag (so a
+ * fingertip tap never retimes); empty track drags scrub. Each key carries a
+ * 44 px-tall invisible hit area around the 13 px diamond. */
+function Timeline({doc,time,selected,retime,onSelect,onSeek,onRetime,onBeginRetime,onEndRetime}:{doc:WorkshopDoc;time:number;selected:string;retime:boolean;onSelect:(id:string)=>void;onSeek:(t:number)=>void;onRetime:(id:string,t:number)=>void;onBeginRetime:()=>void;onEndRetime:()=>void}){
  const track=useRef<HTMLDivElement>(null);
  const [dragKey,setDragKey]=useState<string|null>(null);
+ const press=useRef<{x:number;id:string;moved:boolean}|null>(null),scrub=useRef(false);
  const frac=(x:number)=>{const r=track.current!.getBoundingClientRect();return Math.max(0,Math.min(1,(x-r.left)/r.width));};
  const move=(ev:{clientX:number})=>{
-  if(!dragKey||!track.current)return;
+  if(scrub.current&&track.current){onSeek(frac(ev.clientX)*doc.duration);return;}
+  if(!dragKey||!retime||!track.current)return;
   const keys=sortedKeys(doc),i=keys.findIndex(k=>k.id===dragKey);
   if(i<0||(doc.loop&&i===0))return; // the loop seam is the first key's fixed 0 s anchor
   const before=keys[i-1],after=keys[i+1];
+  const p=press.current;
+  if(p&&!p.moved){if(Math.abs(ev.clientX-p.x)<6)return;p.moved=true;onBeginRetime();}
   const lo=before?before.time+Math.min(.01,(keys[i].time-before.time)/2):0;
   const hi=after?after.time-Math.min(.01,(after.time-keys[i].time)/2):doc.duration-(doc.loop?WORKSHOP_LIMITS.loopGap:0);
   onRetime(dragKey,Math.max(lo,Math.min(hi,frac(ev.clientX)*doc.duration)));
  };
+ const end=()=>{const moved=press.current?.moved;scrub.current=false;setDragKey(null);if(moved)onEndRetime();setTimeout(()=>{press.current=null;},0);};
  return <div className="ws-track-wrap">
-  <div ref={track} className="ws-track" onPointerDown={e=>{if(e.target===e.currentTarget)onSeek(frac(e.clientX)*doc.duration);}} onPointerMove={move} onPointerUp={()=>{setDragKey(null);onEndRetime();}} onPointerCancel={()=>{setDragKey(null);onEndRetime();}}>
+  <div ref={track} className="ws-track" data-testid="timeline-track" onPointerDown={e=>{if(e.target===e.currentTarget){scrub.current=true;e.currentTarget.setPointerCapture(e.pointerId);onSeek(frac(e.clientX)*doc.duration);}}} onPointerMove={move} onPointerUp={end} onPointerCancel={end}>
    <div className="ws-progress" style={{width:`${time/doc.duration*100}%`}}/>
    <div className="ws-cursor" style={{left:`${time/doc.duration*100}%`}}/>
    {sortedKeys(doc).map(k=><button key={k.id} className={`ws-key ${k.id===selected?'sel':''} ${k.constraints.contact?'contact':''}`} style={{left:`${k.time/doc.duration*100}%`}}
      aria-label={`选择关键帧 ${k.label||fmt(k.time)}`} aria-pressed={k.id===selected}
      title={`${k.label||'关键帧'} · ${k.time.toFixed(2)}s`}
-     onPointerDown={e=>{e.stopPropagation();onBeginRetime();onSelect(k.id);setDragKey(k.id);(e.target as HTMLElement).setPointerCapture(e.pointerId);}}
-     onPointerMove={move} onPointerUp={()=>setDragKey(null)}
-     onClick={()=>{onSelect(k.id);onSeek(k.time);}}/>)}
+     onPointerDown={e=>{e.stopPropagation();press.current={x:e.clientX,id:k.id,moved:false};onSelect(k.id);setDragKey(k.id);(e.currentTarget as HTMLElement).setPointerCapture(e.pointerId);}}
+     onPointerMove={move} onPointerUp={end} onPointerCancel={end}
+     onClick={()=>{if(press.current?.moved)return;onSelect(k.id);onSeek(k.time);}}/>)}
   </div>
   <div className="ws-track-labels">{sortedKeys(doc).map(k=><button key={k.id} className={k.id===selected?'sel':''} title={`${k.label||'关键帧'} · ${k.time.toFixed(3)}s`} style={{left:`${k.time/doc.duration*100}%`}} onClick={()=>{onSelect(k.id);onSeek(k.time);}}>{k.label||fmt(k.time)}</button>)}</div>
  </div>;
@@ -122,7 +140,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const newName=useWorkshopUi(s=>s.newName),setNewName=useWorkshopUi(s=>s.setNewName);
  const [presetId,setPresetId]=useState(()=>BASIC_PRESETS[0]?.id??'');
  const [basicId,setBasicId]=useState(()=>BASIC_PRESETS[0]?.id??'');
- const [adjustmentTab,setAdjustmentTab]=useState<'left'|'right'|'common'>('common');
+ const [adjustmentTab,setAdjustmentTab]=useState<'left'|'right'|'common'|'semantic'>(()=>globalThis.matchMedia?.(COMPACT_QUERY).matches?'semantic':'common');
  const [info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState('');
  const [frame,setFrame]=useState<WorkshopFrame>({time:0,duration:.8,playing:true,label:''});
  const [view,setView]=useState<ViewId>('threeQuarter');
@@ -148,12 +166,21 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // Session-only display toggles (never persisted) — same convention as the
  // engine's WorkshopOptions defaults.
  const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys' as 'keys'|'step',onionStep:.1});
+ // Issue #23: phone layout = viewport + bottom sheets; Review mode blocks every
+ // viewport write. Same query as the CSS breakpoint in workshop.css.
+ const compact=useMedia(COMPACT_QUERY);
+ const [mode,setMode]=useState<'review'|'edit'>(()=>globalThis.matchMedia?.(COMPACT_QUERY).matches?'review':'edit');
+ const [sheet,setSheet]=useState<'left'|'right'|null>(null);
+ const [refLarge,setRefLarge]=useState(false);
+ const [notes,setNotes]=useState<ReviewNote[]>([]);
+ const [noteDraft,setNoteDraft]=useState({part:NOTE_PARTS[0],issue:NOTE_ISSUES[0],text:''});
  const [videoUrl,setVideoUrl]=useState('');const [sync,setSync]=useState(false);const syncOffset=useRef(0);const [videoPlaying,setVideoPlaying]=useState(false);
  useEffect(()=>{
   if(!mount.current)return;let e:WorkshopEngine;
   try{
    e=new WorkshopEngine(mount.current,()=>generationPreview.current??lib.current!.active());engine.current=e;
    e.onReady=setInfo;
+   e.setEditable(!globalThis.matchMedia?.(COMPACT_QUERY).matches);
    e.onError=err=>setError(err.message);
    e.onFrame=setFrame;
    e.onSelectKey=setSelected;
@@ -298,6 +325,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const nextTransitionKey=selectedKeyIndex<0?undefined:orderedKeys[selectedKeyIndex+1]??(d.loop?orderedKeys[0]:undefined);
  const transitionIsLoop=d.loop&&selectedKeyIndex===orderedKeys.length-1;
  const transitionEndTime=nextTransitionKey?nextTransitionKey.time+(transitionIsLoop?d.duration:0):undefined;
+ const review=mode==='review';
  const adjustmentSide=adjustmentTab==='left'?'L':'R',adjustmentSideName=adjustmentSide==='L'?'左':'右';
  const analysis=frame.analysis;
  const previewDoc=candidateSession?(previewSide==='candidate'?candidateSession.candidate.doc:candidateSession.source):null;
@@ -340,6 +368,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   if(generationLocked.current)return;
   const key=keyAt(L.active(),id);if(!key)return;
   gate.current.reset();setSelected(id);engine.current?.setPlaying(false);engine.current?.seek(key.time);
+  if(video.current&&key.videoTime!==undefined)video.current.currentTime=key.videoTime;
  };
  /** Structural clicks are separate undo steps, even when made rapidly. */
  const editKeyStructure=(fn:(doc:WorkshopDoc)=>void)=>{
@@ -561,13 +590,54 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const loadVideo=(f:File)=>{if(videoUrl)URL.revokeObjectURL(videoUrl);setVideoUrl(URL.createObjectURL(f));};
  const alignVideo=()=>{if(video.current)syncOffset.current=video.current.currentTime-frame.time;};
  const stampVideo=()=>{if(video.current)editSelected(k=>{k.videoTime=video.current!.currentTime;});};
- return <div className={`ws-shell ${generationLockedUi?'ws-generation-locked':''}`}>
+ const switchMode=(next:'review'|'edit')=>{setMode(next);engine.current?.setEditable(next==='edit');};
+ const stepKey=(dir:-1|1)=>{
+  const ks=sortedKeys(d),t=frame.time;
+  const k=dir>0?ks.find(x=>x.time>t+1e-6)??ks[0]:[...ks].reverse().find(x=>x.time<t-1e-6)??ks.at(-1);
+  if(k)selectKey(k.id);
+ };
+ const setOpt=(patch:Partial<typeof opts>)=>{setOpts(o=>({...o,...patch}));engine.current?.setOptions(patch);};
+ /** Semantic edits preview by swapping the active document for a candidate
+  * computed from one fixed base; history records the base once per transaction. */
+ const semanticRecorded=useRef(false);
+ const semanticHost:SemanticHost={
+  context:()=>{
+   const e=engine.current,k=sel;
+   if(!e?.rig||!k||generationLocked.current)return null;
+   return {rig:e.rig,doc:L.active(),keyId:k.id,origin:e.restRoot(),pelvisShift:()=>e.pelvisShiftAt(k.time)};
+  },
+  begin:base=>{semanticRecorded.current=books.current.of(base.id).record(base);gate.current.reset();engine.current?.setPlaying(false);},
+  write:next=>{
+   const i=L.docs.findIndex(x=>x.id===next.id);if(i<0||generationLocked.current)return;
+   L.docs[i]=JSON.parse(JSON.stringify(next)) as WorkshopDoc;L.save();
+   const e=engine.current,k=keyAt(L.docs[i],selected);
+   e?.setPlaying(false);e?.markDirty();if(k)e?.seek(k.time);bump(v=>v+1);
+  },
+  cancel:base=>{semanticHost.write(base);if(semanticRecorded.current)books.current.of(base.id).dropLast();semanticRecorded.current=false;bump(v=>v+1);},
+  commit:()=>{semanticRecorded.current=false;gate.current.reset();L.save();bump(v=>v+1);},
+ };
+ const addNote=()=>{
+  if(!sel)return;
+  setNotes(n=>[...n,{id:`n${Date.now().toString(36)}${n.length}`,docId:d.id,keyId:sel.id,keyLabel:sel.label||`关键帧 ${selectedKeyIndex+1}`,time:Number(sel.time.toFixed(3)),view:engine.current?.view??view,...noteDraft,text:noteDraft.text.trim()}]);
+  setNoteDraft(x=>({...x,text:''}));
+ };
+ const docNotes=notes.filter(n=>n.docId===d.id);
+ const feedbackText=()=>JSON.stringify({kind:'h3d-review-feedback',version:1,doc:{id:d.id,name:d.name,duration:d.duration},notes:docNotes.map(({docId:_,...n})=>n)},null,2);
+ const copyFeedback=async()=>{
+  const text=feedbackText();
+  try{await navigator.clipboard.writeText(text);setHint(`已复制 ${docNotes.length} 条审阅反馈（JSON）。`);}
+  catch{download(`${d.id}.review.json`,new Blob([text],{type:'application/json'}));setHint('剪贴板不可用，已改为下载审阅反馈 JSON。');}
+ };
+ const videoEl=videoUrl?<video ref={video} src={videoUrl} muted loop playsInline onPlay={()=>setVideoPlaying(true)} onPause={()=>setVideoPlaying(false)}/>:null;
+ const sheetHead=(title:string)=><div className="ws-sheet-head"><strong>{title}</strong><button type="button" aria-label="关闭面板" onClick={()=>setSheet(null)}><X size={18}/></button></div>;
+ return <div className={`ws-shell ${generationLockedUi?'ws-generation-locked':''} ${compact?'ws-compact':''} ${sheet?`ws-sheet-${sheet}`:''} ws-mode-${mode}`} data-mode={mode}>
   <header className="ws-header">
    <div className="brand"><Activity size={25} strokeWidth={2}/><span>KINESIS</span><i/><h1>动作工作台</h1><small>姿态优先 · 关键帧 + 约束</small></div>
    <nav><a href="/" className="ws-back"><ArrowLeft size={14}/>返回实验室</a></nav>
   </header>
   <Group orientation="horizontal" className="ws-main" id="workshop-panes">
-   <Panel id="ws-library" className="ws-library-panel" defaultSize={250} minSize={200} maxSize={420}><aside className="ws-left">
+   <Panel id="ws-library" className="ws-library-panel" defaultSize={250} minSize={200} maxSize={420}><aside className="ws-left" aria-label="动作与关键帧">
+    {sheetHead('动作 · 关键帧 · 参考')}
     <section className="ws-card" inert={generationLockedUi}><h2>动作库 <small>{L.docs.length} 个动作</small></h2>
      <div className="ws-preset-entry">
       <label className="ws-field"><span>动作预设</span><select aria-label="初始动作预设" value={presetId} onChange={e=>setPresetId(e.target.value)}>
@@ -675,7 +745,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      </div>:null}
      {generationError?<div className="ws-generation-error" role="alert"><p>{generationError}</p><button type="button" className="ws-mini" onClick={()=>setGenerationError('')}>关闭</button></div>:null}
     </section>
-    <section className="ws-card" inert={generationLockedUi}><h2>动作文档</h2>
+    <section className="ws-card ws-doc-card" inert={generationLockedUi}><h2>动作文档</h2>
      <label className="ws-field"><span>名称</span><input value={d.name} onChange={e=>edit(dd=>{dd.name=e.target.value;})}/></label>
      <label className="ws-field"><span>时长 s（{WORKSHOP_LIMITS.minDuration}–{WORKSHOP_LIMITS.maxDuration}）</span><input type="number" min={WORKSHOP_LIMITS.minDuration} max={WORKSHOP_LIMITS.maxDuration} step=".1" value={d.duration} onChange={e=>edit(dd=>retimeKeys(dd,clampDuration(Number(e.target.value))))}/></label>
      <p className="ws-note">{d.keys.length} 个关键帧 · {d.inbetweens?'Hermite 补间':'逐帧保持'}</p>
@@ -718,7 +788,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      </div>
     </section>
     <section className="ws-card" inert={generationLockedUi}><h2>参考视频 <small>WHAM 自动估计待接入</small></h2>
-     {videoUrl?<video ref={video} src={videoUrl} muted loop playsInline onPlay={()=>setVideoPlaying(true)} onPause={()=>setVideoPlaying(false)}/>:
+     {videoUrl?(compact?<p className="ws-note">参考视频以画中画显示在三维视图上，可切换大图并排对照。</p>:videoEl):
       <button className="ws-video-pick" onClick={()=>fileRef.current?.click()}><Video size={18}/>载入参考视频</button>}
      <input ref={fileRef} type="file" accept="video/*" hidden onChange={e=>{const f=e.target.files?.[0];if(f)loadVideo(f);e.target.value='';}}/>
      {videoUrl?<><div className="ws-row">
@@ -747,14 +817,31 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     <div ref={mount} className="ws-canvas"/>
     <div className="ws-view-heading"><h2>{displayDoc.name}</h2><p>{frame.label||'—'} · {displayDoc.inbetweens?'连续补间预览':'关键帧步进'}{candidateSession?` · ${previewSide==='source'?'A 源动作':'B 候选'}`:''}</p></div>
     <div className="ws-cameras">{([['front','正面'],['side','侧面'],['threeQuarter','45°'],['back','背面']] as [ViewId,string][]).map(([v,l])=><button key={v} aria-pressed={view===v} onClick={()=>{setView(v);engine.current?.setView(v);}}>{l}</button>)}</div>
-    <div className="ws-hint"><span className="status-dot"/>{info?'拖动彩色手柄调整姿态 · 编辑写入选中或自动新建的关键帧':'加载中'}</div>
+    <div className="ws-hint" data-testid="mode-hint"><span className={`status-dot ${review?'review':''}`}/>{!info?'加载中':review?'审阅模式 · 单指旋转 · 双指缩放 / 平移 · 不会修改姿态':'编辑模式 · 拖动彩色手柄调整姿态，写入选中或自动新建的关键帧'}</div>
+    <div className="ws-modebar" role="group" aria-label="交互模式">
+     <button type="button" data-testid="mode-review" aria-pressed={review} onClick={()=>switchMode('review')}><Eye size={15}/>审阅</button>
+     <button type="button" data-testid="mode-edit" aria-pressed={!review} onClick={()=>switchMode('edit')}><Hand size={15}/>编辑</button>
+    </div>
+    <div className="ws-quickbar" role="toolbar" aria-label="快捷操作">
+     <button type="button" data-testid="sheet-left" aria-expanded={sheet==='left'} onClick={()=>setSheet(v=>v==='left'?null:'left')}><ListVideo size={16}/>动作</button>
+     <button type="button" data-testid="sheet-right" aria-expanded={sheet==='right'} onClick={()=>setSheet(v=>v==='right'?null:'right')}><SlidersHorizontal size={16}/>调整</button>
+     <button type="button" aria-pressed={opts.trajectories} onClick={()=>setOpt({trajectories:!opts.trajectories})}>轨迹</button>
+     <button type="button" aria-pressed={opts.onion} onClick={()=>setOpt({onion:!opts.onion})}>洋葱皮</button>
+     <button type="button" aria-pressed={opts.balance} onClick={()=>setOpt({balance:!opts.balance})}>重心</button>
+     {!review?<button type="button" aria-pressed={opts.handles} onClick={()=>setOpt({handles:!opts.handles})}>手柄</button>:null}
+     <button type="button" data-testid="fit-view" onClick={()=>{setSheet(null);setView('threeQuarter');engine.current?.setView('threeQuarter');}}>全视野</button>
+     {videoUrl?<button type="button" aria-pressed={refLarge} onClick={()=>setRefLarge(v=>!v)}><Video size={15}/>参考</button>:null}
+    </div>
+    {compact&&videoEl?<div className={`ws-ref ${refLarge?'large':''}`} data-testid="reference-pip">{videoEl}<button type="button" aria-label={refLarge?'缩小参考视频':'放大参考视频并排对照'} onClick={()=>setRefLarge(v=>!v)}/></div>:null}
     {!info?<div className="ws-loading"><div className="loading-orbit"/><strong>{error?'加载失败':'正在读取人体模型'}</strong><p>{error}</p></div>:null}
    </section></Panel>
    <Separator className="pane-resize"/>
-   <Panel id="ws-inspector" className="ws-inspector-panel" defaultSize={272} minSize={220} maxSize={480} inert={generationLockedUi}><aside className="ws-right" inert={generationLockedUi}>
-    <section className="ws-card ws-key-card"><h2>选中关键帧 {sel?<small>@{sel.time.toFixed(2)}s</small>:null}</h2>
+   <Panel id="ws-inspector" className="ws-inspector-panel" defaultSize={272} minSize={220} maxSize={480} inert={generationLockedUi}><aside className="ws-right" aria-label="姿态调整与检查" inert={generationLockedUi}>
+    {sheetHead('姿态调整 · 检查')}
+    {review?<p className="ws-review-lock">审阅模式：姿态控件已锁定。<button type="button" data-testid="unlock-edit" onClick={()=>switchMode('edit')}><Hand size={13}/>切换到编辑</button></p>:null}
+    <section className="ws-card ws-key-card" inert={review}><h2>选中关键帧 {sel?<small>@{sel.time.toFixed(2)}s</small>:null}</h2>
      {sel?<div className="ws-adjustment-tabs" role="group" aria-label="关键帧调整分类">
-      {([['left','左侧调整'],['right','右侧调整'],['common','通用调整']] as const).map(([tab,label])=><button key={tab} type="button" data-testid={`adjustment-tab-${tab}`} aria-pressed={adjustmentTab===tab} onClick={()=>setAdjustmentTab(tab)}>{label}</button>)}
+      {([['semantic','语义'],['left','左侧'],['right','右侧'],['common','通用']] as const).map(([tab,label])=><button key={tab} type="button" data-testid={`adjustment-tab-${tab}`} aria-pressed={adjustmentTab===tab} onClick={()=>setAdjustmentTab(tab)}>{label}</button>)}
      </div>:null}
      <div className="ws-key-panel" data-testid={`adjustment-panel-${adjustmentTab}`}>
      {sel?<>
@@ -767,6 +854,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        {d.loop&&selectedKeyIndex===0?<p className="ws-note">循环首帧固定在 0s；可调整顺序来更换首帧。</p>:null}
       </div>
       {Math.abs(frame.time-sel.time)>.001?<p className="ws-note">正在预览 {frame.time.toFixed(2)}s；修改时定位到选中帧 {sel.time.toFixed(2)}s。调整当前时刻请先添加关键帧。</p>:null}
+      {adjustmentTab==='semantic'?<SemanticPanel key={`${d.id}:${sel.id}:${wristEpoch.current}`} host={semanticHost} defaultSide={d.gripSide??'R'} keyLabel={sel.label||`关键帧 ${selectedKeyIndex+1}`}/>:<>
       {adjustmentTab==='common'?<>
       <label className="ws-field"><span>动作名称</span><input data-testid="active-motion-name" aria-label="动作名称" value={d.name} onChange={e=>edit(doc=>{doc.name=e.target.value;})}/></label>
       <Row label="自由手臂（全方向）" detail="允许肩、肘、腕超出人体参考范围；肘屈曲超过 145° 的姿态无法导出姿态包" testId="free-arms" checked={d.freeArms===true} onChange={v=>edit(doc=>{if(v)doc.freeArms=true;else delete doc.freeArms;})}/>
@@ -849,6 +937,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
         </div>;
        })}
       </div>:null}
+      </>}
       <button className="ws-mini danger" onClick={()=>delKey(sel.id)} disabled={d.keys.length<=2} title={d.keys.length<=2?'至少保留两个关键帧':'可通过撤销恢复'}><Trash2 size={12}/>删除此关键帧</button>
      </>:<p className="ws-note">时间轴上选择或新建关键帧。</p>}
      </div>
@@ -856,6 +945,20 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     <section className="ws-card"><h2>合理性检查 <small>运动学 · 非动力学</small></h2>
      {analysis?<div className="ws-checks">{analysis.items.map((it,i)=><div key={i} className={it.ok?'':'warn'}>{it.ok?<Check size={12}/>:<X size={12}/>}<span>{it.label}</span><small>{it.detail}</small></div>)}</div>:<p className="ws-note">求解后显示关节限位、支撑与重心。</p>}
      <p className="ws-note">限位使用工程关节范围；重心为分段质量近似，支撑多边形来自锁定脚位。</p>
+    </section>
+    <section className="ws-card ws-notes" id="ws-notes" data-testid="review-notes"><h2>审阅反馈 <small>会话内 · 不写入动作</small></h2>
+     {sel?<>
+      <p className="ws-note">标记「{sel.label||`关键帧 ${selectedKeyIndex+1}`}」@{sel.time.toFixed(2)}s 的问题：</p>
+      <label className="ws-field"><span>部位</span><select value={noteDraft.part} onChange={e=>setNoteDraft(x=>({...x,part:e.target.value}))}>{NOTE_PARTS.map(p=><option key={p}>{p}</option>)}</select></label>
+      <label className="ws-field"><span>问题</span><select data-testid="note-issue" value={noteDraft.issue} onChange={e=>setNoteDraft(x=>({...x,issue:e.target.value}))}>{NOTE_ISSUES.map(p=><option key={p}>{p}</option>)}</select></label>
+      <label className="ws-field"><span>描述</span><input data-testid="note-text" value={noteDraft.text} placeholder="可选：补充说明…" onChange={e=>setNoteDraft(x=>({...x,text:e.target.value}))} onKeyDown={e=>{if(e.key==='Enter')addNote();}}/></label>
+      <div className="ws-row"><button type="button" data-testid="note-add" onClick={addNote}><MessageSquareWarning size={13}/>标记问题</button>
+       <button type="button" data-testid="note-copy" disabled={!docNotes.length} onClick={()=>void copyFeedback()}><ClipboardCopy size={13}/>复制反馈 JSON</button></div>
+     </>:null}
+     {docNotes.length?<ul className="ws-note-list">{docNotes.map(n=><li key={n.id}>
+      <button type="button" onClick={()=>selectKey(n.keyId)}><b>{n.keyLabel}</b> {n.time.toFixed(2)}s · {n.part} · {n.issue}{n.text?<small>{n.text}</small>:null}</button>
+      <button type="button" aria-label={`删除反馈 ${n.keyLabel} ${n.issue}`} onClick={()=>setNotes(all=>all.filter(x=>x.id!==n.id))}><X size={12}/></button>
+     </li>)}</ul>:<p className="ws-note">尚无反馈；结构化 JSON 可直接交给 agent 修复。</p>}
     </section>
     <section className="ws-card"><h2>显示</h2>
      <Row label="编辑手柄" checked={opts.handles} onChange={v=>{setOpts(o=>({...o,handles:v}));engine.current?.setOptions({handles:v});}}/>
@@ -870,16 +973,19 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     </section>
    </aside></Panel>
   </Group>
+  {compact&&sheet?<button type="button" className="ws-scrim" aria-label="关闭面板，返回三维视图" onClick={()=>setSheet(null)}/>:null}
   <footer className="ws-footer" inert={generationLockedUi}>
    <div className="ws-transport">
     <button className="ws-play" aria-label={frame.playing?'暂停':'播放'} onClick={()=>engine.current?.setPlaying(!frame.playing)} disabled={!info}>{frame.playing?<Pause size={21} fill="currentColor"/>:<Play size={21} fill="currentColor"/>}</button>
+    <button aria-label="上一关键帧" data-testid="key-prev" onClick={()=>stepKey(-1)} disabled={!info}><ChevronLeft size={19}/></button>
+    <button aria-label="下一关键帧" data-testid="key-next" onClick={()=>stepKey(1)} disabled={!info}><ChevronRight size={19}/></button>
     <button aria-label="回到开头" onClick={()=>engine.current?.seek(0)}><RotateCcw size={17}/></button>
     <button aria-label="撤销" title="撤销 (Ctrl+Z)" disabled={!books.current.of(d.id).canUndo()} onClick={undo}><Undo2 size={17}/></button>
     <button aria-label="重做" title="重做 (Ctrl+Shift+Z)" disabled={!books.current.of(d.id).canRedo()} onClick={redo}><Redo2 size={17}/></button>
     <span className="ws-time">{fmt(frame.time)}<i>/</i>{fmt(d.duration)}</span>
    </div>
-   <Timeline doc={displayDoc} time={frame.time} selected={sel?.id??''} onSelect={selectKey} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>changeKeyTime(id,t,false)} onBeginRetime={()=>engine.current?.beginInteractiveEdit()} onEndRetime={()=>engine.current?.endInteractiveEdit()}/>
-   <div className="ws-actions">
+   <Timeline doc={displayDoc} time={frame.time} selected={sel?.id??''} retime={!review} onSelect={selectKey} onSeek={t=>engine.current?.seek(t)} onRetime={(id,t)=>changeKeyTime(id,t,false)} onBeginRetime={()=>engine.current?.beginInteractiveEdit()} onEndRetime={()=>engine.current?.endInteractiveEdit()}/>
+   <div className="ws-actions" inert={review}>
     <button onClick={addKey} disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>
     {hint?<p className="ws-note" role="status" style={{color:'#c0392b'}}>{hint}</p>:null}

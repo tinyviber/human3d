@@ -10,11 +10,12 @@
 ## 定向测试
 
 - `npm test -- apps/web/src/workshop/workshop.test.ts`（或 `mirror.test.ts`）、`apps/web/src/playback/motion-source.test.ts`
+- 移动端 / 语义控件验收：`node scripts/workshop-mobile-qa.mjs`（需 dev server；Playwright 模拟，不等于真机）
 - 真实交互验收：`npm run qa`（需 dev server；`QA_BROWSER_CHANNEL=chrome` 走系统 Chrome；未进 CI）
 
 ## 界面
 
-实验室与工作台共用 Magpie 色板（`src/theme/tokens.css`：浅色默认，`prefers-color-scheme: dark` 或 `data-theme="dark"` 切暗色）。控件走 shadcn Nova 形态（`@base-ui/react` + `cva`，`src/components/ui/`），图标 Lucide，进场与对话框用 `motion/react`，桌面三栏用 `react-resizable-panels`（窄于 760px 仍按原媒体查询堆叠，QA 选择器不变），工作台动作库排序与时间轴拖键用 `@dnd-kit`，实验室与工作台的界面状态用 Zustand（`src/lab/store.ts`、`src/workshop/ui-store.ts`）。三维画布、求解与播放源不走这套控件。
+实验室与工作台共用 Magpie 色板（`src/theme/tokens.css`：浅色默认，`prefers-color-scheme: dark` 或 `data-theme="dark"` 切暗色）。控件走 shadcn Nova 形态（`@base-ui/react` + `cva`，`src/components/ui/`），图标 Lucide，进场与对话框用 `motion/react`，桌面三栏用 `react-resizable-panels`（实验室窄于 760px 仍堆叠；工作台在 `COMPACT_QUERY` 下用同一 DOM 改为三维视图 + 底部抽屉，见 `WorkshopApp.tsx`/`workshop.css` 的 `.ws-compact`），工作台动作库排序与时间轴拖键用 `@dnd-kit`，实验室与工作台的界面状态用 Zustand（`src/lab/store.ts`、`src/workshop/ui-store.ts`）。三维画布、求解与播放源不走这套控件。
 
 ## 检索指针
 

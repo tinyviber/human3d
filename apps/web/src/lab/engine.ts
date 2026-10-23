@@ -10,6 +10,7 @@ import {attachProp,mountRacket,RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {checkPosePackageShape,posePackageSpec,rigMatches} from '@human3d/motion-core';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,createDynamicsSession,type DynamicsSession,type MotionSource} from '../playback/motion-source';
 import {bindSceneBackground} from '../theme/scene-background';
+import {applyAnatomySkin} from '../theme/anatomy-skin';
 import {subtleDigest} from '@human3d/motion-core';
 import type {PosePackage} from '@human3d/motion-core';
 import type {DynamicsCase,DynamicsReadout,DynamicsReplay} from './dynamics';
@@ -95,7 +96,7 @@ export class HumanEngine{
     const h=await sha256Hex(canonical(motionDefinitionPayload(f)));
     if(h!==undefined)this.envelopeDefHash.set(f.id,h);
    }
-   this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;o.material=new MeshStandardMaterial({color:0x7997b2,roughness:.53,metalness:.08});}});
+   const rig=this.rig;this.model.traverse(o=>{if(o instanceof SkinnedMesh){o.castShadow=true;o.receiveShadow=true;o.frustumCulled=false;applyAnatomySkin(o,rig);}});
    // Sclerae at the original MakeHuman eye pivots, keeping facial silhouette intact.
    for(const side of ['L','R']){
     const eye=this.rig.bone(`eye_${side}`);const sclera=new Mesh(new SphereGeometry(.0105,20,12),new MeshStandardMaterial({color:0xbdcbd2,roughness:.5}));eye.add(sclera);

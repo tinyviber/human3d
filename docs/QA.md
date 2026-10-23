@@ -196,6 +196,12 @@ HUMAN3D_WEB_PORT=5174 npm run qa:pose-validity
 - 直拳：伸展 / 短暂停留的皮肤腕相对前臂偏角约 0.75° / 3.25°；四指分别采用 MCP/PIP/DIP 目标，拇指绕过食指，末端到食指近节最近距离 7.5 mm；恢复阶段松拳。皮肤肘内角约 165–166°，物理肘角误差 <0.001°，肩至腕方向误差 <0.001°，上下臂长度约 0.259 / 0.267 m 并固定。需要区分物理记录：基线拳峰 wrist flexion 是 +36.4°、短暂停留 −2.8°，90% 力量会使拇指 IP 偏离拳型；可见腕和手按任务关节目标重定向，使画面拳面保持中立 / 闭合。这是透明的显示近似，非仿真肌肉结果。
 - 截图与录屏：`baseball-throw-front.png`、`baseball-throw-side.png`、`baseball-throw-back.png`、`baseball-throw-three-quarter.png`；准备 / 蓄力 / 骨盆启动 / 躯干跟进 / 释放 / 随挥 / 恢复截图为 `baseball-throw-ready.png` 至 `baseball-throw-recovery.png`；释放手部特写 `baseball-throw-release-hand-close.png`。直拳 `punch-extension.png`，手部特写 `punch-fist-close.png` / `punch-fist-hold.png`。完整实时投掷 WebM：`baseball-throw.webm`（283,065 字节）。结构化逐姿态结果和所有断言：`evidence/dynamics-results.json`。
 
+## 2026-10-22 移动端与语义控件（issue #23）
+
+`node scripts/workshop-mobile-qa.mjs`（Playwright Chromium，`isMobile/hasTouch` 模拟，DPR 1）全部通过：390×844 无溢出、Review 下单指拖手柄与双指捏合只动相机不写库、正/侧/45°/全视野、上一/下一关键帧与播放暂停、Review 下拖关键帧不重定时、语义肘屈曲 +10°（请求 = 读回 10.0°，其他关键帧逐字节不变）与腕掌屈 5°、两步撤销/重做、刷新后求解肘角不变、肘屈曲超 145° 报「未完全执行」且取消恢复基底、审阅反馈 JSON 复制；375×667、844×390、768×1024、1024×768 无溢出；1536×1024 桌面面板与旧控件仍在。
+
+**未验证**：真机 Safari / Android Chrome 的双指手势、WebGL 前后台恢复、软键盘与刘海安全区实测；移动渲染档（`pointer:coarse` → DPR ≤1.5、阴影 1024²）未做设备帧率测量。#21 PR-E 未合并，任务空间相对移动（PR-C 第一项）未实现。
+
 ## 仍需改进
 
 投掷仍是固定双足的原地上手动作，缺少真实跨步、前脚着地 / 制动与离地支撑变化；手端任务误差约 25 cm，尚不能视作准确的人体动作重建。动作采用肌肉驱动的前向积分和工程化参考任务，不是经运动员标定的逆动力学/神经肌肉预测。大幅肩部 / 手指动作下线性混合蒙皮仍会损失体积；直拳没有撞击目标、拳面接触或冲量。此前发现的网球挥拍手臂穿躯干问题仍待后续修复，本次没有通过低质量重做该动作掩盖它。没有在 Safari、Firefox 或低性能移动设备完成专项测试。
