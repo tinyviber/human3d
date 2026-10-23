@@ -746,10 +746,27 @@ export function parseDoc(text:string):WorkshopDoc{return normalizeDoc(JSON.parse
  * byte-exact identity on every document the pipeline materialises (seeds,
  * shipped assets, parseDoc output, mirrorDoc output itself); hand-scrambled
  * property order round-trips value-exact, not byte-exact. */
-export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
+/** The per-key half of mirrorDoc: pose and constraints reflected across x=0
+ * (left/right hands, feet and plant flags swap; spine lean keeps its sign).
+ * Mirroring a mirrored key reproduces the original values, and the output is
+ * written in the same field order mirrorDoc uses, so document-level
+ * mirror∘mirror stays byte-exact. The workshop also applies this per key for
+ * in-place pose mirroring. */
+export function mirrorKey(key:WorkshopKey):WorkshopKey{
   const mv=(v:V3):V3=>({x:-v.x,y:v.y,z:v.z});
   const hand=(h:HandTarget):HandTarget=>({target:mv(h.target),pole:mv(h.pole),forward:mv(h.forward),normal:mv(h.normal)});
   const foot=(f:FootTarget):FootTarget=>({target:mv(f.target),pole:mv(f.pole),yaw:-f.yaw,pitch:f.pitch});
+  const c=key.constraints,p=key.pose;
+  const out:WorkshopKey={id:key.id,time:key.time,label:key.label,
+    pose:{root:mv(p.root),yaw:-p.yaw,lean:p.lean,chest:-p.chest,side:-p.side,
+      handL:hand(p.handR),handR:hand(p.handL),footL:foot(p.footR),footR:foot(p.footL)},
+    constraints:{plantL:c.plantR,plantR:c.plantL,grip:c.grip,contact:c.contact}};
+  if(key.interpolation!==undefined)out.interpolation=key.interpolation;
+  if(key.videoTime!==undefined)out.videoTime=key.videoTime;
+  return out;
+}
+
+export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
   const toggle=(s:string,suffix:string)=>s.endsWith(suffix)?s.slice(0,s.length-suffix.length):s+suffix;
   /* Field coverage — every WorkshopDoc/WorkshopKey/PoseParams member has an
    * explicit rule here; when a field is added to any of those interfaces it
@@ -761,16 +778,7 @@ export function mirrorDoc(doc:WorkshopDoc):WorkshopDoc{
    *   PoseParams:  root · yaw · lean · chest · side · handL · handR ·
    *     footL · footR   (hand: target/pole/forward/normal; foot: +yaw/pitch)
    *   KeyConstraints: plantL · plantR · grip · contact                       */
-  const keys=doc.keys.map(k=>{
-    const c=k.constraints,p=k.pose;
-    const key:WorkshopKey={id:k.id,time:k.time,label:k.label,
-      pose:{root:mv(p.root),yaw:-p.yaw,lean:p.lean,chest:-p.chest,side:-p.side,
-        handL:hand(p.handR),handR:hand(p.handL),footL:foot(p.footR),footR:foot(p.footL)},
-      constraints:{plantL:c.plantR,plantR:c.plantL,grip:c.grip,contact:c.contact}};
-    if(k.interpolation!==undefined)key.interpolation=k.interpolation;
-    if(k.videoTime!==undefined)key.videoTime=k.videoTime;
-    return key;
-  });
+  const keys=doc.keys.map(mirrorKey);
   return {schemaVersion:2,id:toggle(doc.id,'.mirrored'),name:toggle(doc.name,' · 镜像'),english:toggle(doc.english,' · MIRRORED'),
     duration:doc.duration,inbetweens:doc.inbetweens,loop:doc.loop,
     handFrames:{L:doc.handFrames.R,R:doc.handFrames.L},

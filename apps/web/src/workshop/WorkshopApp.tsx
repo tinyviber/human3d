@@ -8,9 +8,10 @@ import {useWorkshopUi} from './ui-store';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human3d/motion-core';
-import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
+import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
+import {applyPoseAt,PoseLibrary,type PoseApplyResult,type UserPosePreset} from './pose-library';
 import {HistoryBook,RecordGate} from './history';
 import {SemanticPanel,type SemanticHost} from './semantic-panel';
 import {copyKeyframe,keyframeInsertSlot,keyframeTimeProblem,moveKeyframe,removeKeyframe} from './keyframes';
@@ -133,8 +134,10 @@ function Timeline({doc,time,selected,retime,onSelect,onSeek,onRetime,onBeginReti
 export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const mount=useRef<HTMLDivElement>(null),engine=useRef<WorkshopEngine|null>(null),video=useRef<HTMLVideoElement>(null),fileRef=useRef<HTMLInputElement>(null),importRef=useRef<HTMLInputElement>(null);
  const lib=useRef<MotionLibrary|null>(null);
+ const poseLib=useRef<PoseLibrary|null>(null),poseClipboard=useRef<WorkshopDoc['keys'][number]['pose']|null>(null);
  const generationPreview=useRef<WorkshopDoc|null>(null),generationWorker=useRef<Worker|null>(null),generationLocked=useRef(false);
  if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),globalThis.localStorage).load();
+ if(!poseLib.current)poseLib.current=new PoseLibrary(globalThis.localStorage).load();
  const [,bump]=useState(0);
  const selected=useWorkshopUi(s=>s.selected),setSelected=useWorkshopUi(s=>s.setSelected);
  const newName=useWorkshopUi(s=>s.newName),setNewName=useWorkshopUi(s=>s.setNewName);
@@ -415,6 +418,61 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   });
   setHint(side?`已切换为${side==='L'?'左':'右'}手持拍：所有关键帧显示球拍，可撤销。`:'已卸下球拍：所有关键帧不再握拍，可撤销。');
  };
+ /** 我的姿态：capture the selected key's full pose (arms included) as a
+  * reusable one-click preset, Blender/Houdini pose-library style. */
+ const capturePose=()=>{
+  const k=sel;if(!k)return;
+  const name=globalThis.prompt('给这个姿态起个名字：','');
+  if(name===null)return;
+  const preset=poseLib.current!.add(name,k.pose);
+  bump(v=>v+1);
+  setHint(poseLib.current!.lastError
+   ?`姿态「${preset.name}」已保存（仅存于本页内存）：${poseLib.current!.lastError}`
+   :`已保存姿态「${preset.name}」，之后在任何动作里一键应用。`);
+ };
+ /** Apply a captured pose at the playhead: an existing key there is
+  * overwritten; otherwise a new key carries the pose. One structural undo. */
+ const applyUserPose=(p:UserPosePreset)=>{
+  const e=engine.current;
+  if(generationLocked.current||!e)return;
+  let result:PoseApplyResult|undefined;
+  editKeyStructure(doc=>{result=applyPoseAt(doc,p.pose,e.time,e.restRoot());});
+  if(!result){setHint('应用失败：已达关键帧数量上限，请先删除不需要的帧。');return;}
+  setHint(result==='replaced'?`已把当前帧姿态替换为「${p.name}」（约束不变，可撤销）。`:`已在播放头插入「${p.name}」姿态帧（可撤销）。`);
+ };
+ const removeUserPose=(id:string)=>{
+  const p=poseLib.current!.presets.find(x=>x.id===id);if(!p)return;
+  if(!confirm(`删除姿态「${p.name}」？此操作不可撤销。`))return;
+  poseLib.current!.remove(id);bump(v=>v+1);
+ };
+ /** Session pose clipboard: copy one key's full pose, paste onto another. */
+ const copyPose=()=>{
+  const k=sel;if(!k)return;
+  poseClipboard.current=JSON.parse(JSON.stringify(k.pose));
+  setHint(`已复制「${k.label||'关键帧'}」的姿态（含手臂）：换帧或换动作后可粘贴。`);
+ };
+ const pastePose=()=>{
+  const k=sel,src=poseClipboard.current;
+  if(!k||!src)return;
+  editSelected(kk=>{kk.pose=JSON.parse(JSON.stringify(src));});
+  setHint('已把复制的姿态粘贴到选中关键帧（可撤销）。');
+ };
+ /** In-place mirror of the selected key's pose (left/right hands, feet and
+  * plant flags swap) — the per-key half of 镜像动作, one undo step. Refused
+  * when the two hands use different coordinate systems (the mirror would
+  * reinterpret the other keys' hand targets). */
+ const mirrorSelectedPose=()=>{
+  const k=sel;if(!k)return;
+  if(d.handFrames.L!==d.handFrames.R){setHint('左右手坐标系不同，无法原位镜像该帧姿态；可先用「镜像动作」生成整档镜像。');return;}
+  const mirrored=mirrorKey(k);
+  edit(doc=>{
+   const key=keyAt(doc,k.id)!;
+   key.pose=mirrored.pose;
+   key.constraints=mirrored.constraints;
+   doc.gripSide=doc.gripSide==='L'?undefined:'L';
+  });
+  setHint('已镜像当前帧姿态：左右互换、支撑与握拍侧随之换边（可撤销）。');
+ };
  const duplicateKey=(id:string)=>{
   if(generationLocked.current)return;
   const source=keyAt(d,id);if(!source)return;
@@ -687,6 +745,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button type="button" data-testid="keyframe-copy-selected" disabled={!sel||insertTime===undefined||d.keys.length>=WORKSHOP_LIMITS.maxKeys} title={insertTime===undefined?'选中帧后没有可用时间':'完整复制选中帧到后方，副本可独立编辑'} onClick={()=>{if(sel)duplicateKey(sel.id);}}><Copy size={12}/>复制选中帧</button>
       <button type="button" data-testid="keyframe-add-current" disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys} onClick={addKey}><Plus size={12}/>当前时刻添加</button>
       <button type="button" data-testid="keyframe-insert-after" disabled={!info||insertTime===undefined||d.keys.length>=WORKSHOP_LIMITS.maxKeys} title={insertTime===undefined?'选中帧后没有可用时间；可在前面的时间段添加':'在下一时间点前插入；末帧后可延长动作'} onClick={insertAfterKey}><Plus size={12}/>在选中帧后插入</button>
+      <button type="button" data-testid="pose-copy" disabled={!sel} title="复制选中关键帧的完整姿态（含手臂），会话内有效，可粘贴到其他帧或其他动作" onClick={copyPose}><ClipboardCopy size={12}/>复制姿态</button>
+      <button type="button" data-testid="pose-paste" disabled={!sel||!poseClipboard.current} title="把复制的姿态写到选中关键帧（约束不变），可撤销" onClick={pastePose}><Copy size={12}/>粘贴姿态</button>
+      <button type="button" data-testid="pose-mirror" disabled={!sel} title="当前帧姿态左右镜像：手脚与支撑互换、握拍侧换边，可撤销" onClick={mirrorSelectedPose}><FlipHorizontal2 size={12}/>镜像姿态</button>
      </div>
      <div className="ws-quick-poses" role="group" aria-label="快速姿态（一键插入）">
       <span className="ws-quick-label">快速姿态</span>
@@ -702,6 +763,14 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button type="button" data-testid="racket-right" disabled={!info} title="所有关键帧改为右手握拍并显示球拍，可撤销" onClick={()=>setGrip('R')}>右手持拍</button>
       <button type="button" data-testid="racket-left" disabled={!info} title="所有关键帧改为左手握拍并显示球拍，可撤销" onClick={()=>setGrip('L')}>左手持拍</button>
       <button type="button" data-testid="racket-off" disabled={!info} title="所有关键帧不再握拍，可撤销" onClick={()=>setGrip(null)}>卸下球拍</button>
+     </div>
+     <div className="ws-quick-poses" role="group" aria-label="我的姿态（自建快速姿态）">
+      <span className="ws-quick-label">我的姿态</span>
+      <button type="button" data-testid="pose-capture" disabled={!info||!sel} title="把选中关键帧的完整姿态（含手臂）存为可复用的快速姿态，保存到本机浏览器" onClick={capturePose}><Plus size={12}/>存当前姿态</button>
+      {poseLib.current!.presets.map(p=><span key={p.id} className="ws-pose-chip">
+       <button type="button" data-testid={`pose-apply-${p.id}`} title="把该姿态写到播放头：已有帧则替换姿态，无帧则插入新帧，可撤销" onClick={()=>applyUserPose(p)}>{p.name}</button>
+       <button type="button" className="ws-pose-delete" aria-label={`删除姿态 ${p.name}`} title="删除这个自建姿态" onClick={()=>removeUserPose(p.id)}><X size={10}/></button>
+      </span>)}
      </div>
      <p className="ws-note">点击帧名，在右侧编辑名称、时间与姿态。上移 / 下移保留时间点，整帧换序。</p>
      {d.keys.length>=WORKSHOP_LIMITS.maxKeys?<p className="ws-note">已达关键帧数量上限，请先删除不需要的帧。</p>:null}

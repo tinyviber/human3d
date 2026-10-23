@@ -130,7 +130,7 @@
 .ws-keyframe-icon:hover:not(:disabled){color:var(--blue);background:var(--sel)}
 .ws-keyframe-icon.danger:hover:not(:disabled){color:var(--red);background:var(--red-soft)}
 .ws-keyframe-icon:disabled{opacity:.3;cursor:default}
-.ws-keyframe-actions button{flex:1;justify-content:center}
+.ws-keyframe-actions button{flex:1 1 84px;justify-content:center;white-space:nowrap}
 .ws-key-metadata{padding-bottom:8px;margin-bottom:8px;border-bottom:1px dashed var(--line)}
 .ws-newname{flex:1;min-width:0;border:1px solid var(--line);border-radius:5px;padding:6px 8px;font-size:11px;background:var(--card)}
 .ws-video-pick{width:100%;display:flex;flex-direction:column;align-items:center;gap:8px;padding:26px 10px;border:1.5px dashed var(--faint);border-radius:7px;color:var(--muted);font-size:11px}
@@ -206,6 +206,9 @@
 .ws-quick-poses .ws-quick-label{font-size:11px;color:var(--muted);width:100%}
 .ws-quick-poses button{font-size:11px;padding:6px 11px;border-radius:999px;background:var(--pill);color:var(--fg);min-height:30px}
 .ws-quick-poses button:disabled{opacity:.45}
+.ws-pose-chip{display:inline-flex;align-items:stretch}
+.ws-pose-chip>button:first-child{border-top-right-radius:0;border-bottom-right-radius:0}
+.ws-pose-chip .ws-pose-delete{border-radius:0 999px 999px 0;padding:6px 7px;min-height:30px;display:grid;place-items:center}
 .ws-semantic-amount{display:grid;grid-template-columns:40px minmax(0,1fr) 40px;align-items:center;gap:8px;margin-top:2px}
 .ws-semantic-amount>button{width:40px;height:40px;border-radius:50%;display:grid;place-items:center;background:var(--pill);color:var(--fg)}
 .ws-semantic-amount input{width:100%;accent-color:var(--fg)}
