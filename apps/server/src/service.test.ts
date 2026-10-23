@@ -22,8 +22,8 @@ describe('capability catalog',()=>{
   expect(c.service.version).toBe(SERVICE_VERSION);
   expect(c.actions.map(a=>a.id).sort()).toEqual([
    'alejandro-davidovich-fokina-forehand','alex-de-minaur-forehand','alexander-bublik-forehand','alexander-zverev-forehand',
-   'basic-full-squat','basic-half-squat','basic-lunge','basic-push-turn','basic-weight-shift',
-   'ben-shelton-forehand','carlos-alcaraz-forehand','daniil-medvedev-forehand','felix-auger-aliassime-forehand',
+   'basic-arms-up','basic-forward-fold','basic-full-squat','basic-half-squat','basic-lunge','basic-push-turn',
+   'basic-weight-shift','basic-wide-squat','ben-shelton-forehand','carlos-alcaraz-forehand','daniil-medvedev-forehand','felix-auger-aliassime-forehand',
    'flavio-cobolli-forehand','forehand','frances-tiafoe-forehand','holger-rune-forehand','idle','ignacio-buse-forehand',
    'jakub-mensik-forehand','karen-khachanov-forehand','marin-cilic-forehand','novak-djokovic-forehand',
    'reach','ready','roger-federer-forehand','squat','workshop-doc',
