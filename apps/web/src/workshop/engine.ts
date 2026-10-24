@@ -1,3 +1,4 @@
+import {webPlatform,type AppPlatform} from '../platform/platform';
 import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Float32BufferAttribute,Group,HemisphereLight,Line,LineBasicMaterial,LineDashedMaterial,LineLoop,LineSegments,Mesh,MeshBasicMaterial,MeshStandardMaterial,PerspectiveCamera,Plane,PlaneGeometry,Raycaster,RingGeometry,Scene,SkinnedMesh,SphereGeometry,Vector2,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,GridHelper} from 'three';
 import {RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -172,19 +173,19 @@ export class WorkshopEngine{
   /** Fired once when a drag ends — the app persists the doc here so the final
    * pose can't be lost between pointermove re-renders. */
   onEditEnd?:()=>void;
-  constructor(public host:HTMLElement,private getDoc:()=>WorkshopDoc){
+  constructor(public host:HTMLElement,private getDoc:()=>WorkshopDoc,private platform:AppPlatform=webPlatform){
     this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
     // Mobile profile: touch-first devices render at ≤1.5× and a 1024² shadow
     // map. shortcut: chosen from GPU-fill reasoning, not a device benchmark; tune after real-device measurement.
-    const coarse=window.matchMedia?.('(pointer:coarse)').matches??false;
+    const coarse=this.platform.coarse;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,coarse?1.5:2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=PCFSoftShadowMap;
     this.renderer.domElement.setAttribute('aria-label','动作工作台三维编辑视图');this.host.appendChild(this.renderer.domElement);
-    this.unbindTheme=bindSceneBackground(this.scene);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
+    this.unbindTheme=bindSceneBackground(this.scene,this.platform);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
     const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.setScalar(coarse?1024:2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
     const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
     const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);
-    const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;(grid.material as LineBasicMaterial).transparent=true;(grid.material as LineBasicMaterial).opacity=.45;this.scene.add(grid);
+    const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;(grid.material as LineBasicMaterial).transparent=true;(grid.material as LineBasicMaterial).opacity=.34;this.scene.add(grid);
     this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.enableDamping=true;this.controls.dampingFactor=.08;this.controls.target.set(0,.9,0);this.controls.minDistance=.3;this.controls.maxDistance=8;this.controls.maxPolarAngle=Math.PI*.52;this.camera.position.set(0,1.15,3.4);
     this.controls.addEventListener('start',()=>{this.view='free';});
     this.scene.add(this.handleGroup);
@@ -195,7 +196,7 @@ export class WorkshopEngine{
   }
   async load(){
     try{
-      const [gltf,info,atlas]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),loadAnatomyAtlas()]);
+      const [gltf,info,atlas]=await Promise.all([new GLTFLoader().loadAsync(this.platform.assetUrl('/models/human.glb')),this.platform.fetchAsset('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),loadAnatomyAtlas(this.platform)]);
       if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
       this.anatomy=new AnatomySelection(this.host,this.renderer.domElement,this.camera,atlas,event=>this.capturing||!this.ready||!!this.drag||!!this.pick(event));

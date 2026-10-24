@@ -13,3 +13,52 @@
  .workspace[data-group] .viewport{height:65dvh;min-height:450px}
  .workspace[data-group] .motion-panel,.workspace[data-group] .inspector{height:auto;max-height:none !important;overflow:visible !important}
 }
+
+/* ---- lab compact (phone drawer layout) -----------------------------------
+ * ≤760px the shell becomes a fixed app: the 3D stage fills the viewport,
+ * the library and inspector become bottom sheets raised above the playback
+ * bar (the workshop compact pattern), and features keep an entry point —
+ * pose-package import moves into the library sheet instead of disappearing.
+ */
+@media(max-width:760px){
+ .lab-compact.app-shell{height:100dvh;min-height:0;overflow:hidden}
+ .lab-compact .workspace{display:block;position:relative;flex:1;min-height:0;overflow:hidden}
+ .lab-compact #lab-stage{position:absolute;inset:0;height:auto;min-height:0}
+ .lab-compact .header{height:auto;min-height:52px;padding:calc(env(safe-area-inset-top) + 8px) max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left))}
+ .lab-compact .header .brand h1{display:none}
+ .lab-compact .header nav{gap:2px}
+ .lab-compact .header nav button{padding:6px 8px;font-size:12px}
+ .lab-compact .workspace[data-group] .motion-panel,.lab-compact .workspace[data-group] .inspector{
+   position:fixed;left:0;right:0;bottom:0;z-index:30;
+   height:auto !important;max-height:min(72dvh,640px) !important;
+   overflow-y:auto !important;overflow-x:hidden;
+   display:flex;flex-direction:column;
+   background:var(--panel);
+   border:0;border-top:1px solid var(--line);
+   border-radius:16px 16px 0 0;
+   padding:0 max(12px,env(safe-area-inset-right)) calc(16px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left)) !important;
+   transform:translateY(104%);visibility:hidden;
+   transition:transform .28s var(--ease-spring),visibility .28s;
+   box-shadow:0 -12px 40px rgba(18,18,33,.16);
+   overscroll-behavior:contain}
+ .lab-sheet-library .workspace[data-group] .motion-panel,.lab-sheet-inspector .workspace[data-group] .inspector{transform:none;visibility:visible}
+ .lab-compact .motion-panel::before,.lab-compact .inspector::before{content:'';position:sticky;top:0;display:block;width:38px;height:4px;border-radius:999px;background:#cfcfd6;margin:7px auto 2px;flex:none;z-index:1}
+ .lab-compact .motion-panel>.panel-heading{display:flex}
+ .lab-compact .pkg-import{display:inline-flex;align-items:center;height:28px;padding:0 10px;margin-right:auto;font-size:11.5px;color:var(--accent);background:var(--accent-soft);border-radius:999px}
+ .lab-compact .motion-list{display:grid;grid-template-columns:1fr;gap:2px}
+ .lab-compact .motion-row{min-height:44px}
+ .lab-compact .toggle-row{min-height:44px}
+ .lab-compact .lab-sheetbar{display:flex;gap:8px;align-items:center;flex-basis:100%;order:0;flex:none}
+ .lab-compact .playback{flex-wrap:wrap;gap:10px 14px;padding:10px max(12px,env(safe-area-inset-right)) calc(10px + env(safe-area-inset-bottom)) max(12px,env(safe-area-inset-left))}
+ .lab-compact .timeline-area{order:1;flex:1;min-width:0}
+ .lab-compact .transport{order:2;gap:8px}
+ .sheet-trigger{height:38px;padding:0 13px;border-radius:999px;background:var(--card);border:1px solid var(--line);font-size:12.5px;font-weight:600;color:var(--fg)}
+ .sheet-trigger[aria-expanded="true"]{background:var(--accent);color:var(--accent-fg);border-color:var(--accent)}
+ .lab-scrim{position:fixed;inset:0;z-index:25;background:rgba(0,0,0,.28)}
+ @media(prefers-reduced-motion:reduce){.lab-compact .workspace[data-group] .motion-panel,.lab-compact .workspace[data-group] .inspector{transition:none}}
+}
+/* desktop: the sheet bar and the in-sheet import button are compact-only */
+.lab-sheetbar{display:none}
+.pkg-import{display:none}
+/* the in-sheet import error (compact library sheet) */
+.pkg-error{color:var(--red);font-size:11.5px;margin:4px 2px 0}

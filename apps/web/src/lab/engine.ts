@@ -1,3 +1,4 @@
+import {webPlatform,type AppPlatform} from '../platform/platform';
 import {AmbientLight,AnimationClip,AnimationMixer,AxesHelper,BufferGeometry,Color,DirectionalLight,Float32BufferAttribute,GridHelper,Group,HemisphereLight,Line,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,PerspectiveCamera,PlaneGeometry,Quaternion,Scene,SkinnedMesh,SphereGeometry,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
@@ -58,16 +59,16 @@ export class HumanEngine{
  get physicsCase(){return this.dynamicsSource()?.profile??'baseline';}
  get loop(){return this._loop;}
  set loop(value:boolean){this._loop=value;for(const s of this.sources.values())if(s instanceof ClipSource)s.setLoop(value);}
- constructor(public host:HTMLElement){
+ constructor(public host:HTMLElement,private platform:AppPlatform=webPlatform){
   this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
   this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
   this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=PCFSoftShadowMap;
   this.renderer.domElement.setAttribute('aria-label','交互式三维人体，拖动旋转，滚轮缩放');this.renderer.domElement.setAttribute('role','img');this.host.appendChild(this.renderer.domElement);
-  this.unbindTheme=bindSceneBackground(this.scene);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
+  this.unbindTheme=bindSceneBackground(this.scene,this.platform);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
   const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
   const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
   const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);this.floor=floor;
-  const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;const gm=grid.material as LineBasicMaterial;gm.transparent=true;gm.opacity=.45;this.scene.add(grid);this.grid=grid;
+  const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;const gm=grid.material as LineBasicMaterial;gm.transparent=true;gm.opacity=.34;this.scene.add(grid);this.grid=grid;
   this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.enableDamping=true;this.controls.dampingFactor=.08;this.controls.target.set(0,.88,0);this.controls.minDistance=.3;this.controls.maxDistance=8;this.controls.maxPolarAngle=Math.PI*.49;this.controls.enablePan=true;this.camera.position.set(0,1.05,3.6);
   this.controls.addEventListener('start',()=>{this.view='free';this.onView?.('free');});
   this.scene.add(this.jointGroup,this.axesGroup,this.targetGroup);this.jointGroup.visible=false;this.axesGroup.visible=false;this.targetGroup.visible=false;
@@ -77,10 +78,10 @@ export class HumanEngine{
  async load(){
   try{
    const clipSpecs=MOTIONS.filter(m=>m.source?.kind==='clip');
-   const [gltf,rigText,atlas,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),loadAnatomyAtlas(),...clipSpecs.map(async m=>{
+   const [gltf,rigText,atlas,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync(this.platform.assetUrl('/models/human.glb')),this.platform.fetchAsset('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),loadAnatomyAtlas(this.platform),...clipSpecs.map(async m=>{
     const s=m.source as {kind:'clip';clip:string;meta?:string};
-    const data=await fetch(s.clip).then(r=>{if(!r.ok)throw new Error('动作片段加载失败');return r.json()});
-    const meta=s.meta?await fetch(s.meta).then(r=>r.json()):undefined;
+    const data=await this.platform.fetchAsset(s.clip).then(r=>{if(!r.ok)throw new Error('动作片段加载失败');return r.json()});
+    const meta=s.meta?await this.platform.fetchAsset(s.meta).then(r=>r.json()):undefined;
     return {id:m.id as MotionId,clip:AnimationClip.parse(data),stride:new Vector3().fromArray(meta?.stride??[0,0,0])};
    })]);
    if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}

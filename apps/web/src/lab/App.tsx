@@ -1,4 +1,6 @@
-import {useEffect,useRef} from 'react';
+import {webPlatform} from '../platform/platform';
+import {useMediaMatches} from '../lib/use-media';
+import {useEffect,useRef,useState} from 'react';
 import {Group, Panel, Separator} from 'react-resizable-panels';
 import {motion, useReducedMotion} from 'motion/react';
 import {Activity,ArrowUpRight,ChevronRight,Expand,Info,Layers,Pause,Play,RotateCcw,Scan,SlidersHorizontal,X} from 'lucide-react';
@@ -11,6 +13,10 @@ import {Button} from '../components/ui/button';
 import {Switch} from '../components/ui/switch';
 import {useLabUi} from './store';
 const format=(time:number)=>{const tenths=Math.round(time*10);return `${Math.floor(tenths/600).toString().padStart(2,'0')}:${Math.floor(tenths/10)%60<10?'0':''}${Math.floor(tenths/10)%60}.${tenths%10}`;};
+/** Mirrors the CSS breakpoint in panels.css: phones get the drawer layout
+ * (viewport-first + bottom sheets) instead of the stacked scrolling page. */
+const COMPACT_QUERY='(max-width: 760px)';
+const useCompact=()=>useMediaMatches(COMPACT_QUERY);
 function Toggle({label,checked,onChange,detail,disabled}:{label:string;checked:boolean;onChange:(v:boolean)=>void;detail?:string;disabled?:boolean}){
  return <label className="toggle-row"><span>{label}{detail?<small>{detail}</small>:null}</span><Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onChange}/></label>;
 }
@@ -46,6 +52,8 @@ function InfoDialog({kind,onClose}:{kind:'guide'|'sources'|'kinetics';onClose:()
 export function App(){
  const mount=useRef<HTMLDivElement>(null),engine=useRef<HumanEngine|null>(null),fileRef=useRef<HTMLInputElement>(null);
  const reduce=useReducedMotion();
+ const compact=useCompact();
+ const [sheet,setSheet]=useState<'library'|'inspector'|null>(null);
  const {id,setId,info,setInfo,error,setError,view,setView,frame,setFrame,debug,patchDebug,speed,setSpeed,loop,setLoop,dialog,setDialog,extras,setExtras}=useLabUi();
  const allMotions=[...MOTIONS,...extras],spec=allMotions.find(m=>m.id===id)??MOTIONS[0],racket=!!spec.capabilities?.prop,physics=spec.source?.kind==='dynamics';
  const openPackage=async(file:File)=>{
@@ -57,7 +65,7 @@ export function App(){
    // Same artifact id → the fresh spec REPLACES the stored entry: a tampered
    // package can reuse an id with different name/capabilities, and keeping
    // the old object would display the stale envelope.
-   if(spec){setExtras(x=>x.some(m=>m.id===spec.id)?x.map(m=>m.id===spec.id?spec:m):[...x,spec]);setId(spec.id);setError('');}
+   if(spec){setExtras(x=>x.some(m=>m.id===spec.id)?x.map(m=>m.id===spec.id?spec:m):[...x,spec]);setId(spec.id);setError('');setSheet(null);}
   }catch(err){setError(err instanceof Error?err.message:String(err));}
  };
  useEffect(()=>{
@@ -67,17 +75,17 @@ export function App(){
   if(import.meta.env.DEV)(window as unknown as {__LAB__:HumanEngine}).__LAB__=e;
   return()=>{engine.current=null;e.dispose();};
  },[]);
- const choose=(next:MotionId)=>{setId(next);const nextSpec=allMotions.find(m=>m.id===next)??MOTIONS[0];if(nextSpec.oneShot){setLoop(false);if(engine.current)engine.current.loop=false;}engine.current?.setMotion(next);if(view==='hand'){setView('threeQuarter');engine.current?.setView('threeQuarter');}};
+ const choose=(next:MotionId)=>{setId(next);setSheet(null);const nextSpec=allMotions.find(m=>m.id===next)??MOTIONS[0];if(nextSpec.oneShot){setLoop(false);if(engine.current)engine.current.loop=false;}engine.current?.setMotion(next);if(view==='hand'){setView('threeQuarter');engine.current?.setView('threeQuarter');}};
  const toggle=(key:keyof DebugOptions,value:boolean)=>{const patch={[key]:value} satisfies Partial<DebugOptions>;patchDebug(patch);engine.current?.setDebug(patch);};
  const camera=(v:ViewId)=>{setView(v);engine.current?.setView(v);};
  useEffect(()=>{
   const key=(event:KeyboardEvent)=>{if(event.target instanceof HTMLInputElement||event.target instanceof HTMLButtonElement||dialog)return;if(event.code==='Space'){event.preventDefault();engine.current?.setPlaying(!engine.current.playing);}if(event.key.toLowerCase()==='r')engine.current?.replay();if(/^[1-8]$/.test(event.key)){const next=MOTIONS[Number(event.key)-1].id;setId(next);engine.current?.setMotion(next);}};
   window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
  },[dialog]);
- return <motion.div className="app-shell" initial={reduce?false:{opacity:0}} animate={{opacity:1}} transition={{duration:reduce?0:.18,ease:[0.2,0.8,0.2,1]}}>
-  <header className="header"><div className="brand"><Activity size={27} strokeWidth={2}/><span>KINESIS</span><i/><h1>人体运动实验室</h1></div><nav><Button variant="ghost" onClick={()=>fileRef.current?.click()}>打开姿态包</Button><input ref={fileRef} type="file" accept=".json,application/json" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void openPackage(f);}}/><Button variant="ghost" onClick={()=>location.assign('/workshop.html')}>动作工作台</Button><Button variant="ghost" onClick={()=>setDialog('guide')}>使用指南</Button><Button variant="ghost" onClick={()=>setDialog('sources')}>资料与许可<ArrowUpRight size={14}/></Button></nav></header>
+ return <motion.div className={`app-shell${compact?' lab-compact':''}${sheet==='library'?' lab-sheet-library':''}${sheet==='inspector'?' lab-sheet-inspector':''}`} initial={reduce?false:{opacity:0}} animate={{opacity:1}} transition={{duration:reduce?0:.18,ease:[0.2,0.8,0.2,1]}}>
+  <header className="header"><div className="brand"><Activity size={27} strokeWidth={2}/><span>KINESIS</span><i/><h1>人体运动实验室</h1></div><nav><Button variant="ghost" onClick={()=>fileRef.current?.click()}>打开姿态包</Button><input ref={fileRef} type="file" accept=".json,application/json" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void openPackage(f);}}/><Button variant="ghost" onClick={()=>webPlatform.navigate('/workshop.html')}>动作工作台</Button><Button variant="ghost" onClick={()=>setDialog('guide')}>使用指南</Button><Button variant="ghost" onClick={()=>setDialog('sources')}>资料与许可<ArrowUpRight size={14}/></Button></nav></header>
   <Group orientation="horizontal" className="workspace" id="lab-panes">
-   <Panel id="lab-library" className="motion-panel" aria-label="动作库" defaultSize={252} minSize={200} maxSize={420}><div className="panel-heading"><h2>动作库</h2><span>{String(allMotions.length).padStart(2,'0')}</span></div><p className="panel-intro">探索人体，理解运动。</p>
+   <Panel id="lab-library" className="motion-panel" aria-label="动作库" defaultSize={252} minSize={200} maxSize={420}><div className="panel-heading"><h2>动作库</h2><button className="pkg-import" onClick={()=>fileRef.current?.click()}>导入姿态包</button><span>{String(allMotions.length).padStart(2,'0')}</span></div>{sheet==='library'&&error?<p className="pkg-error" role="alert">{error}</p>:null}<p className="panel-intro">探索人体，理解运动。</p>
     <div className="motion-list">{allMotions.map((m,i)=><button key={m.id} className={`motion-row ${id===m.id?'selected':''}`} aria-pressed={id===m.id} onClick={()=>choose(m.id)} disabled={!info}><span className="motion-number">{String(i+1).padStart(2,'0')}</span><span className="motion-label">{m.name}<small>{m.english}</small></span>{id===m.id?<ChevronRight size={16}/>:null}</button>)}</div>
     <div className="motion-notes"><div className="mini-heading">观察重点</div><p>{spec.description}</p><div className="focus-list">{spec.focus.map(f=><span key={f}>{f}</span>)}</div></div>
     <div className="asset-note"><Layers size={17}/><div>{physics?'肌骨正向仿真 · 连续蒙皮表面':'连续蒙皮人体'}<small>{physics?'44 个关节自由度 + 6 个根速度自由度 · 416 肌肉执行器':info?`${info.bones.length} 根骨骼 · ${Math.round(info.vertices/1000*10)/10}k 顶点`:'正在读取模型…'}</small></div></div>
@@ -106,10 +114,11 @@ export function App(){
    <div className="prototype-note"><Info size={15}/><p>{physics?'肌肉驱动降阶实验':'运动学原型'}<br/><span>{physics?(spec.objectDescription??'肩胛、腕指与双足支撑按模型约束固定；肌肉激励在 MuJoCo 中积分。数值未经个体肌电与测力台标定。'):'关节限位与任务空间 IK 的工程近似，非动捕或专业测量。'}</span></p></div>
    </Panel>
   </Group>
-  <footer className="playback"><div className="transport"><motion.button className="play-button" aria-label={frame.playing?'暂停':'播放'} onClick={()=>engine.current?.setPlaying(!frame.playing)} disabled={!info} whileTap={reduce?undefined:{scale:.96}}>{frame.playing?<Pause size={23} fill="currentColor"/>:<Play size={23} fill="currentColor"/>}</motion.button><button className="replay-button" aria-label="重播" onClick={()=>engine.current?.replay()} disabled={!info}><RotateCcw size={20}/></button></div>
+  <footer className="playback"><div className="lab-sheetbar"><button className="sheet-trigger" data-testid="sheet-library" aria-expanded={sheet==='library'} onClick={()=>setSheet(s=>s==='library'?null:'library')}>☰ 动作库</button><button className="sheet-trigger" data-testid="sheet-inspector" aria-expanded={sheet==='inspector'} onClick={()=>setSheet(s=>s==='inspector'?null:'inspector')}>⚙ 观察</button></div><div className="transport"><motion.button className="play-button" aria-label={frame.playing?'暂停':'播放'} onClick={()=>engine.current?.setPlaying(!frame.playing)} disabled={!info} whileTap={reduce?undefined:{scale:.96}}>{frame.playing?<Pause size={23} fill="currentColor"/>:<Play size={23} fill="currentColor"/>}</motion.button><button className="replay-button" aria-label="重播" onClick={()=>engine.current?.replay()} disabled={!info}><RotateCcw size={20}/></button></div>
    <div className="timeline-area"><div className="timeline-meta"><span>{spec.english}<i> / </i>{frame.phase}</span><span className="time-code">{format(frame.time)}<i> / </i>{format(frame.duration)}</span></div><input aria-label="动作进度" type="range" min="0" max={frame.duration} step=".001" value={Math.min(frame.time,frame.duration)} onChange={e=>engine.current?.seek(Number(e.target.value))} disabled={!info} style={{'--progress':`${frame.time/frame.duration*100}%`} as React.CSSProperties}/><div className="phase-markers">{spec.phases.map(p=><button key={p.time} style={{left:`${Math.min(98,p.time/frame.duration*100)}%`}} onClick={()=>engine.current?.seek(p.time)} title={`跳转到 ${p.label}`}>{p.label}</button>)}</div></div>
    <div className="playback-tail"><span>实时 3D</span><span>{physics?'MuJoCo · 回放':'glTF · WebGL'}</span></div>
   </footer>
   {dialog?<InfoDialog kind={dialog} onClose={()=>setDialog(null)}/>:null}
+  {compact&&sheet?<div className="lab-scrim" onClick={()=>setSheet(null)}/>:null}
  </motion.div>;
 }

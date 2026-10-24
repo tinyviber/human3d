@@ -5,32 +5,33 @@
  * Values marked [M] are copied verbatim from Magpie source.
  * Values marked [A] are adapted/derived for cross-project reuse.
  *
- * Theme resolution:
- *   - default: follows prefers-color-scheme
- *   - override: <html data-theme="light|dark">
- *   - optional colorblind-safe chart palette: <html data-colorblind="1">
+ * Theme resolution: light only (deep removed by design). Optional
+ * colorblind-safe chart palette: <html data-colorblind="1">.
  */
 
 :root {
   /* ---- surfaces -------------------------------------------------------
-   * One quiet surface. Elevation is expressed by a small fixed ramp,
-   * not by shadows. --bg < --card in lightness; --card-2 sits between
-   * them and means "recessed inside a card" (expanded row, code well).
+   * Three quiet steps: --panel chrome (header, footer, docked panels)
+   * sits on the darker --bg; --card raised surfaces read against both.
+   * --card-2 means "recessed inside a card" (expanded row, code well).
+   * --canvas is the 3D viewport ground, a touch lighter than --panel.
    */
-  --bg: #f4f4f6;            /* [M] page ground */
+  --bg: #ebebee;            /* [A] page ground */
+  --panel: #f6f6f8;         /* [A] structural chrome: header, footer, docked panels */
+  --canvas: #f7f7f9;        /* [A] 3D viewport ground */
   --card: #ffffff;          /* [M] raised surface: lists, cards, inputs */
-  --card-2: #f9f9fb;        /* [M] recessed: expanded detail, code well */
-  --pill: #f1f1f4;          /* [M] quiet control fill (popup buttons, seg track) */
-  --pill-hover: #e9e9ee;    /* [M] pill under the pointer */
-  --seg-track: #e6e6eb;     /* [M] header segmented track (a shade deeper than pill) */
+  --card-2: #f4f4f7;        /* [A] recessed: expanded detail, code well */
+  --pill: #f0f0f4;          /* [A] quiet control fill (popup buttons, seg track) */
+  --pill-hover: #e7e7ec;    /* [A] pill under the pointer */
+  --seg-track: #e3e3e9;     /* [A] header segmented track (a shade deeper than pill) */
   --seg-thumb: var(--card); /* [M] selected thumb */
 
   /* ---- lines ----------------------------------------------------------
    * Two weights only. --line bounds a surface; --line-2 divides inside it
    * and is visibly lighter. Never invent a third.
    */
-  --line: #e3e3e8;          /* [M] outer 1px border */
-  --line-2: #ececf0;        /* [M] inner hairline separators */
+  --line: #dcdce3;          /* [A] outer 1px border */
+  --line-2: #e8e8ee;        /* [A] inner hairline separators */
 
   /* ---- text ramp ------------------------------------------------------
    * Four stops, all graphite. Hierarchy comes from this ramp plus weight,
@@ -53,11 +54,13 @@
 
   /* ---- semantics ------------------------------------------------------
    * Each = firm ink + matching soft surface. Use the pair together;
-   * never the firm color as a background.
+   * never the firm color as a background. --contact marks touch/event
+   * keys (timeline diamonds) and pairs with the amber family.
    */
   --green: #189a58; --green-soft: #e4f6ec;   /* [M] ok, live, savings */
   --red: #d64545;   --red-soft: #fbe9e9;     /* [M] errors, destructive */
   --amber: #b45309; --amber-soft: #fbf0df;   /* [M] warnings, pending */
+  --contact: #d97706;                        /* [A] contact/event marker */
 
   /* ---- floating layers --------------------------------------------------
    * Chrome at rest casts no shadow. Anything that floats above the page
@@ -80,13 +83,13 @@
   --font: -apple-system, BlinkMacSystemFont, "SF Pro Text", "Segoe UI Variable Text", "Segoe UI", "Microsoft YaHei UI", "Microsoft YaHei", "PingFang SC", system-ui, sans-serif; /* [M]+[A] */
   --code: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, Consolas, "Microsoft YaHei UI", monospace; /* [M]+[A] */
 
-  --fs-micro: 10.5px;  /* [M] uppercase micro-labels, group headers */
-  --fs-sub: 11.5px;    /* [M] secondary line under a name, captions */
-  --fs-ctl: 12.5px;    /* [M] control text: buttons, inputs, menu items */
-  --fs-body: 13px;     /* [M] base */
-  --fs-title: 13.5px;  /* [M] page/section title weight 600-650 */
-  --fs-figure: 20px;   /* [M] KPI figure; 28px for hero stats */
-  --fs-code: 11.5px;   /* [M] */
+  --fs-micro: 11px;    /* [A] uppercase micro-labels, group headers */
+  --fs-sub: 12px;      /* [A] secondary line under a name, captions */
+  --fs-ctl: 13px;      /* [A] control text: buttons, inputs, menu items */
+  --fs-body: 14px;     /* [A] base */
+  --fs-title: 14.5px;  /* [A] page/section title weight 600-650 */
+  --fs-figure: 22px;   /* [A] KPI figure; 28px for hero stats */
+  --fs-code: 12px;     /* [A] */
 
   /* ---- radius ------------------------------------------------------------ */
   --r-xs: 4px;    /* [M] checkbox, tiny badge */
@@ -126,58 +129,10 @@
   --c5: #ec4899; --c6: #8b5cf6; --c7: #64748b;
 }
 
-/* ---- dark -------------------------------------------------------------- */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"]) {
-    --bg: #1a1a1e; --card: #232327; --card-2: #1f1f23;
-    --pill: #2d2d33; --pill-hover: #36363d;
-    --seg-track: rgba(255, 255, 255, .035); --seg-thumb: rgba(255, 255, 255, .15);
-    --seg-edge: inset 0 .5px 0 rgba(255, 255, 255, .08), 0 1px 2px rgba(0, 0, 0, .3);
-    --line: #333339; --line-2: #2c2c32;
-    --fg: #ededf1; --fg-2: #b9b9c1; --muted: #8b8b94; --faint: #56565f; --ctl-fg: #a1a1aa;
-    --accent: #a5b4fc; --accent-soft: #2b2c47; --accent-fg: #14142a; --sel: #33345a;
-    --green: #6fd99b; --green-soft: #1e3a2b;
-    --red: #f28b82;   --red-soft: #45272a;
-    --amber: #f2b544; --amber-soft: #3f3220;
-    --pop-bg: rgba(38, 38, 43, .96);
-    --shadow: 0 16px 44px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .3), 0 0 0 .5px rgba(255, 255, 255, .1);
-    --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
-    --c1: #a5b4fc; --c2: #7dd3fc; --c3: #6ee7b7; --c4: #fcd34d;
-    --c5: #f9a8d4; --c6: #c4b5fd; --c7: #94a3b8;
-  }
-}
-:root[data-theme="dark"] {
-  --bg: #1a1a1e; --card: #232327; --card-2: #1f1f23;
-  --pill: #2d2d33; --pill-hover: #36363d;
-  --seg-track: rgba(255, 255, 255, .035); --seg-thumb: rgba(255, 255, 255, .15);
-  --seg-edge: inset 0 .5px 0 rgba(255, 255, 255, .08), 0 1px 2px rgba(0, 0, 0, .3);
-  --line: #333339; --line-2: #2c2c32;
-  --fg: #ededf1; --fg-2: #b9b9c1; --muted: #8b8b94; --faint: #56565f; --ctl-fg: #a1a1aa;
-  --accent: #a5b4fc; --accent-soft: #2b2c47; --accent-fg: #14142a; --sel: #33345a;
-  --green: #6fd99b; --green-soft: #1e3a2b;
-  --red: #f28b82;   --red-soft: #45272a;
-  --amber: #f2b544; --amber-soft: #3f3220;
-  --pop-bg: rgba(38, 38, 43, .96);
-  --shadow: 0 16px 44px rgba(0, 0, 0, .55), 0 2px 8px rgba(0, 0, 0, .3), 0 0 0 .5px rgba(255, 255, 255, .1);
-  --focus-ring: 0 0 0 3px color-mix(in srgb, var(--accent) 30%, transparent);
-  --c1: #a5b4fc; --c2: #7dd3fc; --c3: #6ee7b7; --c4: #fcd34d;
-  --c5: #f9a8d4; --c6: #c4b5fd; --c7: #94a3b8;
-}
-
 /* Okabe–Ito qualitative series [M] */
 :root[data-colorblind="1"] {
   --c1: #0072b2; --c2: #e69f00; --c3: #009e73; --c4: #d55e00;
   --c5: #cc79a7; --c6: #56b4e9; --c7: #64748b;
-}
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme="light"])[data-colorblind="1"] {
-    --c1: #56b4e9; --c2: #fbbf24; --c3: #2dd4bf; --c4: #fb7185;
-    --c5: #e879f9; --c6: #f0e442; --c7: #94a3b8;
-  }
-}
-:root[data-theme="dark"][data-colorblind="1"] {
-  --c1: #56b4e9; --c2: #fbbf24; --c3: #2dd4bf; --c4: #fb7185;
-  --c5: #e879f9; --c6: #f0e442; --c7: #94a3b8;
 }
 
 /* reduced motion: everything collapses to ~instant */

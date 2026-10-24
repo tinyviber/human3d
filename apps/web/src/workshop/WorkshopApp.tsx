@@ -1,4 +1,6 @@
-import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
+import {webPlatform} from '../platform/platform';
+import {useMediaMatches} from '../lib/use-media';
+import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {Group,Panel,Separator} from 'react-resizable-panels';
@@ -34,7 +36,7 @@ type GenerationProgress=MotionGenProgress|{evals:0;maxEvals:number;phase:'loadin
 /** Phone / short-landscape layout. Mirrors the CSS breakpoint in workshop.css. */
 const COMPACT_QUERY='(max-width: 760px), (pointer: coarse) and (max-height: 540px)';
 function useMedia(query:string){
- return useSyncExternalStore(cb=>{const m=globalThis.matchMedia?.(query);m?.addEventListener('change',cb);return()=>m?.removeEventListener('change',cb);},()=>globalThis.matchMedia?.(query).matches??false);
+ return useMediaMatches(query);
 }
 /** Session-only review note (issue #23 PR-D): never written into WorkshopDoc. */
 interface ReviewNote{id:string;docId:string;keyId:string;keyLabel:string;time:number;view:string;part:string;issue:string;text:string}
@@ -136,8 +138,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const lib=useRef<MotionLibrary|null>(null);
  const poseLib=useRef<PoseLibrary|null>(null),poseClipboard=useRef<WorkshopDoc['keys'][number]['pose']|null>(null);
  const generationPreview=useRef<WorkshopDoc|null>(null),generationWorker=useRef<Worker|null>(null),generationLocked=useRef(false);
- if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),globalThis.localStorage).load();
- if(!poseLib.current)poseLib.current=new PoseLibrary(globalThis.localStorage).load();
+ if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),webPlatform.storage).load();
+ if(!poseLib.current)poseLib.current=new PoseLibrary(webPlatform.storage).load();
  const [,bump]=useState(0);
  const selected=useWorkshopUi(s=>s.selected),setSelected=useWorkshopUi(s=>s.setSelected);
  const newName=useWorkshopUi(s=>s.newName),setNewName=useWorkshopUi(s=>s.setNewName);
@@ -366,7 +368,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   engine.current?.setPlaying(false);engine.current?.seek(0);engine.current?.markDirty();
   bump(v=>v+1);setHint(`已生成镜像动作「${added.name}」——左右互换，原文档保留在动作库中。`);
  };
- const removeDoc=(id:string)=>{if(generationLocked.current)return;const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
+ const removeDoc=(id:string)=>{if(generationLocked.current)return;const victim=L.docs.find(x=>x.id===id);if(victim&&!webPlatform.confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const selectKey=(id:string)=>{
   if(generationLocked.current)return;
   const key=keyAt(L.active(),id);if(!key)return;
@@ -422,7 +424,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   * reusable one-click preset, Blender/Houdini pose-library style. */
  const capturePose=()=>{
   const k=sel;if(!k)return;
-  const name=globalThis.prompt('给这个姿态起个名字：','');
+  const name=webPlatform.prompt('给这个姿态起个名字：');
   if(name===null)return;
   const preset=poseLib.current!.add(name,k.pose);
   bump(v=>v+1);
@@ -451,7 +453,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  };
  const removeUserPose=(id:string)=>{
   const p=poseLib.current!.presets.find(x=>x.id===id);if(!p)return;
-  if(!confirm(`删除姿态「${p.name}」？此操作不可撤销。`))return;
+  if(!webPlatform.confirm(`删除姿态「${p.name}」？此操作不可撤销。`))return;
   poseLib.current!.remove(id);bump(v=>v+1);
  };
  /** Session pose clipboard: copy one key's full pose, paste onto another. */
@@ -549,7 +551,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   setGenerationProgress({evals:0,maxEvals:120,phase:'loading'});
   engine.current?.setPlaying(false);engine.current?.setOptions({handles:false});
   let worker:Worker;
-  try{worker=new Worker(new URL('./generate.worker.ts',import.meta.url),{type:'module'});}
+  try{const w=webPlatform.createWorker(new URL('./generate.worker.ts',import.meta.url));if(!w)throw new Error('此环境不支持后台生成');worker=w;}
   catch(error){failGeneration(error instanceof Error?error.message:String(error));return;}
   generationWorker.current=worker;
   worker.onmessage=(event:MessageEvent<GenerateWorkerReply>)=>{
@@ -613,9 +615,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // names differently — strip the portable-hostile set here (keeps the CJK
  // slugs newDocId produces; a broader \w-class strip would mangle them).
  const safeName=(name:string)=>name.replace(/[\\/:*?"<>|]/g,'_');
- const download=(name:string,blob:Blob)=>{
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=safeName(name);a.click();URL.revokeObjectURL(a.href);
- };
+ const download=(name:string,blob:Blob)=>webPlatform.download(safeName(name),blob);
  const exportPackage=async()=>{
   setExporting(true);
   try{
@@ -638,7 +638,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    // and swapped materials, so exporting it would bake editor state into the
    // file (node TRS, extra meshes). GLTFExporter itself stays out of the
    // bundle: exportGlb dynamic-imports it on demand.
-   const resp=await fetch('/models/human.glb');
+   const resp=await webPlatform.fetchAsset('/models/human.glb');
    if(!resp.ok)throw new Error(`模型请求失败：${resp.status}`);
    const gltf=await new GLTFLoader().parseAsync(await resp.arrayBuffer(),'');
    const glb=await exportGlb(gltf.scene,posePackageToClip(pkg));
@@ -714,8 +714,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const feedbackText=()=>JSON.stringify({kind:'h3d-review-feedback',version:1,doc:{id:d.id,name:d.name,duration:d.duration},notes:docNotes.map(({docId:_,...n})=>n)},null,2);
  const copyFeedback=async()=>{
   const text=feedbackText();
-  try{await navigator.clipboard.writeText(text);setHint(`已复制 ${docNotes.length} 条审阅反馈（JSON）。`);}
-  catch{download(`${d.id}.review.json`,new Blob([text],{type:'application/json'}));setHint('剪贴板不可用，已改为下载审阅反馈 JSON。');}
+  if(await webPlatform.clipboardWrite(text)){setHint(`已复制 ${docNotes.length} 条审阅反馈（JSON）。`);}else{download(`${d.id}.review.json`,new Blob([text],{type:'application/json'}));setHint('剪贴板不可用，已改为下载审阅反馈 JSON。');}
  };
  const videoEl=videoUrl?<video ref={video} src={videoUrl} muted loop playsInline onPlay={()=>setVideoPlaying(true)} onPause={()=>setVideoPlaying(false)}/>:null;
  const sheetHead=(title:string)=><div className="ws-sheet-head"><strong>{title}</strong><button type="button" aria-label="关闭面板" onClick={()=>setSheet(null)}><X size={18}/></button></div>;
@@ -742,8 +741,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button onClick={createDoc}><Plus size={13}/>新建</button>
      </div>
      <p className="ws-note">复制完整动作到手动工作台，再拖动调整；上方名称可选。仅列出可编辑的关键帧预设，外部动画与动力学动作暂不支持。</p>
-     <p className="ws-note" style={L.lastError?{color:'#c0392b'}:undefined}>{L.lastError?`保存失败（仅存于内存）：${L.lastError}`:'动作自动保存到本机浏览器；导出 JSON 可跨设备分享。'}</p>
-     {L.quarantine.length?<div className="ws-quarantine"><p className="ws-note" style={{color:'#c0392b'}}>{L.quarantine.length} 个动作未通过校验，已隔离保存，不参与播放。导出后可修复再导入。</p>
+     <p className="ws-note" style={L.lastError?{color:'var(--red)'}:undefined}>{L.lastError?`保存失败（仅存于内存）：${L.lastError}`:'动作自动保存到本机浏览器；导出 JSON 可跨设备分享。'}</p>
+     {L.quarantine.length?<div className="ws-quarantine"><p className="ws-note" style={{color:'var(--red)'}}>{L.quarantine.length} 个动作未通过校验，已隔离保存，不参与播放。导出后可修复再导入。</p>
       {L.quarantine.map((q,i)=><div key={`${q.id}-${i}`} className="ws-row"><small>{q.name||q.id||'未命名'}：{q.reason}</small><button onClick={()=>exportQuarantine(i)}><Download size={12}/>导出</button><button aria-label={`丢弃 ${q.name||q.id}`} onClick={()=>{if(confirm('丢弃这个隔离动作？此操作不可撤销。'))L.discardQuarantine(i);bump(v=>v+1);}}><Trash2 size={12}/></button></div>)}
      </div>:null}
     </section>
@@ -885,8 +884,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <button onClick={()=>void exportPackage()} disabled={!subtleOk||exporting} title={subtleOk?'求解并校验当前文档，下载 .pose.json':'姿态包导出需 https 或 localhost 打开'}><Package size={13}/>{exporting?'求解中…':'导出姿态包'}</button>
        <button onClick={()=>void exportGlbFile()} disabled={!subtleOk||exporting} title={subtleOk?'同一求解结果烘焙成 glTF 动画，干净模型重新解析后导出':'GLB 导出需 https 或 localhost 打开'}><FileBox size={13}/>{exporting?'导出中…':'导出 GLB'}</button>
       </div>
-      <p className="ws-note" style={subtleOk?undefined:{color:'#c0392b'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
-      {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'#c0392b'}}>上一次导出被语义校验拒绝，未生成文件：</p>
+      <p className="ws-note" style={subtleOk?undefined:{color:'var(--red)'}}>{subtleOk?'fps 进入制品 id：同一文档不同 fps 是不同包（1–60，服务端默认 40）。GLB 是派生品——可入 DCC/播放器预览，但制品身份仍以 .pose.json 为准。':'姿态包导出需 https 或 localhost 打开（crypto.subtle 不可用）。'}</p>
+      {pkgProblems&&pkgProblems.doc===d.id?<div className="ws-problems"><p className="ws-note" style={{color:'var(--red)'}}>上一次导出被语义校验拒绝，未生成文件：</p>
        <ul>{pkgProblems.items.map((p,i)=><li key={i}>{p}</li>)}</ul></div>:null}
      </div>
      <div className="ws-sub"><h3>静帧渲染 <small>固定相机预设 · 固定出图尺寸</small></h3>
@@ -983,7 +982,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <Row label="触球 / 接触事件" detail="记录拍头位置为接触点" checked={sel.constraints.contact} onChange={v=>editSelected(k=>{k.constraints.contact=v;})}/>
       </div>:<div className="ws-sub"><h3>{adjustmentSideName}侧约束</h3>
        <Row label={`${adjustmentSideName}脚支撑锁定`} detail="离地帧的脚位会作为摆动路径点" checked={sel.constraints[adjustmentSide==='L'?'plantL':'plantR']} onChange={v=>editSelected(k=>{k.constraints[adjustmentSide==='L'?'plantL':'plantR']=v;})}/>
-       {selectedKeyIndex===orderedKeys.length-1&&selectedKeyIndex>0&&isReleaseKey(d,selectedKeyIndex,adjustmentSide)?<p className="ws-note" style={{color:'#c0392b'}}>此离地帧位于动作末尾：没有后续区间，脚停在接触点；请在其后添加关键帧，抬升高度才会形成摆动轨迹。</p>:null}
+       {selectedKeyIndex===orderedKeys.length-1&&selectedKeyIndex>0&&isReleaseKey(d,selectedKeyIndex,adjustmentSide)?<p className="ws-note" style={{color:'var(--red)'}}>此离地帧位于动作末尾：没有后续区间，脚停在接触点；请在其后添加关键帧，抬升高度才会形成摆动轨迹。</p>:null}
        {d.gripSide===adjustmentSide?<Row label={`${adjustmentSideName}手握拍`} checked={sel.constraints.grip} onChange={v=>editSelected(k=>{k.constraints.grip=v;})}/>:null}
       </div>}
       {adjustmentTab==='common'?<><div className="ws-sub"><h3>躯干与骨盆</h3>
@@ -1022,7 +1021,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
           onChange={(axis,value)=>write(foot.target,axis,value)}/>
          <VectorSliders title={`${cn}膝部弯曲引导点`} value={pole} testPrefix={`limb-${side}-leg-pole`}
           onChange={(axis,value)=>write(pole,axis,value)}/>
-         {footOwner!==sel?<p className="ws-note" style={{color:'#8a6d1f'}}>{cn}脚处于支撑锁定：脚踝目标写入 {footOwner.time.toFixed(2)}s 的支撑开始帧；膝部引导点仍写入当前帧。</p>:null}
+         {footOwner!==sel?<p className="ws-note" style={{color:'var(--amber)'}}>{cn}脚处于支撑锁定：脚踝目标写入 {footOwner.time.toFixed(2)}s 的支撑开始帧；膝部引导点仍写入当前帧。</p>:null}
          </div>
         </div>;
        })}
@@ -1043,7 +1042,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
          <Slider label={`${cn}脚抬升高度（脚底离地）`} value={liftOf(side,planted?owner:sel)} min={0} max={.8} step={.005} unit="m" disabled={planted} onChange={v=>setLift(side,v)}/>
          <Slider label={`${cn}脚俯仰`} value={foot.pitch} min={-40} max={40} step={1} onChange={v=>editAtKey(sel,()=>{foot.pitch=v;})}/>
          <Slider label={`${cn}脚朝向`} value={foot.yaw} min={-90} max={90} step={1} onChange={v=>editAtKey(sel,()=>{foot.yaw=v;})}/>
-         {owner!==sel?<p className="ws-note" style={{color:'#8a6d1f'}}>{cn}脚此帧由 {owner.time.toFixed(2)}s 的支撑开始帧锁定：俯仰与朝向的修改写入该帧。</p>:null}
+         {owner!==sel?<p className="ws-note" style={{color:'var(--amber)'}}>{cn}脚此帧由 {owner.time.toFixed(2)}s 的支撑开始帧锁定：俯仰与朝向的修改写入该帧。</p>:null}
         </div>;
        })}
       </div>:null}
@@ -1098,7 +1097,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <div className="ws-actions" inert={review}>
     <button onClick={addKey} disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>
-    {hint?<p className="ws-note" role="status" style={{color:'#c0392b'}}>{hint}</p>:null}
+    {hint?<p className="ws-note" role="status" style={{color:'var(--red)'}}>{hint}</p>:null}
    </div>
   </footer>
  </div>;
