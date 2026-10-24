@@ -11,6 +11,7 @@ import {attachProp,mountRacket,RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {checkPosePackageShape,posePackageSpec,rigMatches} from '@human3d/motion-core';
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,createDynamicsSession,type DynamicsSession,type MotionSource} from '../playback/motion-source';
 import {bindSceneBackground} from '../theme/scene-background';
+import {applyHeroicShape} from '../theme/shape-preset';
 import {loadAnatomyAtlas} from '../theme/anatomy-skin';
 import {AnatomySelection} from '../theme/anatomy-selection';
 import {subtleDigest} from '@human3d/motion-core';
@@ -86,7 +87,7 @@ export class HumanEngine{
    })]);
    if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
    const info=JSON.parse(rigText) as RigInfo;
-   this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
+   this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);applyHeroicShape(this.model);
    // Local identities for the pose-package import gate — the same
    // canonical(rigManifestBody)/canonical(motionDefinitionPayload) sha256 the
    // service stamps into packages (rig.manifestSHA256 / action.definitionSHA256).
