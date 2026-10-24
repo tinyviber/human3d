@@ -20,16 +20,20 @@ export function createAnatomyAtlas(metadata:AnatomyMetadata,pixels:Uint8Array):A
  },dispose(){texture.dispose();}};
 }
 
-export interface DecodedImage{source:CanvasImageSource;naturalWidth:number;naturalHeight:number}
-/** Decodes the mask PNG into a drawable source. The web decoder uses <img>;
- * hosts without Image inject their own (e.g. an OffscreenCanvas decoder) —
- * the 2D readback below speaks the same drawImage/getImageData API. */
-export type MaskImageDecoder=(url:string)=>Promise<DecodedImage>;
+export interface DecodedMask{naturalWidth:number;naturalHeight:number;pixels:Uint8Array}
+/** Decodes the mask PNG straight to RGBA pixels (R/G = 16-bit id, B = border
+ * coverage, same layout `createAnatomyAtlas` consumes). The web decoder wraps
+ * <img> + a 2D-canvas readback; hosts without DOM inject their own pixel
+ * decoder, keeping this module and the atlas path DOM-free. */
+export type MaskImageDecoder=(url:string)=>Promise<DecodedMask>;
 export const webMaskImageDecoder:MaskImageDecoder=async url=>{
  const image=await new Promise<HTMLImageElement>((resolve,reject)=>{
   const img=new Image();img.onload=()=>resolve(img);img.onerror=()=>reject(new Error('肌肉分区贴图加载失败'));img.src=url;
  });
- return {source:image,naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight};
+ const canvas=document.createElement('canvas');canvas.width=image.naturalWidth;canvas.height=image.naturalHeight;
+ const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('无法读取肌肉分区贴图');
+ ctx.drawImage(image,0,0);
+ return {naturalWidth:image.naturalWidth,naturalHeight:image.naturalHeight,pixels:new Uint8Array(ctx.getImageData(0,0,canvas.width,canvas.height).data)};
 };
 
 export async function loadAnatomyAtlas(platform:AppPlatform=webPlatform,decoder:MaskImageDecoder=webMaskImageDecoder):Promise<AnatomyAtlas>{
@@ -37,9 +41,7 @@ export async function loadAnatomyAtlas(platform:AppPlatform=webPlatform,decoder:
  if(!response.ok)throw new Error('肌肉分区定义加载失败');
  const metadata=await response.json() as AnatomyMetadata;
  if(decoded.naturalWidth!==metadata.width||decoded.naturalHeight!==metadata.height)throw new Error('肌肉分区尺寸不一致');
- const canvas=document.createElement('canvas');canvas.width=metadata.width;canvas.height=metadata.height;
- const ctx=canvas.getContext('2d',{willReadFrequently:true});if(!ctx)throw new Error('无法读取肌肉分区贴图');
- ctx.drawImage(decoded.source,0,0);return createAnatomyAtlas(metadata,new Uint8Array(ctx.getImageData(0,0,canvas.width,canvas.height).data));
+ return createAnatomyAtlas(metadata,decoded.pixels);
 }
 
 export interface AnatomySkin{mesh:SkinnedMesh;id:{value:number};amount:{value:number}}

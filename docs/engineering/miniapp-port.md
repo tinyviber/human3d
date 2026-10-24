@@ -23,7 +23,7 @@
 4. **持久化**：`storage: StorageLike|null`——`MotionLibrary`/`PoseLibrary` 本就是注入式，组件侧改传 `platform.storage`。
 5. **Worker**：`createWorker(url)`（web: module worker；生成器 worker 内部同样走 platform，宿主换 `wx.createWorker`）。
 6. **其它宿主探针**：`coarse`（引擎渲染档位）、`cssVar(name)`（场景背景读 token，`bindSceneBackground` 接受 platform）、`navigate(to)`、`confirm/prompt`、`now()`。
-7. **解码注入**：`loadAnatomyAtlas(platform, decoder)`——解剖贴图解码可替换（web 默认 `<img>`；2D 读回为 OffscreenCanvas 同形 API，宿主可整段替换 decoder）。
+7. **解码注入**：`loadAnatomyAtlas(platform, decoder)`——decoder 直接返回 RGBA 像素（`MaskImageDecoder`），web 默认实现包掉 `<img>` + 2D 读回；`anatomy-skin.ts` 的 atlas 路径本身无 DOM，小程序自备像素解码即可。
 
 ## 边界要如实：传 miniPlatform ≠ 自动可移植
 
@@ -33,7 +33,7 @@
 - `theme/anatomy-selection.ts` 的命令式 DOM 覆盖层（肌肉点选）是视图层，宿主重写或裁剪；
 - 生成 worker 的**创建调用点**在视图层（`new URL(...,import.meta.url)` 是打包器行为）：web 由 `createWorker` 承接，miniapp 在自己的启动代码里改用 `wx.createWorker('workers/generate.js')` 并自备打包产物；
 - `crypto.subtle`（包导出已拒绝降级路径）；
-- 解剖贴图的 2D 读回 canvas（API 与 OffscreenCanvas 同形，已可通过 `MaskImageDecoder` 整段替换）。
+- 解剖贴图的像素解码已通过 `MaskImageDecoder` 注入——web 实现内部的 `<img>` + 2D 读回随宿主整体替换。
 
 ## 故意不做接缝（视图层，宿主各自实现）
 

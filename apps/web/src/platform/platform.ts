@@ -42,10 +42,17 @@ export interface AppPlatform{
   now():number;
 }
 
+/** localStorage access itself can throw in restricted embeds (SecurityError)
+ * — probe lazily and defensively: a throwing host degrades to no persistence
+ * instead of failing app boot. */
+function safeStorage():StorageLike|null{
+  try{return globalThis.localStorage??null;}catch{return null;}
+}
+
 export const webPlatform:AppPlatform={
   assetUrl:path=>path,
   fetchAsset:path=>fetch(path),
-  storage:typeof localStorage==='undefined'?null:globalThis.localStorage,
+  get storage(){return safeStorage();},
   download(name,blob){
     const a=document.createElement('a');
     a.href=URL.createObjectURL(blob);a.download=name;a.click();
