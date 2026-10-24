@@ -12,6 +12,8 @@ import type {WorkshopFrame} from './engine';
 import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human3d/motion-core';
 import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
+import {clearLabHandoff,resolveLabHandoff} from './lab-handoff';
+import type {LabHandoff} from './lab-handoff';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
 import {applyPoseAt,PoseLibrary,stampPoseIntoKey,type PoseApplyReport,type PoseStampReport,type UserPosePreset} from './pose-library';
 import {HistoryBook,RecordGate} from './history';
@@ -143,7 +145,12 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const [,bump]=useState(0);
  const selected=useWorkshopUi(s=>s.selected),setSelected=useWorkshopUi(s=>s.setSelected);
  const newName=useWorkshopUi(s=>s.newName),setNewName=useWorkshopUi(s=>s.setNewName);
- const [presetId,setPresetId]=useState(()=>BASIC_PRESETS[0]?.id??'');
+ // Lab handoff: the lab navigates here with ?from=<motion id> when the motion
+ // it was playing has workshop keys. The offer stays until handled so a
+ // refresh doesn't lose it; the URL param is dropped on handling so a later
+ // visit doesn't re-offer. Creation is always explicit — never auto-copied.
+ const [handoff,setHandoff]=useState<LabHandoff|null>(()=>resolveLabHandoff(globalThis.location?.search??''));
+ const [presetId,setPresetId]=useState(()=>handoff?.kind==='preset'?handoff.file.id:BASIC_PRESETS[0]?.id??'');
  const [basicId,setBasicId]=useState(()=>BASIC_PRESETS[0]?.id??'');
  const [adjustmentTab,setAdjustmentTab]=useState<'left'|'right'|'common'|'semantic'>(()=>globalThis.matchMedia?.(COMPACT_QUERY).matches?'semantic':'common');
  const [info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState('');
@@ -345,14 +352,26 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const selectDoc=(id:string)=>{if(generationLocked.current)return;const doc=L.select(id);setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const createDoc=()=>{if(generationLocked.current)return;const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{if(generationLocked.current)return;const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
- const createFromPreset=()=>{
+ const createFromPreset=(id=presetId)=>{
   if(generationLocked.current)return;
   const source=L.active();
-  const doc=L.createFromPreset(presetId,newName);
+  const doc=L.createFromPreset(id,newName);
   books.current.of(doc.id).record(source);
   gate.current.reset();setNewName('');selectDoc(doc.id);
   setHint(`已从预设创建「${doc.name}」，可拖动手柄或调整关键帧。`);
  };
+ // Handoff actions: creation goes through the same 从预设开始 flow — a NEW
+ // document with fresh ids; the preset and every existing document stay
+ // untouched. Dismissing only clears the offer and the URL parameter.
+ const dismissHandoff=()=>{setHandoff(null);clearLabHandoff();};
+ const acceptHandoff=()=>{
+  if(!handoff||handoff.kind!=='preset'||generationLocked.current)return;
+  createFromPreset(handoff.file.id);
+  setPresetId(handoff.file.id);
+  dismissHandoff();
+ };
+ // Phone layout: the handoff offer lives in the 动作 sheet — raise it on entry.
+ useEffect(()=>{if(compact&&handoff?.kind==='preset')setSheet('left');},[]);
  // Mirror across x=0 (same motion on the other side): the mirrored document
  // enters the library as a NEW doc (the source stays untouched) carrying the
  // '.mirrored'/' · 镜像' markers, and becomes the active edit target. One undo
@@ -726,6 +745,22 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   <Group orientation="horizontal" className="ws-main" id="workshop-panes">
    <Panel id="ws-library" className="ws-library-panel" defaultSize={250} minSize={200} maxSize={420}><aside className="ws-left" aria-label="动作与关键帧">
     {sheetHead('动作 · 关键帧 · 参考')}
+    {handoff&&handoff.kind!=='unknown'?<section className="ws-card ws-handoff" data-testid="lab-handoff" inert={generationLockedUi}>
+     {handoff.kind==='preset'?<>
+      <h2>来自实验室 <small>{handoff.file.english}</small></h2>
+      <p className="ws-handoff-name">{handoff.file.name}</p>
+      <p className="ws-note">创建一份新的可编辑副本开始调整；动作库预设与已有动作都不会被改动。</p>
+      <div className="ws-row">
+       <button type="button" data-testid="lab-handoff-create" onClick={acceptHandoff}><Plus size={13}/>创建可编辑副本</button>
+       <button type="button" data-testid="lab-handoff-dismiss" onClick={dismissHandoff}><X size={13}/>暂不需要</button>
+      </div>
+     </>:handoff.kind==='external'?<>
+      <h2>来自实验室 <small>{handoff.file.english}</small></h2>
+      <p className="ws-handoff-name">{handoff.file.name}</p>
+      <p className="ws-note">{handoff.file.kind==='dynamics-motion'?'此动作是肌骨正向仿真回放，没有工作台关键帧，暂不支持编辑；可在实验室继续观察。':'此动作是外部剪辑动画，没有工作台关键帧，暂不支持编辑。'}</p>
+      <div className="ws-row"><button type="button" data-testid="lab-handoff-dismiss" onClick={dismissHandoff}>知道了</button></div>
+     </>:null}
+    </section>:null}
     <section className="ws-card" inert={generationLockedUi}><h2>动作库 <small>{L.docs.length} 个动作</small></h2>
      <div className="ws-preset-entry">
       <label className="ws-field"><span>动作预设</span><select aria-label="初始动作预设" value={presetId} onChange={e=>setPresetId(e.target.value)}>
@@ -733,7 +768,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
        <optgroup label="网球正手（球拍插件）">{RACKET_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
        <optgroup label="其他预设">{OTHER_PRESETS.map(p=><option key={p.id} value={p.id}>{p.name}</option>)}</optgroup>
       </select></label>
-      <button className="ws-preset-start" onClick={createFromPreset}><Plus size={14}/>从预设开始</button>
+      <button className="ws-preset-start" onClick={()=>createFromPreset()}><Plus size={14}/>从预设开始</button>
      </div>
      <LibraryList docs={L.docs} activeId={d.id} onSelect={selectDoc} onDuplicate={duplicateDoc} onRemove={removeDoc} onReorder={(active,over)=>{L.reorder(active,over);bump(v=>v+1);}}/>
      <div className="ws-row">

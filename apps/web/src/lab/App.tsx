@@ -5,6 +5,7 @@ import {Group, Panel, Separator} from 'react-resizable-panels';
 import {motion, useReducedMotion} from 'motion/react';
 import {Activity,ArrowUpRight,ChevronRight,Expand,Info,Layers,Pause,Play,RotateCcw,Scan,SlidersHorizontal,X} from 'lucide-react';
 import {DynamicsPanel} from './DynamicsPanel';
+import {workshopEditability} from './handoff';
 import {HumanEngine} from './engine';
 import {MOTIONS} from '@human3d/motion-core';
 import {checkPosePackageShape} from '@human3d/motion-core';
@@ -56,6 +57,7 @@ export function App(){
  const [sheet,setSheet]=useState<'library'|'inspector'|null>(null);
  const {id,setId,info,setInfo,error,setError,view,setView,frame,setFrame,debug,patchDebug,speed,setSpeed,loop,setLoop,dialog,setDialog,extras,setExtras}=useLabUi();
  const allMotions=[...MOTIONS,...extras],spec=allMotions.find(m=>m.id===id)??MOTIONS[0],racket=!!spec.capabilities?.prop,physics=spec.source?.kind==='dynamics';
+ const editability=workshopEditability(spec);
  const openPackage=async(file:File)=>{
   try{
    const pkg:unknown=JSON.parse(await file.text());
@@ -83,9 +85,11 @@ export function App(){
   window.addEventListener('keydown',key);return()=>window.removeEventListener('keydown',key);
  },[dialog]);
  return <motion.div className={`app-shell${compact?' lab-compact':''}${sheet==='library'?' lab-sheet-library':''}${sheet==='inspector'?' lab-sheet-inspector':''}`} initial={reduce?false:{opacity:0}} animate={{opacity:1}} transition={{duration:reduce?0:.18,ease:[0.2,0.8,0.2,1]}}>
-  <header className="header"><div className="brand"><Activity size={27} strokeWidth={2}/><span>KINESIS</span><i/><h1>人体运动实验室</h1></div><nav><Button variant="ghost" onClick={()=>fileRef.current?.click()}>打开姿态包</Button><input ref={fileRef} type="file" accept=".json,application/json" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void openPackage(f);}}/><Button variant="ghost" onClick={()=>webPlatform.navigate('/workshop.html')}>动作工作台</Button><Button variant="ghost" onClick={()=>setDialog('guide')}>使用指南</Button><Button variant="ghost" onClick={()=>setDialog('sources')}>资料与许可<ArrowUpRight size={14}/></Button></nav></header>
+  <header className="header"><div className="brand"><Activity size={27} strokeWidth={2}/><span>KINESIS</span><i/><h1>人体运动实验室</h1></div><nav><Button variant="ghost" onClick={()=>fileRef.current?.click()}>打开姿态包</Button><input ref={fileRef} type="file" accept=".json,application/json" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void openPackage(f);}}/><Button variant="ghost" onClick={()=>webPlatform.navigate(editability.editable?editability.url:'/workshop.html')}>动作工作台</Button><Button variant="ghost" onClick={()=>setDialog('guide')}>使用指南</Button><Button variant="ghost" onClick={()=>setDialog('sources')}>资料与许可<ArrowUpRight size={14}/></Button></nav></header>
   <Group orientation="horizontal" className="workspace" id="lab-panes">
    <Panel id="lab-library" className="motion-panel" aria-label="动作库" defaultSize={252} minSize={200} maxSize={420}><div className="panel-heading"><h2>动作库</h2><button className="pkg-import" onClick={()=>fileRef.current?.click()}>导入姿态包</button><span>{String(allMotions.length).padStart(2,'0')}</span></div>{sheet==='library'&&error?<p className="pkg-error" role="alert">{error}</p>:null}<p className="panel-intro">探索人体，理解运动。</p>
+    {editability.editable?<div className="motion-edit"><button className="motion-edit-btn" data-testid="motion-edit" onClick={()=>webPlatform.navigate(editability.url)}><SlidersHorizontal size={14}/>在动作工作台编辑</button></div>
+     :<p className="motion-edit-why" data-testid="motion-edit-why">{editability.reason}</p>}
     <div className="motion-list">{allMotions.map((m,i)=><button key={m.id} className={`motion-row ${id===m.id?'selected':''}`} aria-pressed={id===m.id} onClick={()=>choose(m.id)} disabled={!info}><span className="motion-number">{String(i+1).padStart(2,'0')}</span><span className="motion-label">{m.name}<small>{m.english}</small></span>{id===m.id?<ChevronRight size={16}/>:null}</button>)}</div>
     <div className="motion-notes"><div className="mini-heading">观察重点</div><p>{spec.description}</p><div className="focus-list">{spec.focus.map(f=><span key={f}>{f}</span>)}</div></div>
     <div className="asset-note"><Layers size={17}/><div>{physics?'肌骨正向仿真 · 连续蒙皮表面':'连续蒙皮人体'}<small>{physics?'44 个关节自由度 + 6 个根速度自由度 · 416 肌肉执行器':info?`${info.bones.length} 根骨骼 · ${Math.round(info.vertices/1000*10)/10}k 顶点`:'正在读取模型…'}</small></div></div>
