@@ -13,6 +13,7 @@ import type {PelvisSchedule} from '@human3d/motion-core';
 import {ankleYForLift,footGeometry,type FootGeometry,type Side} from '@human3d/motion-core';
 import {bindSceneBackground} from '../theme/scene-background';
 import {applyHeroicShape} from '../theme/shape-preset';
+import {applySkin,type SkinId} from '../theme/skin-swap';
 import {loadAnatomyAtlas} from '../theme/anatomy-skin';
 import {AnatomySelection} from '../theme/anatomy-selection';
 
@@ -522,7 +523,9 @@ export class WorkshopEngine{
   setSpeed(v:number){this.speed=v;}
   /* Display flags only — NOT doc content, so deliberately no docVer bump:
    * the compiled snapshot stays valid (aux overlays rebuild on docDirty). */
-  setOptions(patch:Partial<WorkshopOptions>){Object.assign(this.options,patch);this.docDirty=true;}
+ skin:SkinId='default';
+  setSkin(s:SkinId){this.skin=s;if(this.model)applySkin(this.model,s);}
+ setOptions(patch:Partial<WorkshopOptions>){Object.assign(this.options,patch);this.docDirty=true;}
   /** The single funnel every doc-mutating app path already calls
    * (edit/applyDoc/selectDoc/createDoc/removeDoc/mirror/importDoc/
    * undo-redo/onRetime/stampVideo/addKey) — docDirty for the aux rebuild,

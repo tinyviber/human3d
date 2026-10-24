@@ -15,6 +15,7 @@ export interface LabUiState{
  loop:boolean;
  dialog:'guide'|'sources'|'kinetics'|null;
  extras:MotionSpec[];
+ skin:'default'|'ssj';
  setId:(id:MotionId)=>void;
  setInfo:(info:RigInfo|null)=>void;
  setError:(error:string)=>void;
@@ -25,6 +26,7 @@ export interface LabUiState{
  setLoop:(loop:boolean)=>void;
  setDialog:(dialog:LabUiState['dialog'])=>void;
  setExtras:(extras:MotionSpec[]|((prev:MotionSpec[])=>MotionSpec[]))=>void;
+ setSkin:(skin:'default'|'ssj')=>void;
 }
 
 /** Lab chrome state. The engine still owns playback; this store is what the
@@ -40,6 +42,7 @@ export const useLabUi=create<LabUiState>((set)=>({
  loop:true,
  dialog:null,
  extras:[],
+ skin:'default',
  setId:id=>set({id}),
  setInfo:info=>set({info}),
  setError:error=>set({error}),
@@ -50,4 +53,5 @@ export const useLabUi=create<LabUiState>((set)=>({
  setLoop:loop=>set({loop}),
  setDialog:dialog=>set({dialog}),
  setExtras:extras=>set(s=>({extras:typeof extras==='function'?extras(s.extras):extras})),
+ setSkin:skin=>set({skin}),
 }));

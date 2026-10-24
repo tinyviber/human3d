@@ -55,7 +55,7 @@ export function App(){
  const reduce=useReducedMotion();
  const compact=useCompact();
  const [sheet,setSheet]=useState<'library'|'inspector'|null>(null);
- const {id,setId,info,setInfo,error,setError,view,setView,frame,setFrame,debug,patchDebug,speed,setSpeed,loop,setLoop,dialog,setDialog,extras,setExtras}=useLabUi();
+ const {id,setId,info,setInfo,error,setError,view,setView,frame,setFrame,debug,patchDebug,speed,setSpeed,loop,setLoop,dialog,setDialog,extras,setExtras,skin,setSkin:storeSetSkin}=useLabUi();
  const allMotions=[...MOTIONS,...extras],spec=allMotions.find(m=>m.id===id)??MOTIONS[0],racket=!!spec.capabilities?.prop,physics=spec.source?.kind==='dynamics';
  const editability=workshopEditability(spec);
  const openPackage=async(file:File)=>{
@@ -109,6 +109,7 @@ export function App(){
    <Separator className="pane-resize"/>
    <Panel id="lab-inspector" className="inspector" aria-label="观察设置" defaultSize={258} minSize={220} maxSize={460}><section><div className="panel-heading"><h2>观察</h2><SlidersHorizontal size={17}/></div><div className="toggle-list">
     <Toggle label="人体表面" checked={debug.surface} onChange={v=>toggle('surface',v)}/><Toggle label={physics?"解剖骨骼与关节":"骨骼与关节"} checked={debug.skeleton} onChange={v=>toggle('skeleton',v)}/><Toggle label="关节坐标轴" checked={debug.axes} onChange={v=>toggle('axes',v)}/><Toggle label={physics?"固定支撑反力":"IK 端点"} checked={debug.targets} onChange={v=>toggle('targets',v)}/>
+    <Toggle label="超赛皮肤" detail="SSJ 风格换肤：短裤·靴·金发" checked={skin==='ssj'} onChange={v=>{storeSetSkin(v?'ssj':'default');if(engine.current)engine.current.setSkin(v?'ssj':'default');}}/>
     {physics?<Toggle label="肌腱作用路径" checked={debug.muscles} onChange={v=>toggle('muscles',v)}/>:null}
     {spec.capabilities?.prop?.trail?<Toggle label="球拍运动轨迹" checked={debug.trail} onChange={v=>toggle('trail',v)}/>:null}
    </div></section>

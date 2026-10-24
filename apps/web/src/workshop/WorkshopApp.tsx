@@ -178,6 +178,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // Session-only display toggles (never persisted) — same convention as the
  // engine's WorkshopOptions defaults.
  const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys' as 'keys'|'step',onionStep:.1});
+ const [skinS,setSkinS]=useState<'default'|'ssj'>('default');
  // Issue #23: phone layout = viewport + bottom sheets; Review mode blocks every
  // viewport write. Same query as the CSS breakpoint in workshop.css.
  const compact=useMedia(COMPACT_QUERY);
@@ -1014,6 +1015,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       {adjustmentTab==='common'?<>
       <label className="ws-field"><span>动作名称</span><input data-testid="active-motion-name" aria-label="动作名称" value={d.name} onChange={e=>edit(doc=>{doc.name=e.target.value;})}/></label>
       <Row label="自由手臂（全方向）" detail="允许肩、肘、腕超出人体参考范围；肘屈曲超过 145° 的姿态无法导出姿态包" testId="free-arms" checked={d.freeArms===true} onChange={v=>edit(doc=>{if(v)doc.freeArms=true;else delete doc.freeArms;})}/>
+      <Row label="超赛皮肤" detail="SSJ 风格换肤：短裤 · 靴 · 金发" testId="ssj-skin" checked={skinS==='ssj'} onChange={v=>{setSkinS(v?'ssj':'default');engine.current?.setSkin(v?'ssj':'default');}}/>
       <div className="ws-sub"><h3>帧间过渡 <small>从当前关键帧到下一帧</small></h3>
        {nextTransitionKey&&transitionEndTime!==undefined?<>
         <p className="ws-note">{sel.time.toFixed(2)}s → {transitionEndTime.toFixed(2)}s{transitionIsLoop?' · 循环接缝':''}</p>

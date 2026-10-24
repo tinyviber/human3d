@@ -12,6 +12,7 @@ import {checkPosePackageShape,posePackageSpec,rigMatches} from '@human3d/motion-
 import {ClipSource,DocumentSource,DynamicsSource,PoseFade,PosePackageSource,createDynamicsSession,type DynamicsSession,type MotionSource} from '../playback/motion-source';
 import {bindSceneBackground} from '../theme/scene-background';
 import {applyHeroicShape} from '../theme/shape-preset';
+import {applySkin,type SkinId} from '../theme/skin-swap';
 import {loadAnatomyAtlas} from '../theme/anatomy-skin';
 import {AnatomySelection} from '../theme/anatomy-selection';
 import {subtleDigest} from '@human3d/motion-core';
@@ -41,6 +42,7 @@ export class HumanEngine{
  private pkgSeq=0;
  private _source?:MotionSource;private fade=new PoseFade();private dynSession?:DynamicsSession;
  debug:DebugOptions={surface:true,skeleton:false,axes:false,targets:false,trail:false,muscles:false};
+ skin:SkinId='default';
  racket?:Group;private racketSide:'L'|'R'='R';
  /** Locally computed identities for the pose-package import gate: the rig
   * manifest hash (compared against a package's rig block — see rigMatches)
@@ -225,6 +227,7 @@ export class HumanEngine{
   this.trailPoints=[];this.updateDebug();this.notify();
  }
  replay(){if(this.isPhysics){this.time=0;this.physics?.seek(0);this.playing=!this.physicsLoading;this.notify();return;}this.seek(0);this.playing=true;}
+ setSkin(s:SkinId){this.skin=s;if(this.model)applySkin(this.model,s);}
  setDebug(patch:Partial<DebugOptions>){
   Object.assign(this.debug,patch);
   if(this.isPhysics){this._source?.setDebug?.(this.debug);return;}
