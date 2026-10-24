@@ -446,7 +446,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   if(!report){setHint('应用失败：请调整时刻后重试。');return;}
   const notes=[];
   if(report.heldFoot.length)notes.push(`${report.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点、膝盖方向已更新（要移动支撑脚请先释放该帧支撑）`);
-  if(report.liftoffFoot.length)notes.push(`${report.liftoffFoot.map(s=>s==='L'?'左':'右').join('、')}脚是离地边界：离地瞬间仍从原接触点起步，新目标塑造离地后的摆动路径`);
+  if(report.liftoffFoot.length)notes.push(`${report.liftoffFoot.map(s=>s==='L'?'左':'右').join('、')}脚是离地边界：离地瞬间仍从原接触点起步，新目标塑造离地后的摆动路径，脚尖朝向仍跟随支撑接触`);
   setHint(`${report.result==='replaced'?`已把当前帧姿态替换为「${p.name}」（约束不变）`:`已在播放头插入「${p.name}」姿态帧`}，可撤销${notes.length?`；${notes.join('；')}`:''}。`);
  };
  const removeUserPose=(id:string)=>{
@@ -475,7 +475,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   setSelected(k.id);e?.solveCurrent();
   const parts=[];
   if(box.stamp.heldFoot.length)parts.push(`${box.stamp.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点、膝盖方向已更新（要移动支撑脚请先释放该帧支撑）`);
-  if(box.stamp.liftoffFoot.length)parts.push(`${box.stamp.liftoffFoot.map(s=>s==='L'?'左':'右').join('、')}脚是离地边界：离地瞬间仍从原接触点起步，新目标塑造离地后的摆动路径`);
+  if(box.stamp.liftoffFoot.length)parts.push(`${box.stamp.liftoffFoot.map(s=>s==='L'?'左':'右').join('、')}脚是离地边界：离地瞬间仍从原接触点起步，新目标塑造离地后的摆动路径，脚尖朝向仍跟随支撑接触`);
   setHint(`已把复制的姿态粘贴到「${k.label||'关键帧'}」并定位到该帧（可撤销）${parts.length?`；${parts.join('；')}`:''}。`);
  };
  /** In-place mirror of the selected key's pose (left/right hands, feet and

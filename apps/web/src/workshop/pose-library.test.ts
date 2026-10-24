@@ -194,6 +194,43 @@ describe('applyPoseAt',()=>{
   expect(solved(.9).x).toBeCloseTo(wide.footL.target.x,2);
   expect(solved(.9).distanceTo(midBefore)).toBeGreaterThan(.1);
  });
+ it('liftoff yaw/pitch are not stored as dead data: only the target steers the swing',()=>{
+  // The waypoint rule reads the stored TARGET only; yaw/pitch stay
+  // overridden by the run contact. A toe-orientation-only stamp must not be
+  // written (it would change the file but never the animation) nor reported.
+  const doc=docOf('idle');
+  doc.keys[1].constraints.plantL=false; // L: planted → released
+  const pose=structuredClone(doc.keys[1].pose);
+  pose.footL.yaw+=30;pose.footL.pitch+=10; // orientation-only change
+  const t=doc.keys[1].time;
+  const report=applyPoseAt(doc,pose,t,origin);
+  expect(report?.heldFoot).toEqual([]);
+  expect(report?.liftoffFoot).toEqual([]);
+  expect(doc.keys[1].pose.footL.yaw).toBe(docOf('idle').keys[1].pose.footL.yaw);
+  expect(doc.keys[1].pose.footL.pitch).toBe(docOf('idle').keys[1].pose.footL.pitch);
+  // A moving target on the same liftoff key still applies, with the key's
+  // own orientation kept (the contact owns it).
+  const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
+  const report2=applyPoseAt(doc,wide,t,origin);
+  expect(report2?.liftoffFoot).toEqual(['L']);
+  expect(doc.keys[1].pose.footL.target.x).toBeCloseTo(wide.footL.target.x,9);
+  expect(doc.keys[1].pose.footL.yaw).toBe(docOf('idle').keys[1].pose.footL.yaw);
+ });
+ it('tail liftoff (last key, non-loop) is held: no interval follows to steer',()=>{
+  // A released key on the timeline tail has its instant pinned AND no
+  // following interval for the waypoint rule — without the tail rule the L
+  // side would land in liftoffFoot and the target would be dead data.
+  const doc=blankDocument(rig.rest,'tail','tail');
+  doc.keys[1].constraints.plantL=false; // both feet: planted → released on the tail
+  doc.keys[1].constraints.plantR=false;
+  const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
+  const report=applyPoseAt(doc,wide,doc.keys[1].time,origin);
+  expect(report?.heldFoot).toEqual(['L','R']);
+  expect(report?.liftoffFoot).toEqual([]);
+  expect(doc.keys[1].pose.footL.target.x).toBeCloseTo(doc.keys[0].pose.footL.target.x,9);
+  expect(doc.keys[1].pose.footL.pole.x).toBeCloseTo(wide.footL.pole.x,9);
+  expect(doc.keys[1].pose.footR.pole.x).toBeCloseTo(wide.footR.pole.x,9);
+ });
  it('fully planted loop: key 0 is the run anchor and stays editable',()=>{
   // contactPlan forces key 0 to anchor a fully planted loop (`s<0?0:s`) —
   // writing its target re-anchors the whole run, so it must not be held

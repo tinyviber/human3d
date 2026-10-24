@@ -96,21 +96,27 @@ export function stampPoseIntoKey(doc:WorkshopDoc,key:WorkshopKey,pose:PoseParams
   const stamped=JSON.parse(JSON.stringify(pose)) as PoseParams;
   const heldFoot:(('L'|'R'))[]=[],liftoffFoot:(('L'|'R'))[]=[];
   for(const side of ['L','R'] as const){
+    const foot=side==='L'?'footL':'footR';
     const role=footRunRole(doc,key,side);
-    if(role==='free')continue;
-    const f=side==='L'?key.pose.footL:key.pose.footR;
-    const next=side==='L'?stamped.footL:stamped.footR;
+    if(role==='free')continue; // the stamped pose applies verbatim
+    const f=key.pose[foot];
+    const next=stamped[foot];
     // Only a real attempted move is worth reporting: a stamp that agrees
     // with the key's authored channels changes nothing anyway.
-    if(Math.abs(next.target.x-f.target.x)<1e-3&&Math.abs(next.target.y-f.target.y)<1e-3
-     &&Math.abs(next.target.z-f.target.z)<1e-3&&Math.abs(next.yaw-f.yaw)<1e-3
-     &&Math.abs(next.pitch-f.pitch)<1e-3)continue;
+    const movesTarget=Math.abs(next.target.x-f.target.x)>1e-3||Math.abs(next.target.y-f.target.y)>1e-3||Math.abs(next.target.z-f.target.z)>1e-3;
+    const movesOrientation=Math.abs(next.yaw-f.yaw)>1e-3||Math.abs(next.pitch-f.pitch)>1e-3;
     if(role==='held'){
+      if(!movesTarget&&!movesOrientation)continue; // ≈ the key's own: stamp verbatim
       // Keep the key's locked channels, apply the editable pole.
-      const held:FootTarget={target:f.target,pole:next.pole,yaw:f.yaw,pitch:f.pitch};
-      stamped[side==='L'?'footL':'footR']=held;
+      stamped[foot]={target:f.target,pole:next.pole,yaw:f.yaw,pitch:f.pitch};
       heldFoot.push(side);
-    }else liftoffFoot.push(side);
+    }else{
+      // The mid-swing waypoint rule reads the TARGET only — yaw/pitch stay
+      // the key's own (the run contact overrides them; a toe-orientation-only
+      // stamp would be stored but never animated, so it is not reported).
+      stamped[foot]={target:next.target,pole:next.pole,yaw:f.yaw,pitch:f.pitch};
+      if(movesTarget)liftoffFoot.push(side);
+    }
   }
   // Merge over the key's own pose so a held foot keeps its current channels.
   const merged=JSON.parse(JSON.stringify(key.pose)) as PoseParams;
@@ -125,11 +131,15 @@ export function stampPoseIntoKey(doc:WorkshopDoc,key:WorkshopKey,pose:PoseParams
  *   on a fully planted loop contactPlan forces key 0 to anchor, `s<0?0:s`,
  *   so key 0 stays editable despite its planted cyclic predecessor);
  * - 'held': planted run member, previous key planted too — the run pins
- *   target/yaw/pitch to the anchor's contact;
- * - 'liftoff': released key right after a planted run — the key instant is
- *   pinned to the run contact, but the stored target survives as the
- *   mid-swing waypoint of the following interval (interpolate's release-key
- *   rule), so writing it is meaningful and visible in the swing. */
+ *   target/yaw/pitch to the anchor's contact; also a liftoff key on the
+ *   timeline tail (last key, non-loop): the instant is pinned AND there is
+ *   no following interval for the waypoint rule to steer, so nothing the
+ *   stamp writes beyond the pole could take effect;
+ * - 'liftoff': released key right after a planted run with a following
+ *   interval — the key instant is pinned to the run contact, but the stored
+ *   target survives as the mid-swing waypoint of that interval
+ *   (interpolate's release-key rule), so writing the target is meaningful
+ *   and visible in the swing. yaw/pitch have no waypoint mechanism. */
 type FootRunRole='free'|'held'|'liftoff';
 function footRunRole(doc:WorkshopDoc,key:WorkshopKey,side:'L'|'R'):FootRunRole{
   const flag=side==='L'?'plantL':'plantR';
@@ -137,7 +147,7 @@ function footRunRole(doc:WorkshopDoc,key:WorkshopKey,side:'L'|'R'):FootRunRole{
   if(i<0)return 'free';
   const prev=doc.loop&&i===0?keys[keys.length-1]:keys[i-1];
   if(!prev||!prev.constraints[flag])return 'free';
-  if(!key.constraints[flag])return 'liftoff';
+  if(!key.constraints[flag])return !doc.loop&&i===keys.length-1?'held':'liftoff';
   const allPlanted=doc.loop&&keys.length>1&&keys.every(k=>k.constraints[flag]);
   return allPlanted&&i===0?'free':'held';
 }
