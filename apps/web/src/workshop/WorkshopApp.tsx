@@ -11,7 +11,7 @@ import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human
 import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
-import {applyPoseAt,PoseLibrary,type PoseApplyReport,type UserPosePreset} from './pose-library';
+import {applyPoseAt,PoseLibrary,stampPoseIntoKey,type PoseApplyReport,type UserPosePreset} from './pose-library';
 import {HistoryBook,RecordGate} from './history';
 import {SemanticPanel,type SemanticHost} from './semantic-panel';
 import {copyKeyframe,keyframeInsertSlot,keyframeTimeProblem,moveKeyframe,removeKeyframe} from './keyframes';
@@ -444,7 +444,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   let report:PoseApplyReport|undefined;
   editKeyStructure(doc=>{report=applyPoseAt(doc,p.pose,time,e.restRoot());});
   if(!report){setHint('应用失败：请调整时刻后重试。');return;}
-  const held=report.heldFoot.length?`；${report.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点（要移动支撑脚请先释放该帧支撑）`:'';
+  const held=report.heldFoot.length?`；${report.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点、膝盖方向已更新（要移动支撑脚请先释放该帧支撑）`:'';
   setHint(`${report.result==='replaced'?`已把当前帧姿态替换为「${p.name}」（约束不变）`:`已在播放头插入「${p.name}」姿态帧`}，可撤销${held}。`);
  };
  const removeUserPose=(id:string)=>{
@@ -461,8 +461,13 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const pastePose=()=>{
   const k=sel,src=poseClipboard.current;
   if(!k||!src)return;
-  editSelected(kk=>{kk.pose=JSON.parse(JSON.stringify(src));});
-  setHint('已把复制的姿态粘贴到选中关键帧（可撤销）。');
+  const box:{held:(('L'|'R'))[]}={held:[]};
+  edit(doc=>{
+   const key=keyAt(doc,k.id)!;
+   box.held=stampPoseIntoKey(doc,key,src);
+  });
+  const held=box.held.length?`；${box.held.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点（膝盖方向已随粘贴更新）`:'';
+  setHint(`已把复制的姿态粘贴到选中关键帧（可撤销）${held}。`);
  };
  /** In-place mirror of the selected key's pose (left/right hands, feet and
   * plant flags swap) — the per-key half of 镜像动作, one undo step. Refused

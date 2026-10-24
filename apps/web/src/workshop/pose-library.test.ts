@@ -2,7 +2,7 @@ import {beforeAll,describe,expect,it} from 'vitest';
 import fs from 'node:fs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import type {WorkshopDoc} from '@human3d/motion-core';
-import {HumanRig,frameAt,motionFileById,solveEffectiveFrame} from '@human3d/motion-core';
+import {HumanRig,blankDocument,frameAt,motionFileById,solveEffectiveFrame} from '@human3d/motion-core';
 import {applyPoseAt,isPoseShape,PoseLibrary,type StorageLike} from './pose-library';
 
 const docOf=(id:string)=>structuredClone(motionFileById(id)!.document!) as WorkshopDoc;
@@ -104,7 +104,8 @@ describe('applyPoseAt',()=>{
   // Regression for the contactPlan trap: idle is planted throughout, so its
   // middle keys' foot channels are pinned to the run anchor. Writing a wide
   // stance there must NOT claim the feet moved — the channels are skipped
-  // and the solved ankles stay at the anchor contact.
+  // and the solved ankles stay at the anchor contact. The knee pole is not
+  // locked and still applies.
   const doc=docOf('idle');
   const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
   const t=doc.keys[1].time;
@@ -116,13 +117,58 @@ describe('applyPoseAt',()=>{
   const report=applyPoseAt(doc,wide,t,origin);
   expect(report?.result).toBe('replaced');
   expect(report?.heldFoot).toEqual(['L','R']);
-  // Foot targets untouched, upper body applied.
+  // Locked channels (target x/y/z, yaw, pitch) keep the key's own values…
   expect(doc.keys[1].pose.footL.target).toEqual(docOf('idle').keys[1].pose.footL.target);
+  expect(doc.keys[1].pose.footR.yaw).toBe(docOf('idle').keys[1].pose.footR.yaw);
+  expect(doc.keys[1].pose.footR.pitch).toBe(docOf('idle').keys[1].pose.footR.pitch);
+  // …the editable knee pole follows the stamped pose…
+  expect(doc.keys[1].pose.footL.pole.x).toBeCloseTo(wide.footL.pole.x,9);
+  // …and the upper body applies.
   expect(doc.keys[1].pose.root.y).toBeCloseTo(wide.root.y,9);
-  // And the SOLVED feet confirm the hold: no stance change on the real rig.
+  // The SOLVED feet confirm the hold: no stance change on the real rig.
   const after=solved(t);
   expect(after.L.distanceTo(before.L)).toBeLessThan(1e-4);
   expect(after.R.distanceTo(before.R)).toBeLessThan(1e-4);
+ });
+ it('holds the liftoff boundary too: a released key right after a planted run inherits the contact',()=>{
+  // contactPlan pins the released key's instant to the run contact, so the
+  // same honesty rule applies as for planted run members. The other foot
+  // (free on both keys) is written and really moves.
+  const doc=docOf('idle');
+  doc.keys[0].constraints.plantR=false; // R free on both keys
+  doc.keys[1].constraints.plantL=false; // L: planted → released (liftoff)
+  doc.keys[1].constraints.plantR=false;
+  const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
+  const t=doc.keys[1].time;
+  const solved=(time:number)=>{
+   rig.reset();solveEffectiveFrame(rig,frameAt(doc,time,origin));
+   return {L:rig.point('foot_L').clone(),R:rig.point('foot_R').clone()};
+  };
+  const before=solved(t);
+  const report=applyPoseAt(doc,wide,t,origin);
+  expect(report?.heldFoot).toEqual(['L']);
+  // L keeps its locked channels and gains the pole; R takes the wide target.
+  expect(doc.keys[1].pose.footL.target.x).toBeCloseTo(docOf('idle').keys[1].pose.footL.target.x,9);
+  expect(doc.keys[1].pose.footL.pole.x).toBeCloseTo(wide.footL.pole.x,9);
+  expect(doc.keys[1].pose.footR.target.x).toBeCloseTo(wide.footR.target.x,9);
+  const after=solved(t);
+  expect(after.L.distanceTo(before.L)).toBeLessThan(1e-4);
+  expect(after.R.x).toBeCloseTo(wide.footR.target.x,2);
+ });
+ it('fully planted loop: key 0 is the run anchor and stays editable',()=>{
+  // contactPlan forces key 0 to anchor a fully planted loop (`s<0?0:s`) —
+  // writing its target re-anchors the whole run, so it must not be held
+  // even though its cyclic predecessor is planted.
+  const doc=blankDocument(rig.rest,'循环锚点','loop-anchor');
+  doc.duration=1.2;doc.loop=true;
+  expect(doc.keys.every(k=>k.constraints.plantL&&k.constraints.plantR)).toBe(true);
+  const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
+  const report=applyPoseAt(doc,wide,0,origin);
+  expect(report?.heldFoot).toEqual([]);
+  expect(doc.keys[0].pose.footL.target.x).toBeCloseTo(wide.footL.target.x,9);
+  rig.reset();solveEffectiveFrame(rig,frameAt(doc,0,origin));
+  expect(rig.point('foot_L').x).toBeCloseTo(wide.footL.target.x,2);
+  expect(rig.point('foot_R').x).toBeCloseTo(wide.footR.target.x,2);
  });
  it('writes foot targets on free feet: the solved feet take the new stance',()=>{
   // Both keys released: no support run anywhere, so the written targets are

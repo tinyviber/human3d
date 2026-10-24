@@ -1,4 +1,4 @@
-import type {PoseParams,V3,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
+import type {FootTarget,PoseParams,V3,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
 import {ensureKey,nearestKey,sortedKeys,WORKSHOP_LIMITS} from '@human3d/motion-core';
 import type {Vector3} from 'three';
 
@@ -62,11 +62,11 @@ export class PoseLibrary{
 
 /** What applying a pose at `time` did: the playhead key was overwritten in
  * place ('replaced') or a new key carrying the pose was inserted ('inserted').
- * `heldFoot` lists the sides whose foot targets were NOT written: on a
- * non-anchor planted key (previous key planted too) contactPlan pins the foot
- * channels to the support run's anchor, so writing them would promise a pose
- * the solver silently keeps at the old contact. The rest of the pose (spine,
- * hands, root) still applies; the hint says which foot was held. */
+ * `heldFoot` lists the sides whose foot target/yaw/pitch were NOT written:
+ * contactPlan pins those channels to the support run's anchor on a held key,
+ * so writing them would promise a pose the solver silently keeps at the old
+ * contact. The knee pole is NOT locked and still applies, as do root, spine
+ * and hands. */
 export interface PoseApplyReport{result:'replaced'|'inserted';heldFoot:('L'|'R')[]}
 /** Write `pose` onto the key at the playhead: an existing key within the
  * insert tolerance is overwritten; otherwise a new key is inserted (undefined
@@ -81,35 +81,55 @@ export function applyPoseAt(doc:WorkshopDoc,pose:PoseParams,time:number,origin:V
   const insertedLen=doc.keys.length;
   const key=existing??ensureKey(doc,t,origin,tolerance);
   if(!key)return undefined;
+  const heldFoot=stampPoseIntoKey(doc,key,pose);
+  return {result:existing?'replaced':doc.keys.length>insertedLen?'inserted':'replaced',heldFoot};
+}
+/** Stamp `pose` onto an existing key, skipping the foot target/yaw/pitch of
+ * held sides (see footHeldByRun) while still applying their knee pole —
+ * contactPlan locks target/yaw/pitch only. Everything else applies verbatim.
+ * Returns the held sides so the UI can say what did not move. */
+export function stampPoseIntoKey(doc:WorkshopDoc,key:WorkshopKey,pose:PoseParams):('L'|'R')[]{
   const stamped=JSON.parse(JSON.stringify(pose)) as PoseParams;
   const heldFoot=(['L','R'] as const).filter(side=>{
     if(!footHeldByRun(doc,key,side))return false;
     const f=side==='L'?key.pose.footL:key.pose.footR;
     const next=side==='L'?stamped.footL:stamped.footR;
-    // Only worth reporting (and only dishonest to write) when the pose
-    // actually tries to move that foot somewhere else.
+    // Only a real attempted move is held (and worth reporting): a stamp that
+    // agrees with the key's authored channels changes nothing anyway.
     if(Math.abs(next.target.x-f.target.x)<1e-3&&Math.abs(next.target.y-f.target.y)<1e-3
-     &&Math.abs(next.target.z-f.target.z)<1e-3&&Math.abs(next.yaw-f.yaw)<1e-3)return false;
-    delete (stamped as Partial<Record<'footL'|'footR',unknown>>)[side==='L'?'footL':'footR'];
+     &&Math.abs(next.target.z-f.target.z)<1e-3&&Math.abs(next.yaw-f.yaw)<1e-3
+     &&Math.abs(next.pitch-f.pitch)<1e-3)return false;
+    // Keep the key's locked channels, apply the editable pole.
+    const held:FootTarget={target:f.target,pole:next.pole,yaw:f.yaw,pitch:f.pitch};
+    stamped[side==='L'?'footL':'footR']=held;
     return true;
   });
-  // A held foot keeps its current target object: merge the stamped pose over
-  // the key's own feet instead of assigning the (possibly foot-less) stamp.
+  // Merge over the key's own pose so a held foot keeps its current channels.
   const merged=JSON.parse(JSON.stringify(key.pose)) as PoseParams;
   Object.assign(merged,stamped);
   key.pose=merged;
-  return {result:existing?'replaced':doc.keys.length>insertedLen?'inserted':'replaced',heldFoot};
+  return heldFoot;
 }
 
-/** True when contactPlan pins `key`'s `side` foot channels to the support
- * run's anchor (the key is planted and the adjacent key before it is planted
- * too — cyclically across the loop seam). An anchor key (first planted after
- * a free one) is exempt: writing its target re-anchors the run, which is the
- * same visible semantics as dragging the foot handle on that key. */
+/** True when contactPlan pins `key`'s `side` foot channels (target, yaw,
+ * pitch) to a support run's anchor — the authored channels are fully
+ * discarded there, for interpolation too. Two cases, both covered by "the
+ * adjacent key before this one is planted":
+ * - a planted run member that is not the run's anchor (previous key planted
+ *   too): the run keeps the anchor's contact;
+ * - the liftoff boundary right AFTER a planted run: the released key's
+ *   instant inherits the run contact.
+ * Anchor keys are exempt — writing their target re-anchors the run, the same
+ * visible semantics as dragging the foot handle there. On a fully planted
+ * loop contactPlan forces key 0 to be that anchor (`s<0?0:s`), so key 0
+ * stays editable even though its cyclic predecessor is planted. */
 function footHeldByRun(doc:WorkshopDoc,key:WorkshopKey,side:'L'|'R'):boolean{
-  if(!key.constraints[side==='L'?'plantL':'plantR'])return false;
+  const flag=side==='L'?'plantL':'plantR';
   const keys=sortedKeys(doc),i=keys.indexOf(key);
   if(i<0)return false;
   const prev=doc.loop&&i===0?keys[keys.length-1]:keys[i-1];
-  return !!prev&&prev.constraints[side==='L'?'plantL':'plantR'];
+  if(!prev||!prev.constraints[flag])return false;
+  const allPlanted=doc.loop&&keys.length>1&&keys.every(k=>k.constraints[flag]);
+  const isAnchor=key.constraints[flag]&&allPlanted&&i===0;
+  return !isAnchor;
 }
