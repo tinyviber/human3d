@@ -6,7 +6,7 @@ import {HumanRig} from '@human3d/motion-core';
 import {attachRacket,gripFrame,RACKET_HANDLE} from '@human3d/motion-core';
 import {angleAt,DEG} from '@human3d/motion-core';
 import {blankDocument,defaultDocument,ensureKey,flattenPose,frameAt,parseDoc,retimeKeys,samplePose,serializeDoc,setKeyTime,sortedKeys,TANGENT_SECANT_CAP,toV,unflattenPose,validateDocShape,type PoseParams,type WorkshopDoc,type WorkshopKey} from '@human3d/motion-core';
-import {LIBRARY_KEY,MotionLibrary,WORKSHOP_PRESETS,type StorageLike} from './library';
+import {LIBRARY_KEY,MotionLibrary,SAVED_MOTION_PREFIX,savedMotionSpec,WORKSHOP_PRESETS,type StorageLike} from './library';
 import {DocHistory,HistoryBook,RecordGate} from './history';
 import {WORKSHOP_LIMITS} from '@human3d/motion-core';
 import {MOTION_FILES} from '@human3d/motion-core';
@@ -405,6 +405,25 @@ describe('motion library',()=>{
  it('seeds with the example forehand on first run',()=>{
   const l=lib(memStorage());
   expect(l.docs.length).toBe(1);expect(l.active().id).toBe('forehand-workshop');
+ });
+ it('reads saved documents without writing, seeding or replacing quarantined data',()=>{
+  const store=memStorage();
+  expect(new MotionLibrary(rig.rest,store).load({readOnly:true}).docs).toEqual([]);expect(store.map.size).toBe(0);
+  const l=lib(store),doc=l.create('我的动作');doc.keys[0].pose.lean=13;l.save();const raw=store.map.get(LIBRARY_KEY);
+  const read=new MotionLibrary(rig.rest,store).load({readOnly:true});expect(read.docs.find(d=>d.id===doc.id)?.keys[0].pose.lean).toBe(13);expect(store.map.get(LIBRARY_KEY)).toBe(raw);
+  store.map.set(LIBRARY_KEY,'{broken');const quarantined=new MotionLibrary(rig.rest,store).load({readOnly:true});expect(quarantined.docs).toEqual([]);expect(quarantined.quarantine[0].raw).toBe('{broken');expect(store.map.get(LIBRARY_KEY)).toBe('{broken');
+ });
+ it('can delete the last saved motion without adding a replacement to the lab library',()=>{
+  const store=memStorage(),l=lib(store),old=l.active().id;l.remove(old,false);
+  expect(new MotionLibrary(rig.rest,store).load({readOnly:true}).docs).toEqual([]);
+  const workshop=new MotionLibrary(rig.rest,store).load();expect(workshop.docs).toHaveLength(1);expect(workshop.active().id).not.toBe(old);expect(workshop.active().keys).toHaveLength(2);
+ });
+ it('derives playback metadata and identity from the saved document without changing its keys',()=>{
+  const l=lib(memStorage()),doc=l.create('左手动作');doc.id='forehand';doc.gripSide='L';doc.keys[0].constraints.grip=true;
+  const before=serializeDoc(doc),spec=savedMotionSpec(doc);
+  expect(spec.id).toBe(SAVED_MOTION_PREFIX+'forehand');expect(spec.id).not.toBe('forehand');expect(spec.name).toBe(doc.name);expect(spec.oneShot).toBe(!doc.loop);
+  expect(spec.source).toEqual({kind:'document',document:doc});expect(spec.capabilities?.prop?.side).toBe('L');expect(spec.phases).toEqual(sortedKeys(doc).map(k=>({time:k.time,label:k.label||'关键帧'})));
+  expect(serializeDoc(doc)).toBe(before);
  });
  it('reorders documents and persists the new order',()=>{
   const store=memStorage(), l=lib(store);

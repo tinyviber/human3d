@@ -295,3 +295,9 @@
 .ws-handoff{background:var(--accent-soft);border-color:color-mix(in srgb,var(--blue) 32%,var(--line))}
 .ws-handoff .ws-handoff-name{font-size:13px;font-weight:600;margin-top:2px}
 .ws-handoff .ws-row{margin-top:10px}
+
+.ws-feedback{position:fixed;top:76px;left:50%;transform:translateX(-50%);z-index:60;display:flex;align-items:center;gap:12px;width:max-content;max-width:min(560px,calc(100vw - 24px));padding:8px 10px 8px 16px;border:1px solid var(--line);border-radius:12px;background:var(--card);box-shadow:var(--shadow);color:var(--fg-2);font-size:12px;line-height:1.6}
+.ws-feedback span{min-width:0;overflow-wrap:anywhere}
+.ws-feedback button{flex:0 0 36px;min-height:36px;display:grid;place-items:center;border-radius:8px;background:var(--pill)}
+.ws-feedback-error{color:var(--red);border-color:var(--red)}
+.ws-compact .ws-feedback{top:54px}
