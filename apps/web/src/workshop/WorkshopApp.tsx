@@ -11,7 +11,7 @@ import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human
 import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
-import {applyPoseAt,PoseLibrary,stampPoseIntoKey,type PoseApplyReport,type UserPosePreset} from './pose-library';
+import {applyPoseAt,PoseLibrary,stampPoseIntoKey,type PoseApplyReport,type PoseStampReport,type UserPosePreset} from './pose-library';
 import {HistoryBook,RecordGate} from './history';
 import {SemanticPanel,type SemanticHost} from './semantic-panel';
 import {copyKeyframe,keyframeInsertSlot,keyframeTimeProblem,moveKeyframe,removeKeyframe} from './keyframes';
@@ -444,8 +444,10 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   let report:PoseApplyReport|undefined;
   editKeyStructure(doc=>{report=applyPoseAt(doc,p.pose,time,e.restRoot());});
   if(!report){setHint('应用失败：请调整时刻后重试。');return;}
-  const held=report.heldFoot.length?`；${report.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点、膝盖方向已更新（要移动支撑脚请先释放该帧支撑）`:'';
-  setHint(`${report.result==='replaced'?`已把当前帧姿态替换为「${p.name}」（约束不变）`:`已在播放头插入「${p.name}」姿态帧`}，可撤销${held}。`);
+  const notes=[];
+  if(report.heldFoot.length)notes.push(`${report.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点、膝盖方向已更新（要移动支撑脚请先释放该帧支撑）`);
+  if(report.liftoffFoot.length)notes.push(`${report.liftoffFoot.map(s=>s==='L'?'左':'右').join('、')}脚是离地边界：离地瞬间仍从原接触点起步，新目标塑造离地后的摆动路径`);
+  setHint(`${report.result==='replaced'?`已把当前帧姿态替换为「${p.name}」（约束不变）`:`已在播放头插入「${p.name}」姿态帧`}，可撤销${notes.length?`；${notes.join('；')}`:''}。`);
  };
  const removeUserPose=(id:string)=>{
   const p=poseLib.current!.presets.find(x=>x.id===id);if(!p)return;
@@ -460,14 +462,21 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  };
  const pastePose=()=>{
   const k=sel,src=poseClipboard.current;
-  if(!k||!src)return;
-  const box:{held:(('L'|'R'))[]}={held:[]};
-  edit(doc=>{
+  if(!k||!src||generationLocked.current)return;
+  const e=engine.current;
+  const box:{stamp:PoseStampReport}={stamp:{heldFoot:[],liftoffFoot:[]}};
+  // Locate + re-solve like editAtKey so the paste is immediately visible,
+  // and one structural undo step per paste (no gate merging of rapid pastes).
+  e?.setPlaying(false);e?.seek(k.time);
+  editKeyStructure(doc=>{
    const key=keyAt(doc,k.id)!;
-   box.held=stampPoseIntoKey(doc,key,src);
+   box.stamp=stampPoseIntoKey(doc,key,src);
   });
-  const held=box.held.length?`；${box.held.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点（膝盖方向已随粘贴更新）`:'';
-  setHint(`已把复制的姿态粘贴到选中关键帧（可撤销）${held}。`);
+  setSelected(k.id);e?.solveCurrent();
+  const parts=[];
+  if(box.stamp.heldFoot.length)parts.push(`${box.stamp.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点、膝盖方向已更新（要移动支撑脚请先释放该帧支撑）`);
+  if(box.stamp.liftoffFoot.length)parts.push(`${box.stamp.liftoffFoot.map(s=>s==='L'?'左':'右').join('、')}脚是离地边界：离地瞬间仍从原接触点起步，新目标塑造离地后的摆动路径`);
+  setHint(`已把复制的姿态粘贴到「${k.label||'关键帧'}」并定位到该帧（可撤销）${parts.length?`；${parts.join('；')}`:''}。`);
  };
  /** In-place mirror of the selected key's pose (left/right hands, feet and
   * plant flags swap) — the per-key half of 镜像动作, one undo step. Refused

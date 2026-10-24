@@ -2,7 +2,7 @@ import {beforeAll,describe,expect,it} from 'vitest';
 import fs from 'node:fs';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import type {WorkshopDoc} from '@human3d/motion-core';
-import {HumanRig,blankDocument,frameAt,motionFileById,solveEffectiveFrame} from '@human3d/motion-core';
+import {HumanRig,blankDocument,frameAt,motionFileById,sortedKeys,solveEffectiveFrame} from '@human3d/motion-core';
 import {applyPoseAt,isPoseShape,PoseLibrary,type StorageLike} from './pose-library';
 
 const docOf=(id:string)=>structuredClone(motionFileById(id)!.document!) as WorkshopDoc;
@@ -130,30 +130,69 @@ describe('applyPoseAt',()=>{
   expect(after.L.distanceTo(before.L)).toBeLessThan(1e-4);
   expect(after.R.distanceTo(before.R)).toBeLessThan(1e-4);
  });
- it('holds the liftoff boundary too: a released key right after a planted run inherits the contact',()=>{
-  // contactPlan pins the released key's instant to the run contact, so the
-  // same honesty rule applies as for planted run members. The other foot
-  // (free on both keys) is written and really moves.
+ it('liftoff boundary: the instant stays pinned but the written target steers the mid-swing',()=>{
+  // A released key right after a planted run inherits the run contact AT its
+  // instant, while interpolate() reads its stored target as the mid-swing
+  // waypoint of the following interval — so the stamped target must be
+  // APPLIED (it shapes the swing), with the instant still pinned.
   const doc=docOf('idle');
   doc.keys[0].constraints.plantR=false; // R free on both keys
   doc.keys[1].constraints.plantL=false; // L: planted → released (liftoff)
   doc.keys[1].constraints.plantR=false;
   const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
   const t=doc.keys[1].time;
+  const nextT=sortedKeys(doc).find(k=>k.time>t)!.time,mid=(t+nextT)/2;
   const solved=(time:number)=>{
    rig.reset();solveEffectiveFrame(rig,frameAt(doc,time,origin));
    return {L:rig.point('foot_L').clone(),R:rig.point('foot_R').clone()};
   };
-  const before=solved(t);
+  const instantBefore=solved(t),midBefore=solved(mid);
   const report=applyPoseAt(doc,wide,t,origin);
-  expect(report?.heldFoot).toEqual(['L']);
-  // L keeps its locked channels and gains the pole; R takes the wide target.
-  expect(doc.keys[1].pose.footL.target.x).toBeCloseTo(docOf('idle').keys[1].pose.footL.target.x,9);
+  expect(report?.heldFoot).toEqual([]);
+  expect(report?.liftoffFoot).toEqual(['L']);
+  // The waypoint IS written (the swing after liftoff depends on it)…
+  expect(doc.keys[1].pose.footL.target.x).toBeCloseTo(wide.footL.target.x,9);
   expect(doc.keys[1].pose.footL.pole.x).toBeCloseTo(wide.footL.pole.x,9);
+  // …the liftoff instant stays at the old contact…
+  const instantAfter=solved(t);
+  expect(instantAfter.L.distanceTo(instantBefore.L)).toBeLessThan(1e-4);
+  // …and the mid-swing position really moved toward the new waypoint.
+  const midAfter=solved(mid);
+  expect(midAfter.L.x).toBeCloseTo(wide.footL.target.x,2);
+  expect(midAfter.L.distanceTo(midBefore.L)).toBeGreaterThan(.1);
+  // R is free on both keys: written and effective at the key instant.
   expect(doc.keys[1].pose.footR.target.x).toBeCloseTo(wide.footR.target.x,9);
-  const after=solved(t);
-  expect(after.L.distanceTo(before.L)).toBeLessThan(1e-4);
-  expect(after.R.x).toBeCloseTo(wide.footR.target.x,2);
+  expect(instantAfter.R.x).toBeCloseTo(wide.footR.target.x,2);
+ });
+ it('planted → released → free: instant pinned, half-swing follows the new waypoint',()=>{
+  // The reviewer's exact shape: three keys, L planted on k0 only. Applying a
+  // moving target to k1 writes the mid-swing waypoint; the regression
+  // compares the HALF-SWING solved foot position before and after, not just
+  // the boundary instant.
+  const doc=blankDocument(rig.rest,'摆动','swing');
+  doc.duration=1.2;
+  doc.keys[0].time=0;doc.keys[1].time=.6;
+  const k2={...structuredClone(doc.keys[1]),id:'swing-c',time:1.2};
+  doc.keys.push(k2);
+  doc.keys[0].pose.footL.target={x:.135,y:.07364609611413336,z:.063};
+  doc.keys[0].constraints.plantR=false; // R free everywhere: keep the case on L
+  doc.keys[1].constraints.plantL=false; // L: planted → released → free
+  doc.keys[1].constraints.plantR=false;
+  doc.keys[2].constraints.plantL=false;
+  doc.keys[2].constraints.plantR=false;
+  const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
+  const solved=(time:number)=>{
+   rig.reset();solveEffectiveFrame(rig,frameAt(doc,time,origin));
+   return rig.point('foot_L').clone();
+  };
+  const instantBefore=solved(.6),midBefore=solved(.9);
+  const report=applyPoseAt(doc,wide,.6,origin);
+  expect(report?.liftoffFoot).toEqual(['L']);
+  expect(report?.heldFoot).toEqual([]);
+  // Instant pinned to the old contact; half-swing reaches the new waypoint.
+  expect(solved(.6).distanceTo(instantBefore)).toBeLessThan(1e-4);
+  expect(solved(.9).x).toBeCloseTo(wide.footL.target.x,2);
+  expect(solved(.9).distanceTo(midBefore)).toBeGreaterThan(.1);
  });
  it('fully planted loop: key 0 is the run anchor and stays editable',()=>{
   // contactPlan forces key 0 to anchor a fully planted loop (`s<0?0:s`) —
@@ -165,6 +204,7 @@ describe('applyPoseAt',()=>{
   const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
   const report=applyPoseAt(doc,wide,0,origin);
   expect(report?.heldFoot).toEqual([]);
+  expect(report?.liftoffFoot).toEqual([]);
   expect(doc.keys[0].pose.footL.target.x).toBeCloseTo(wide.footL.target.x,9);
   rig.reset();solveEffectiveFrame(rig,frameAt(doc,0,origin));
   expect(rig.point('foot_L').x).toBeCloseTo(wide.footL.target.x,2);
