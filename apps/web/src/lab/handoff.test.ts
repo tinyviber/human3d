@@ -6,34 +6,35 @@ describe('workshopEditability',()=>{
  it('offers navigation for bundled workshop-document motions, carrying the motion id',()=>{
   const forehand=MOTIONS.find(m=>m.id==='forehand')!;
   expect(forehand.source?.kind).toBe('document');
-  expect(workshopEditability(forehand)).toEqual({editable:true,url:'/workshop.html?from=forehand'});
+  expect(workshopEditability(forehand)).toEqual({editable:true,url:'/workshop.html?from=forehand',reason:''});
  });
  it('covers every editable motion with a from-parameterized url',()=>{
   const editable=MOTIONS.filter(m=>m.source?.kind==='document');
   expect(editable.length).toBeGreaterThan(20);
   for(const m of editable)
-   expect(workshopEditability(m)).toEqual({editable:true,url:`/workshop.html?from=${encodeURIComponent(m.id)}`});
+   expect(workshopEditability(m)).toEqual({editable:true,url:`/workshop.html?from=${encodeURIComponent(m.id)}`,reason:''});
  });
- it('explains the limitation for the dynamics replay, external clip and pose-package sources',()=>{
-  const throwMotion=MOTIONS.find(m=>m.id==='baseball-throw')!;
-  expect(throwMotion.source?.kind).toBe('dynamics');
-  const why=workshopEditability(throwMotion);
-  expect(why.editable).toBe(false);
-  if(!why.editable)expect(why.reason).toContain('肌骨正向仿真');
-
-  const walk=MOTIONS.find(m=>m.id==='walk')!;
-  expect(walk.source?.kind).toBe('clip');
-  const walkWhy=workshopEditability(walk);
-  expect(walkWhy.editable).toBe(false);
-  if(!walkWhy.editable)expect(walkWhy.reason).toContain('外部剪辑');
-
+ it('explains the limitation AND carries context for the dynamics replay and external clip',()=>{
+  for(const [id,fragment] of [['baseball-throw','肌骨正向仿真'],['punch','肌骨正向仿真'],['walk','外部剪辑']] as const){
+   const motion=MOTIONS.find(m=>m.id===id)!;
+   const why=workshopEditability(motion);
+   expect(why.editable).toBe(false);
+   expect(why.reason).toContain(fragment);
+   // The header nav forwards the id even for non-editable motions — the
+   // workshop's external card explains the limitation there.
+   expect(why.url).toBe(`/workshop.html?from=${id}`);
+  }
+ });
+ it('does not fabricate a handoff for imported pose packages (not in the registry)',()=>{
   const pkgWhy=workshopEditability({...MOTIONS[0],id:'imported',source:{kind:'pose-package',package:{}}});
   expect(pkgWhy.editable).toBe(false);
-  if(!pkgWhy.editable)expect(pkgWhy.reason).toContain('姿态包');
+  expect(pkgWhy.reason).toContain('姿态包');
+  expect(pkgWhy.url).toBe('/workshop.html');
  });
- it('falls back to a generic explanation when the source is absent',()=>{
+ it('falls back to a generic explanation and plain url when the source is absent',()=>{
   const why=workshopEditability({...MOTIONS[0],source:undefined});
   expect(why.editable).toBe(false);
-  if(!why.editable)expect(why.reason.length).toBeGreaterThan(0);
+  expect(why.reason.length).toBeGreaterThan(0);
+  expect(why.url).toBe('/workshop.html');
  });
 });

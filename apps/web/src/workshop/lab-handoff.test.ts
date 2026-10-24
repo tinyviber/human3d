@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {MOTION_FILES} from '@human3d/motion-core';
-import {resolveLabHandoff} from './lab-handoff';
+import {handoffConsumedByCreate,resolveLabHandoff} from './lab-handoff';
 
 describe('resolveLabHandoff',()=>{
  it('resolves a bundled workshop-motion id to a preset handoff',()=>{
@@ -32,5 +32,24 @@ describe('resolveLabHandoff',()=>{
   const editable=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.document);
   expect(editable.length).toBeGreaterThan(20);
   for(const f of editable)expect(resolveLabHandoff(`?from=${encodeURIComponent(f.id)}`)?.kind).toBe('preset');
+ });
+});
+
+describe('handoffConsumedByCreate',()=>{
+ const idle=resolveLabHandoff('?from=idle')!;
+ const forehand=resolveLabHandoff('?from=forehand')!;
+ const external=resolveLabHandoff('?from=baseball-throw')!;
+ it('consumes the handoff only when the creation used the offered preset',()=>{
+  expect(handoffConsumedByCreate(forehand,'forehand')).toBe(true);
+  expect(handoffConsumedByCreate(forehand,'idle')).toBe(false);
+ });
+ it('never consumes external, unknown or absent handoffs',()=>{
+  expect(handoffConsumedByCreate(external,'baseball-throw')).toBe(false);
+  expect(handoffConsumedByCreate({kind:'unknown',id:'bogus'},'bogus')).toBe(false);
+  expect(handoffConsumedByCreate(null,'idle')).toBe(false);
+ });
+ it('covers every preset handoff against its own id',()=>{
+  const presets=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.document);
+  for(const f of presets)expect(handoffConsumedByCreate({kind:'preset',file:f},f.id)).toBe(true);
  });
 });

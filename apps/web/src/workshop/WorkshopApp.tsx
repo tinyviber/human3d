@@ -12,7 +12,7 @@ import type {WorkshopFrame} from './engine';
 import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human3d/motion-core';
 import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
-import {clearLabHandoff,resolveLabHandoff} from './lab-handoff';
+import {clearLabHandoff,handoffConsumedByCreate,resolveLabHandoff} from './lab-handoff';
 import type {LabHandoff} from './lab-handoff';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
 import {applyPoseAt,PoseLibrary,stampPoseIntoKey,type PoseApplyReport,type PoseStampReport,type UserPosePreset} from './pose-library';
@@ -352,23 +352,32 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const selectDoc=(id:string)=>{if(generationLocked.current)return;const doc=L.select(id);setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const createDoc=()=>{if(generationLocked.current)return;const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{if(generationLocked.current)return;const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
+ // Handoff actions: dismissing only clears the offer and the URL parameter.
+ // Creation — from the card button OR the regular 从预设开始 — goes through
+ // the flow below, which reconciles the offer when it creates the offered
+ // preset, so the two entry points can never leave a stale card behind.
+ const dismissHandoff=()=>{setHandoff(null);clearLabHandoff();};
  const createFromPreset=(id=presetId)=>{
-  if(generationLocked.current)return;
+  if(generationLocked.current)return undefined;
   const source=L.active();
   const doc=L.createFromPreset(id,newName);
   books.current.of(doc.id).record(source);
   gate.current.reset();setNewName('');selectDoc(doc.id);
-  setHint(`已从预设创建「${doc.name}」，可拖动手柄或调整关键帧。`);
+  const consumed=handoffConsumedByCreate(handoff,id);
+  if(consumed)dismissHandoff();
+  setHint(consumed&&compact
+   ?`已创建可编辑副本「${doc.name}」；当前是审阅模式，点上方「编辑」即可拖动手柄修改。`
+   :`已从预设创建「${doc.name}」，可拖动手柄或调整关键帧。`);
+  // Phone: the auto-raised 动作 sheet covers the 3D view — once the offered
+  // preset has been created, collapse it so the copy is actually visible.
+  // Review-first stays the default; the hint points at the 编辑 switch.
+  if(consumed&&compact)setSheet(null);
+  return doc;
  };
- // Handoff actions: creation goes through the same 从预设开始 flow — a NEW
- // document with fresh ids; the preset and every existing document stay
- // untouched. Dismissing only clears the offer and the URL parameter.
- const dismissHandoff=()=>{setHandoff(null);clearLabHandoff();};
  const acceptHandoff=()=>{
   if(!handoff||handoff.kind!=='preset'||generationLocked.current)return;
-  createFromPreset(handoff.file.id);
-  setPresetId(handoff.file.id);
-  dismissHandoff();
+  const doc=createFromPreset(handoff.file.id);
+  if(doc)setPresetId(handoff.file.id);
  };
  // Phone layout: the handoff offer lives in the 动作 sheet — raise it on entry.
  useEffect(()=>{if(compact&&handoff?.kind==='preset')setSheet('left');},[]);

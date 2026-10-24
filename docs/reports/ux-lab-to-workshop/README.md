@@ -93,6 +93,35 @@ explain the limitation in the drawer:
 - `npm run qa` scripted E2E was not run; the journeys above were driven
   manually in a real browser instead.
 
+## Rework round (review of 2026-10-24, three P2s fixed)
+
+1. **Header nav no longer drops context for non-editable bundled motions.**
+   `workshopEditability` now returns a url for every case: dynamics replays
+   and external clips still forward `?from=<id>` (the workshop's external
+   card explains the limitation there — it is reachable through the actual
+   Lab UI now); imported pose packages keep the plain url (their ids are not
+   in the registry). Verified: 行走 → header 动作工作台 → `/workshop.html?from=walk`
+   renders the explanation card.
+2. **The regular 从预设开始 consumes a matching handoff.** Creation is
+   funnelled through one flow that reconciles the offer via
+   `handoffConsumedByCreate` (new pure predicate + regression tests): when
+   the created preset is the offered one, the card clears and the URL
+   parameter is dropped — through either entry point, so no stale offer can
+   outlive the copy it offered. Verified in-browser: card visible → click
+   从预设开始 → copy created, card gone, URL clean, original doc untouched.
+3. **Phone: creation closes the auto-raised sheet.** When a creation
+   consumes the handoff on a compact screen, the 动作 sheet collapses so the
+   3D view is visible, and the hint names the next step
+   （「当前是审阅模式，点上方『编辑』即可拖动手柄修改」）— review-first default
+   preserved. Verified at 390×844: after 创建可编辑副本 the sheet class is
+   gone, both panels sit below the viewport, and hit-testing the stage
+   center returns the canvas.
+
+The component wiring itself is not unit-testable without rendering the app
+(this repo tests pure logic only), so the three interactions are verified in
+the real browser as above; the extracted predicate carries the regression
+tests the review asked for.
+
 ## Follow-up candidates
 
 - Round-trip: workshop 返回实验室 could restore the last-viewed lab motion.

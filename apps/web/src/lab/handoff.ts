@@ -5,13 +5,15 @@ import type {MotionSpec} from '@human3d/motion-core';
  * A bundled motion is workshop-editable exactly when its source is an inline
  * workshop document — those ids are the same registry the workshop's
  * WORKSHOP_PRESETS reads, so the workshop can offer a duplicate-to-edit copy
- * of precisely this motion via `?from=<id>`. Everything else (dynamics
- * replays, external clips, imported pose packages) has no workshop keys;
- * the affordance explains the limitation instead of navigating. */
+ * of precisely this motion via `?from=<id>`.
+ *
+ * Non-editable BUNDLED motions (dynamics replays, external clips) still carry
+ * their id: the workshop explains there why editing is unavailable, so the
+ * header nav never drops the context. Imported pose packages are not in the
+ * registry — navigating with their id would land on an unknown handoff, so
+ * their url stays plain. */
 
-export type WorkshopEditability =
- |{editable:true;url:string}
- |{editable:false;reason:string};
+export interface WorkshopEditability{editable:boolean;url:string;reason:string}
 
 const WHY:Partial<Record<NonNullable<MotionSpec['source']>['kind'],string>>={
  dynamics:'此动作来自肌骨正向仿真回放，暂不支持在动作工作台编辑。',
@@ -20,8 +22,10 @@ const WHY:Partial<Record<NonNullable<MotionSpec['source']>['kind'],string>>={
 };
 
 export const workshopEditability=(spec:MotionSpec):WorkshopEditability=>{
- if(spec.source?.kind==='document')
-  return {editable:true,url:`/workshop.html?from=${encodeURIComponent(spec.id)}`};
- const reason=spec.source?WHY[spec.source.kind]:undefined;
- return {editable:false,reason:reason??'此动作暂不支持在动作工作台编辑。'};
+ const kind=spec.source?.kind;
+ if(kind==='document')
+  return {editable:true,url:`/workshop.html?from=${encodeURIComponent(spec.id)}`,reason:''};
+ const reason=(kind&&WHY[kind])||'此动作暂不支持在动作工作台编辑。';
+ const bundled=(kind==='dynamics'||kind==='clip');
+ return {editable:false,url:bundled?`/workshop.html?from=${encodeURIComponent(spec.id)}`:'/workshop.html',reason};
 };

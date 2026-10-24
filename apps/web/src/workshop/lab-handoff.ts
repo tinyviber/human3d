@@ -26,6 +26,12 @@ export const resolveLabHandoff=(search:string):LabHandoff|null=>{
  return file.kind==='workshop-motion'&&file.document?{kind:'preset',file}:{kind:'external',file};
 };
 
+/** A preset creation (card button or the regular 从预设开始) reconciles the
+ * pending handoff only when it created the OFFERED preset — any other preset
+ * leaves the offer standing. */
+export const handoffConsumedByCreate=(handoff:LabHandoff|null,createdPresetId:string):boolean=>
+ handoff?.kind==='preset'&&handoff.file.id===createdPresetId;
+
 /** Drop the handoff parameter from the URL (history-only — no reload) so a
  * refresh or a shared link does not re-offer an already-handled motion. */
 export const clearLabHandoff=()=>{
