@@ -17,7 +17,7 @@
 .ws-viewport{height:100%}
 .ws-viewport{flex:1;min-width:320px}
 .ws-left,.ws-right{background:var(--surface);overflow-y:auto;padding:18px 16px;display:flex;flex-direction:column;gap:14px;scrollbar-width:thin}
-.ws-left{border-right:1px solid var(--line)}
+.ws-left{border-right:1px solid var(--line);background:var(--panel)}
 .ws-right{border-left:1px solid var(--line)}
 .ws-card{background:var(--card);border:1px solid var(--line);border-radius:8px;padding:14px 15px}
 .ws-key-card{display:flex;flex:0 0 auto;flex-direction:column;min-height:0}
@@ -148,7 +148,7 @@
 .ws-checks>div{display:flex;align-items:center;gap:7px;font-size:10px;padding:4px 0;color:var(--green)}
 .ws-checks>div.warn{color:var(--red)}
 .ws-checks small{margin-left:auto;color:var(--muted);font-variant-numeric:tabular-nums}
-.ws-footer{background:var(--card);border-top:1px solid var(--line);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:18px;padding:12px 22px}
+.ws-footer{background:var(--panel);border-top:1px solid var(--line);display:grid;grid-template-columns:auto minmax(0,1fr) auto;align-items:center;gap:18px;padding:12px 22px}
 .ws-transport{display:flex;align-items:center;gap:10px}
 .ws-transport button{width:36px;height:36px;border-radius:50%;display:grid;place-items:center;border:1px solid var(--line);color:var(--fg-2)}
 .ws-transport .ws-play{width:46px;height:46px;background:var(--blue);color:var(--accent-fg);border:0;}
@@ -166,8 +166,8 @@
 .ws-key::after{content:'';position:absolute;left:50%;top:50%;width:13px;height:13px;margin:-6.5px 0 0 -6.5px;background:var(--card);border:2px solid var(--blue);border-radius:3px;transform:rotate(45deg);box-sizing:border-box}
 .ws-key.sel{z-index:3}
 .ws-key.sel::after{background:var(--blue)}
-.ws-key.contact::after{border-color:#f0b429}
-.ws-key.contact.sel::after{background:#f0b429}
+.ws-key.contact::after{border-color:var(--contact)}
+.ws-key.contact.sel::after{background:var(--contact)}
 .ws-track{touch-action:none}
 .ws-track-labels{position:relative;height:22px;margin-top:6px}
 .ws-track-labels button{position:absolute;transform:translateX(-50%);max-width:90px;overflow:hidden;text-overflow:ellipsis;font-size:9px;color:var(--muted);white-space:nowrap;padding:2px 4px;border-radius:3px}

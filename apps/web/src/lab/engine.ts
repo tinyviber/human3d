@@ -67,7 +67,7 @@ export class HumanEngine{
   const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.set(2048,2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
   const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
   const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);this.floor=floor;
-  const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;const gm=grid.material as LineBasicMaterial;gm.transparent=true;gm.opacity=.45;this.scene.add(grid);this.grid=grid;
+  const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;const gm=grid.material as LineBasicMaterial;gm.transparent=true;gm.opacity=.34;this.scene.add(grid);this.grid=grid;
   this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.enableDamping=true;this.controls.dampingFactor=.08;this.controls.target.set(0,.88,0);this.controls.minDistance=.3;this.controls.maxDistance=8;this.controls.maxPolarAngle=Math.PI*.49;this.controls.enablePan=true;this.camera.position.set(0,1.05,3.6);
   this.controls.addEventListener('start',()=>{this.view='free';this.onView?.('free');});
   this.scene.add(this.jointGroup,this.axesGroup,this.targetGroup);this.jointGroup.visible=false;this.axesGroup.visible=false;this.targetGroup.visible=false;

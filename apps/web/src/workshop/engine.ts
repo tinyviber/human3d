@@ -184,7 +184,7 @@ export class WorkshopEngine{
     const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.setScalar(coarse?1024:2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
     const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
     const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);
-    const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;(grid.material as LineBasicMaterial).transparent=true;(grid.material as LineBasicMaterial).opacity=.45;this.scene.add(grid);
+    const grid=new GridHelper(200,800,0xc3cbd5,0xd8dfe8);grid.position.y=-.007;(grid.material as LineBasicMaterial).transparent=true;(grid.material as LineBasicMaterial).opacity=.34;this.scene.add(grid);
     this.controls=new OrbitControls(this.camera,this.renderer.domElement);this.controls.enableDamping=true;this.controls.dampingFactor=.08;this.controls.target.set(0,.9,0);this.controls.minDistance=.3;this.controls.maxDistance=8;this.controls.maxPolarAngle=Math.PI*.52;this.camera.position.set(0,1.15,3.4);
     this.controls.addEventListener('start',()=>{this.view='free';});
     this.scene.add(this.handleGroup);
