@@ -1,5 +1,6 @@
 import {webPlatform} from '../platform/platform';
-import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
+import {useMediaMatches} from '../lib/use-media';
+import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {Group,Panel,Separator} from 'react-resizable-panels';
@@ -35,7 +36,7 @@ type GenerationProgress=MotionGenProgress|{evals:0;maxEvals:number;phase:'loadin
 /** Phone / short-landscape layout. Mirrors the CSS breakpoint in workshop.css. */
 const COMPACT_QUERY='(max-width: 760px), (pointer: coarse) and (max-height: 540px)';
 function useMedia(query:string){
- return useSyncExternalStore(cb=>{const m=globalThis.matchMedia?.(query);m?.addEventListener('change',cb);return()=>m?.removeEventListener('change',cb);},()=>globalThis.matchMedia?.(query).matches??false);
+ return useMediaMatches(query);
 }
 /** Session-only review note (issue #23 PR-D): never written into WorkshopDoc. */
 interface ReviewNote{id:string;docId:string;keyId:string;keyLabel:string;time:number;view:string;part:string;issue:string;text:string}

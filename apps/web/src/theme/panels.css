@@ -24,7 +24,7 @@
  .lab-compact.app-shell{height:100dvh;min-height:0;overflow:hidden}
  .lab-compact .workspace{display:block;position:relative;flex:1;min-height:0;overflow:hidden}
  .lab-compact #lab-stage{position:absolute;inset:0;height:auto;min-height:0}
- .lab-compact .header{height:52px;padding:0 max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left))}
+ .lab-compact .header{height:auto;min-height:52px;padding:calc(env(safe-area-inset-top) + 8px) max(12px,env(safe-area-inset-right)) 0 max(12px,env(safe-area-inset-left))}
  .lab-compact .header .brand h1{display:none}
  .lab-compact .header nav{gap:2px}
  .lab-compact .header nav button{padding:6px 8px;font-size:12px}
@@ -60,3 +60,5 @@
 /* desktop: the sheet bar and the in-sheet import button are compact-only */
 .lab-sheetbar{display:none}
 .pkg-import{display:none}
+/* the in-sheet import error (compact library sheet) */
+.pkg-error{color:var(--red);font-size:11.5px;margin:4px 2px 0}

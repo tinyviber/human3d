@@ -1,5 +1,6 @@
 import {webPlatform} from '../platform/platform';
-import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
+import {useMediaMatches} from '../lib/use-media';
+import {useEffect,useRef,useState} from 'react';
 import {Group, Panel, Separator} from 'react-resizable-panels';
 import {motion, useReducedMotion} from 'motion/react';
 import {Activity,ArrowUpRight,ChevronRight,Expand,Info,Layers,Pause,Play,RotateCcw,Scan,SlidersHorizontal,X} from 'lucide-react';
@@ -15,7 +16,7 @@ const format=(time:number)=>{const tenths=Math.round(time*10);return `${Math.flo
 /** Mirrors the CSS breakpoint in panels.css: phones get the drawer layout
  * (viewport-first + bottom sheets) instead of the stacked scrolling page. */
 const COMPACT_QUERY='(max-width: 760px)';
-const useCompact=()=>useSyncExternalStore(cb=>{const m=matchMedia(COMPACT_QUERY);m.addEventListener('change',cb);return()=>m.removeEventListener('change',cb);},()=>matchMedia(COMPACT_QUERY).matches);
+const useCompact=()=>useMediaMatches(COMPACT_QUERY);
 function Toggle({label,checked,onChange,detail,disabled}:{label:string;checked:boolean;onChange:(v:boolean)=>void;detail?:string;disabled?:boolean}){
  return <label className="toggle-row"><span>{label}{detail?<small>{detail}</small>:null}</span><Switch aria-label={label} checked={checked} disabled={disabled} onCheckedChange={onChange}/></label>;
 }
@@ -64,7 +65,7 @@ export function App(){
    // Same artifact id → the fresh spec REPLACES the stored entry: a tampered
    // package can reuse an id with different name/capabilities, and keeping
    // the old object would display the stale envelope.
-   if(spec){setExtras(x=>x.some(m=>m.id===spec.id)?x.map(m=>m.id===spec.id?spec:m):[...x,spec]);setId(spec.id);setError('');}
+   if(spec){setExtras(x=>x.some(m=>m.id===spec.id)?x.map(m=>m.id===spec.id?spec:m):[...x,spec]);setId(spec.id);setError('');setSheet(null);}
   }catch(err){setError(err instanceof Error?err.message:String(err));}
  };
  useEffect(()=>{
@@ -84,7 +85,7 @@ export function App(){
  return <motion.div className={`app-shell${compact?' lab-compact':''}${sheet==='library'?' lab-sheet-library':''}${sheet==='inspector'?' lab-sheet-inspector':''}`} initial={reduce?false:{opacity:0}} animate={{opacity:1}} transition={{duration:reduce?0:.18,ease:[0.2,0.8,0.2,1]}}>
   <header className="header"><div className="brand"><Activity size={27} strokeWidth={2}/><span>KINESIS</span><i/><h1>人体运动实验室</h1></div><nav><Button variant="ghost" onClick={()=>fileRef.current?.click()}>打开姿态包</Button><input ref={fileRef} type="file" accept=".json,application/json" style={{display:'none'}} onChange={e=>{const f=e.target.files?.[0];e.target.value='';if(f)void openPackage(f);}}/><Button variant="ghost" onClick={()=>webPlatform.navigate('/workshop.html')}>动作工作台</Button><Button variant="ghost" onClick={()=>setDialog('guide')}>使用指南</Button><Button variant="ghost" onClick={()=>setDialog('sources')}>资料与许可<ArrowUpRight size={14}/></Button></nav></header>
   <Group orientation="horizontal" className="workspace" id="lab-panes">
-   <Panel id="lab-library" className="motion-panel" aria-label="动作库" defaultSize={252} minSize={200} maxSize={420}><div className="panel-heading"><h2>动作库</h2><button className="pkg-import" onClick={()=>fileRef.current?.click()}>导入姿态包</button><span>{String(allMotions.length).padStart(2,'0')}</span></div><p className="panel-intro">探索人体，理解运动。</p>
+   <Panel id="lab-library" className="motion-panel" aria-label="动作库" defaultSize={252} minSize={200} maxSize={420}><div className="panel-heading"><h2>动作库</h2><button className="pkg-import" onClick={()=>fileRef.current?.click()}>导入姿态包</button><span>{String(allMotions.length).padStart(2,'0')}</span></div>{sheet==='library'&&error?<p className="pkg-error" role="alert">{error}</p>:null}<p className="panel-intro">探索人体，理解运动。</p>
     <div className="motion-list">{allMotions.map((m,i)=><button key={m.id} className={`motion-row ${id===m.id?'selected':''}`} aria-pressed={id===m.id} onClick={()=>choose(m.id)} disabled={!info}><span className="motion-number">{String(i+1).padStart(2,'0')}</span><span className="motion-label">{m.name}<small>{m.english}</small></span>{id===m.id?<ChevronRight size={16}/>:null}</button>)}</div>
     <div className="motion-notes"><div className="mini-heading">观察重点</div><p>{spec.description}</p><div className="focus-list">{spec.focus.map(f=><span key={f}>{f}</span>)}</div></div>
     <div className="asset-note"><Layers size={17}/><div>{physics?'肌骨正向仿真 · 连续蒙皮表面':'连续蒙皮人体'}<small>{physics?'44 个关节自由度 + 6 个根速度自由度 · 416 肌肉执行器':info?`${info.bones.length} 根骨骼 · ${Math.round(info.vertices/1000*10)/10}k 顶点`:'正在读取模型…'}</small></div></div>

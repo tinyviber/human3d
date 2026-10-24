@@ -177,11 +177,11 @@ export class WorkshopEngine{
     this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
     // Mobile profile: touch-first devices render at ≤1.5× and a 1024² shadow
     // map. shortcut: chosen from GPU-fill reasoning, not a device benchmark; tune after real-device measurement.
-    const coarse=window.matchMedia?.('(pointer:coarse)').matches??false;
+    const coarse=this.platform.coarse;
     this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,coarse?1.5:2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
     this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=PCFSoftShadowMap;
     this.renderer.domElement.setAttribute('aria-label','动作工作台三维编辑视图');this.host.appendChild(this.renderer.domElement);
-    this.unbindTheme=bindSceneBackground(this.scene);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
+    this.unbindTheme=bindSceneBackground(this.scene,this.platform);this.scene.add(new HemisphereLight(0xffffff,0x8592a6,2.5),new AmbientLight(0xffffff,.35));
     const key=new DirectionalLight(0xfff6ec,4.2);key.position.set(-3,5,4);key.castShadow=true;key.shadow.mapSize.setScalar(coarse?1024:2048);key.shadow.camera.left=-3;key.shadow.camera.right=3;key.shadow.camera.top=3;key.shadow.camera.bottom=-3;key.shadow.normalBias=.012;key.shadow.bias=-.0001;this.scene.add(key,key.target);this.keyLight=key;
     const fill=new DirectionalLight(0xc3d9ff,2);fill.position.set(3,2,-3);this.scene.add(fill);
     const floor=new Mesh(new PlaneGeometry(200,200),new MeshStandardMaterial({color:0xf4f6f9,roughness:1,metalness:0}));floor.rotation.x=-Math.PI/2;floor.position.y=-.009;floor.receiveShadow=true;this.scene.add(floor);
@@ -196,7 +196,7 @@ export class WorkshopEngine{
   }
   async load(){
     try{
-      const [gltf,info,atlas]=await Promise.all([new GLTFLoader().loadAsync(this.platform.assetUrl('/models/human.glb')),this.platform.fetchAsset('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),loadAnatomyAtlas()]);
+      const [gltf,info,atlas]=await Promise.all([new GLTFLoader().loadAsync(this.platform.assetUrl('/models/human.glb')),this.platform.fetchAsset('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),loadAnatomyAtlas(this.platform)]);
       if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
       this.anatomy=new AnatomySelection(this.host,this.renderer.domElement,this.camera,atlas,event=>this.capturing||!this.ready||!!this.drag||!!this.pick(event));
