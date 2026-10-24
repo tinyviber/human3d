@@ -1,6 +1,6 @@
 import {describe,it,expect} from 'vitest';
 import {MOTION_FILES} from '@human3d/motion-core';
-import {handoffConsumedByCreate,resolveLabHandoff} from './lab-handoff';
+import {handoffConsumedByCreate,handoffHasCard,resolveLabHandoff} from './lab-handoff';
 
 describe('resolveLabHandoff',()=>{
  it('resolves a bundled workshop-motion id to a preset handoff',()=>{
@@ -51,5 +51,17 @@ describe('handoffConsumedByCreate',()=>{
  it('covers every preset handoff against its own id',()=>{
   const presets=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.document);
   for(const f of presets)expect(handoffConsumedByCreate({kind:'preset',file:f},f.id)).toBe(true);
+ });
+});
+
+describe('handoffHasCard',()=>{
+ it('is true for preset and external handoffs — both render an offer card',()=>{
+  expect(handoffHasCard(resolveLabHandoff('?from=idle'))).toBe(true);
+  expect(handoffHasCard(resolveLabHandoff('?from=baseball-throw'))).toBe(true);
+  expect(handoffHasCard(resolveLabHandoff('?from=walk'))).toBe(true);
+ });
+ it('is false for unknown ids and absent handoffs — nothing renders, nothing raises',()=>{
+  expect(handoffHasCard(resolveLabHandoff('?from=bogus'))).toBe(false);
+  expect(handoffHasCard(null)).toBe(false);
  });
 });

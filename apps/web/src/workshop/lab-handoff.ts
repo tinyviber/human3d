@@ -32,6 +32,12 @@ export const resolveLabHandoff=(search:string):LabHandoff|null=>{
 export const handoffConsumedByCreate=(handoff:LabHandoff|null,createdPresetId:string):boolean=>
  handoff?.kind==='preset'&&handoff.file.id===createdPresetId;
 
+/** The offer card renders for preset and external handoffs; unknown ids
+ * render nothing — and must not raise the phone sheet either. Single source
+ * of truth for both the card JSX and the compact auto-open effect. */
+export const handoffHasCard=(handoff:LabHandoff|null):handoff is Exclude<LabHandoff,{kind:'unknown'}>=>
+ handoff!==null&&handoff.kind!=='unknown';
+
 /** Drop the handoff parameter from the URL (history-only — no reload) so a
  * refresh or a shared link does not re-offer an already-handled motion. */
 export const clearLabHandoff=()=>{

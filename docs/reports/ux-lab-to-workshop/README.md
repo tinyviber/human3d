@@ -122,6 +122,19 @@ The component wiring itself is not unit-testable without rendering the app
 the real browser as above; the extracted predicate carries the regression
 tests the review asked for.
 
+## Rework round 2 (review follow-up, one P2)
+
+After round 1 made the Lab forward non-editable bundled motions, the phone
+auto-open effect still only raised the 动作 sheet for `preset` handoffs — an
+external motion's explanation card would hide inside a closed sheet. The card
+condition and the auto-open condition now share one predicate,
+`handoffHasCard` (type-guarding out the `unknown` kind), so the card JSX and
+the effect cannot drift again; +2 predicate tests (16 total in the two
+handoff suites). Verified at 390×844: 行走 → header nav → the sheet rises
+with the 来自实验室/行走 explanation card, 知道了 dismisses it and cleans the
+URL; preset regression re-verified (auto-open → create → sheet collapses,
+URL clean, original doc untouched, store restored).
+
 ## Follow-up candidates
 
 - Round-trip: workshop 返回实验室 could restore the last-viewed lab motion.

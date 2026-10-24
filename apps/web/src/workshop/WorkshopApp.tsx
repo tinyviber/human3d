@@ -12,7 +12,7 @@ import type {WorkshopFrame} from './engine';
 import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human3d/motion-core';
 import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
-import {clearLabHandoff,handoffConsumedByCreate,resolveLabHandoff} from './lab-handoff';
+import {clearLabHandoff,handoffConsumedByCreate,handoffHasCard,resolveLabHandoff} from './lab-handoff';
 import type {LabHandoff} from './lab-handoff';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
 import {applyPoseAt,PoseLibrary,stampPoseIntoKey,type PoseApplyReport,type PoseStampReport,type UserPosePreset} from './pose-library';
@@ -379,8 +379,11 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   const doc=createFromPreset(handoff.file.id);
   if(doc)setPresetId(handoff.file.id);
  };
- // Phone layout: the handoff offer lives in the 动作 sheet — raise it on entry.
- useEffect(()=>{if(compact&&handoff?.kind==='preset')setSheet('left');},[]);
+ // Phone layout: the offer lives in the 动作 sheet — raise it on entry for
+ // every handoff that renders a card, so a handed-over external motion
+ // (walk, baseball throw…) explains itself instead of hiding the card in a
+ // closed sheet. Unknown ids raise nothing.
+ useEffect(()=>{if(compact&&handoffHasCard(handoff))setSheet('left');},[]);
  // Mirror across x=0 (same motion on the other side): the mirrored document
  // enters the library as a NEW doc (the source stays untouched) carrying the
  // '.mirrored'/' · 镜像' markers, and becomes the active edit target. One undo
@@ -754,7 +757,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   <Group orientation="horizontal" className="ws-main" id="workshop-panes">
    <Panel id="ws-library" className="ws-library-panel" defaultSize={250} minSize={200} maxSize={420}><aside className="ws-left" aria-label="动作与关键帧">
     {sheetHead('动作 · 关键帧 · 参考')}
-    {handoff&&handoff.kind!=='unknown'?<section className="ws-card ws-handoff" data-testid="lab-handoff" inert={generationLockedUi}>
+    {handoffHasCard(handoff)?<section className="ws-card ws-handoff" data-testid="lab-handoff" inert={generationLockedUi}>
      {handoff.kind==='preset'?<>
       <h2>来自实验室 <small>{handoff.file.english}</small></h2>
       <p className="ws-handoff-name">{handoff.file.name}</p>
