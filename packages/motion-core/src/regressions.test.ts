@@ -229,5 +229,29 @@ describe('loop seam, grip ramp, and random documents',()=>{
   }
  });
 });
+
+describe('handFrames world/pelvis agree at key instants',()=>{
+ it('samples the same world hand position at every key under either interpolation frame',()=>{
+  // The stored hand target is world space in both modes; handFrames only
+  // chooses the interpolation frame BETWEEN keys. At a key instant both
+  // conventions must land on the authored target (issue-25 review: capturing
+  // a pose across documents does not reinterpret hand coordinates).
+  const times=[0,.6,1.2];
+  const base=blankDocument(rig.rest,'hf','hf-test');
+  base.keys.forEach((k,i)=>{k.time=times[i]??k.time*i;k.pose.handL.target={x:.3,y:1.1-i*.2,z:.1};});
+  base.duration=1.2;
+  const pelvis={...clone(base),handFrames:{L:'pelvis' as const,R:'pelvis' as const}};
+  const world={...clone(base),handFrames:{L:'world' as const,R:'world' as const}};
+  for(const t of times){
+   const a=frameAt(pelvis,t,origin()),b=frameAt(world,t,origin());
+   expect(a.pose.handL.target.x).toBeCloseTo(b.pose.handL.target.x,9);
+   expect(a.pose.handL.target.z).toBeCloseTo(b.pose.handL.target.z,9);
+   rig.reset();solveEffectiveFrame(rig,a);const pa=rig.point('wrist_L').clone();
+   rig.reset();solveEffectiveFrame(rig,b);const pb=rig.point('wrist_L').clone();
+   expect(pa.distanceTo(pb)).toBeLessThan(1e-6);
+  }
+ });
+});
+
 void ({} as Vector3);
 void ({} as Side);

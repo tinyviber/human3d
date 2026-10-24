@@ -14,28 +14,46 @@ const BASIC_BOUNDARY_EPS=.001;
 export interface BasicInsertion{keyIds:string[];time:number;span:number}
 
 interface FootDelta{target:V3;pole:V3;yaw:number;pitch:number}
+/** Hand offsets translate target/pole only: a carry-hands template moves where
+ * the hand reaches, but the wrist orientation stays as the playhead had it. */
+interface HandDelta{target:V3;pole:V3}
 /** A basic action is a relative motion: every key is an offset from its first key. */
-interface PoseDelta{root:V3;yaw:number;lean:number;chest:number;side:number;footL:FootDelta;footR:FootDelta}
+interface PoseDelta{root:V3;yaw:number;lean:number;chest:number;side:number;footL:FootDelta;footR:FootDelta;
+ handL:HandDelta;handR:HandDelta}
 
 const EPS=1e-9;
 const sub=(a:V3,b:V3):V3=>({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z});
 const add=(a:V3,b:V3):V3=>({x:a.x+b.x,y:a.y+b.y,z:a.z+b.z});
 const isZero=(v:V3)=>Math.abs(v.x)<EPS&&Math.abs(v.y)<EPS&&Math.abs(v.z)<EPS;
+/** Rotate a horizontal offset into the body frame: the same quaternion the
+ * solver applies as root yaw (qY(θ)) turns the template's world-axis offsets
+ * into body-relative ones, so a forward step stays forward when the playhead
+ * state faces +x. Vertical components pass through untouched. */
+const rotY=(v:V3,yaw:number):V3=>{
+  const c=Math.cos(yaw*Math.PI/180),s=Math.sin(yaw*Math.PI/180);
+  return {x:v.x*c+v.z*s,y:v.y,z:-v.x*s+v.z*c};
+};
 function footDelta(from:FootTarget,to:FootTarget):FootDelta{
   return {target:sub(to.target,from.target),pole:sub(to.pole,from.pole),yaw:to.yaw-from.yaw,pitch:to.pitch-from.pitch};
 }
 const footMoves=(d:FootDelta)=>!isZero(d.target)||!isZero(d.pole)||Math.abs(d.yaw)>EPS||Math.abs(d.pitch)>EPS;
 function poseDelta(from:PoseParams,to:PoseParams):PoseDelta{
+  const hand=(a:{target:V3;pole:V3},b:{target:V3;pole:V3}):HandDelta=>({target:sub(b.target,a.target),pole:sub(b.pole,a.pole)});
   return {root:sub(to.root,from.root),yaw:to.yaw-from.yaw,lean:to.lean-from.lean,chest:to.chest-from.chest,side:to.side-from.side,
-   footL:footDelta(from.footL,to.footL),footR:footDelta(from.footR,to.footR)};
+   footL:footDelta(from.footL,to.footL),footR:footDelta(from.footR,to.footR),
+   handL:hand(from.handL,to.handL),handR:hand(from.handR,to.handR)};
 }
-/** The state's pose with the action's offsets added. Hands are never offset:
- * a basic action leaves the arms exactly where the playhead found them. */
-function applyDelta(base:PoseParams,d:PoseDelta):PoseParams{
-  const foot=(f:FootTarget,e:FootDelta):FootTarget=>({target:add(f.target,e.target),pole:add(f.pole,e.pole),yaw:f.yaw+e.yaw,pitch:f.pitch+e.pitch});
+/** The state's pose with the action's offsets added, rotated into the state's
+ * body frame (horizontal components turn with base.yaw). Hands are offset
+ * only when the template declares carryHands — plain basic actions leave the
+ * arms exactly where the playhead found them. */
+function applyDelta(base:PoseParams,d:PoseDelta,carryHands=false):PoseParams{
+  const foot=(f:FootTarget,e:FootDelta):FootTarget=>({target:add(f.target,rotY(e.target,base.yaw)),pole:add(f.pole,rotY(e.pole,base.yaw)),yaw:f.yaw+e.yaw,pitch:f.pitch+e.pitch});
+  const hand=(f:{target:V3;pole:V3;forward:V3;normal:V3},e:HandDelta)=>({target:add(f.target,rotY(e.target,base.yaw)),pole:add(f.pole,rotY(e.pole,base.yaw)),forward:f.forward,normal:f.normal});
   const pose=structuredClone(base);
-  pose.root=add(base.root,d.root);pose.yaw=base.yaw+d.yaw;pose.lean=base.lean+d.lean;pose.chest=base.chest+d.chest;pose.side=base.side+d.side;
+  pose.root=add(base.root,rotY(d.root,base.yaw));pose.yaw=base.yaw+d.yaw;pose.lean=base.lean+d.lean;pose.chest=base.chest+d.chest;pose.side=base.side+d.side;
   pose.footL=foot(base.footL,d.footL);pose.footR=foot(base.footR,d.footR);
+  if(carryHands){pose.handL=hand(base.handL,d.handL);pose.handR=hand(base.handR,d.handR);}
   return pose;
 }
 function sequenceOf(basic:WorkshopDoc){
@@ -81,7 +99,9 @@ function newKeyId(doc:WorkshopDoc){
  *   BASIC_ANCHOR_EPS is reused when its support flags match the action start;
  *   a distinct liftoff/plant boundary is added when they differ.
  * - Later keys are the state plus the action's offsets (root, spine, feet);
- *   hands are copied from the state, so the arms keep their pose.
+ *   hands are copied from the state, so the arms keep their pose — unless the
+ *   template declares carryHands, in which case the hand target/pole offsets
+ *   apply too (wrist orientation still stays as the playhead had it).
  * - Keys after the insertion point move by the action's span and the
  *   duration grows by the same amount (one ripple insert, one undo step).
  * - A foot the action moves follows the action's plant flags and is released
@@ -90,7 +110,8 @@ function newKeyId(doc:WorkshopDoc){
  *
  * `origin` must be the rest root the caller samples with (see ensureKey).
  * Returns undefined and leaves `doc` untouched when the insertion is refused. */
-export function insertBasicAction(doc:WorkshopDoc,basic:WorkshopDoc,time:number,origin:V3|Vector3):BasicInsertion|undefined{
+export function insertBasicAction(doc:WorkshopDoc,basic:WorkshopDoc,time:number,origin:V3|Vector3,
+ opts:{carryHands?:boolean}={}):BasicInsertion|undefined{
   if(!Number.isFinite(time)||basicInsertRefusal(doc,basic,time))return undefined;
   const {keys:seq,span}=sequenceOf(basic);
   const t=Math.max(0,Math.min(ceilingOf(doc),time));
@@ -124,13 +145,13 @@ export function insertBasicAction(doc:WorkshopDoc,basic:WorkshopDoc,time:number,
     // starts the template's support state and gives contactPlan an explicit
     // liftoff/plant boundary before the action moves the foot.
     const key:WorkshopKey={id:newKeyId(doc),time:start+BASIC_BOUNDARY_EPS,
-     label:`${basic.name} · ${seq[0].label}`,pose:applyDelta(basePose,deltas[0]),constraints:consFor(0)};
+     label:`${basic.name} · ${seq[0].label}`,pose:applyDelta(basePose,deltas[0],opts.carryHands),constraints:consFor(0)};
     doc.keys.push(key);keyIds.push(key.id);
    }else keyIds.push(anchor.id);
   }
   for(let j=insertedFrom;j<seq.length;j++){
    const key:WorkshopKey={id:newKeyId(doc),time:start+seq[j].time-seq[0].time,label:`${basic.name} · ${seq[j].label}`,
-    pose:applyDelta(basePose,deltas[j]),constraints:consFor(j)};
+    pose:applyDelta(basePose,deltas[j],opts.carryHands),constraints:consFor(j)};
    doc.keys.push(key);keyIds.push(key.id);
   }
   doc.keys.sort((a,b)=>a.time-b.time);

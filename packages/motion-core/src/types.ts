@@ -6,7 +6,8 @@ export type AuthoredMotionId='idle'|'walk'|'reach'|'squat'|'ready'|'forehand'|'b
  |'daniil-medvedev-forehand'|'ben-shelton-forehand'|'alexander-bublik-forehand'|'frances-tiafoe-forehand'
  |'holger-rune-forehand'|'alex-de-minaur-forehand'|'alejandro-davidovich-fokina-forehand'|'flavio-cobolli-forehand'
  |'marin-cilic-forehand'|'karen-khachanov-forehand'|'jakub-mensik-forehand'|'ignacio-buse-forehand'
- |'felix-auger-aliassime-forehand'|'basic-half-squat'|'basic-full-squat'|'basic-lunge'|'basic-weight-shift'|'basic-push-turn';
+ |'felix-auger-aliassime-forehand'|'basic-half-squat'|'basic-full-squat'|'basic-lunge'|'basic-weight-shift'|'basic-push-turn'
+ |'basic-wide-squat'|'basic-forward-fold'|'basic-arms-up';
 export type MotionId=AuthoredMotionId|(string & {});
 export type ViewId='front'|'side'|'back'|'threeQuarter'|'hand'|'free';
 export interface BoneInfo{name:string;sourceName:string;parent:string|null;head:number[];tail:number[]}
