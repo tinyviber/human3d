@@ -1,3 +1,4 @@
+import {webPlatform,type AppPlatform} from '../platform/platform';
 import {AmbientLight,BufferGeometry,Color,DirectionalLight,DoubleSide,Float32BufferAttribute,Group,HemisphereLight,Line,LineBasicMaterial,LineDashedMaterial,LineLoop,LineSegments,Mesh,MeshBasicMaterial,MeshStandardMaterial,PerspectiveCamera,Plane,PlaneGeometry,Raycaster,RingGeometry,Scene,SkinnedMesh,SphereGeometry,Vector2,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock,GridHelper} from 'three';
 import {RACKET_TIP_LOCAL} from '@human3d/motion-core';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -172,7 +173,7 @@ export class WorkshopEngine{
   /** Fired once when a drag ends — the app persists the doc here so the final
    * pose can't be lost between pointermove re-renders. */
   onEditEnd?:()=>void;
-  constructor(public host:HTMLElement,private getDoc:()=>WorkshopDoc){
+  constructor(public host:HTMLElement,private getDoc:()=>WorkshopDoc,private platform:AppPlatform=webPlatform){
     this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
     // Mobile profile: touch-first devices render at ≤1.5× and a 1024² shadow
     // map. shortcut: chosen from GPU-fill reasoning, not a device benchmark; tune after real-device measurement.
@@ -195,7 +196,7 @@ export class WorkshopEngine{
   }
   async load(){
     try{
-      const [gltf,info,atlas]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),loadAnatomyAtlas()]);
+      const [gltf,info,atlas]=await Promise.all([new GLTFLoader().loadAsync(this.platform.assetUrl('/models/human.glb')),this.platform.fetchAsset('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.json() as Promise<RigInfo>}),loadAnatomyAtlas()]);
       if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}
       this.model=gltf.scene;this.scene.add(this.model);this.rig=new HumanRig(this.model,info);
       this.anatomy=new AnatomySelection(this.host,this.renderer.domElement,this.camera,atlas,event=>this.capturing||!this.ready||!!this.drag||!!this.pick(event));

@@ -1,3 +1,4 @@
+import {webPlatform} from '../platform/platform';
 import {useEffect,useRef,useState,useSyncExternalStore} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
@@ -136,8 +137,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const lib=useRef<MotionLibrary|null>(null);
  const poseLib=useRef<PoseLibrary|null>(null),poseClipboard=useRef<WorkshopDoc['keys'][number]['pose']|null>(null);
  const generationPreview=useRef<WorkshopDoc|null>(null),generationWorker=useRef<Worker|null>(null),generationLocked=useRef(false);
- if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),globalThis.localStorage).load();
- if(!poseLib.current)poseLib.current=new PoseLibrary(globalThis.localStorage).load();
+ if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),webPlatform.storage).load();
+ if(!poseLib.current)poseLib.current=new PoseLibrary(webPlatform.storage).load();
  const [,bump]=useState(0);
  const selected=useWorkshopUi(s=>s.selected),setSelected=useWorkshopUi(s=>s.setSelected);
  const newName=useWorkshopUi(s=>s.newName),setNewName=useWorkshopUi(s=>s.setNewName);
@@ -366,7 +367,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   engine.current?.setPlaying(false);engine.current?.seek(0);engine.current?.markDirty();
   bump(v=>v+1);setHint(`已生成镜像动作「${added.name}」——左右互换，原文档保留在动作库中。`);
  };
- const removeDoc=(id:string)=>{if(generationLocked.current)return;const victim=L.docs.find(x=>x.id===id);if(victim&&!confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
+ const removeDoc=(id:string)=>{if(generationLocked.current)return;const victim=L.docs.find(x=>x.id===id);if(victim&&!webPlatform.confirm(`删除动作「${victim.name}」？此操作不可撤销。`))return;L.remove(id);setSelected(sortedKeys(L.active())[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const selectKey=(id:string)=>{
   if(generationLocked.current)return;
   const key=keyAt(L.active(),id);if(!key)return;
@@ -422,7 +423,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   * reusable one-click preset, Blender/Houdini pose-library style. */
  const capturePose=()=>{
   const k=sel;if(!k)return;
-  const name=globalThis.prompt('给这个姿态起个名字：','');
+  const name=webPlatform.prompt('给这个姿态起个名字：');
   if(name===null)return;
   const preset=poseLib.current!.add(name,k.pose);
   bump(v=>v+1);
@@ -451,7 +452,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  };
  const removeUserPose=(id:string)=>{
   const p=poseLib.current!.presets.find(x=>x.id===id);if(!p)return;
-  if(!confirm(`删除姿态「${p.name}」？此操作不可撤销。`))return;
+  if(!webPlatform.confirm(`删除姿态「${p.name}」？此操作不可撤销。`))return;
   poseLib.current!.remove(id);bump(v=>v+1);
  };
  /** Session pose clipboard: copy one key's full pose, paste onto another. */
@@ -549,7 +550,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   setGenerationProgress({evals:0,maxEvals:120,phase:'loading'});
   engine.current?.setPlaying(false);engine.current?.setOptions({handles:false});
   let worker:Worker;
-  try{worker=new Worker(new URL('./generate.worker.ts',import.meta.url),{type:'module'});}
+  try{const w=webPlatform.createWorker(new URL('./generate.worker.ts',import.meta.url));if(!w)throw new Error('此环境不支持后台生成');worker=w;}
   catch(error){failGeneration(error instanceof Error?error.message:String(error));return;}
   generationWorker.current=worker;
   worker.onmessage=(event:MessageEvent<GenerateWorkerReply>)=>{
@@ -613,9 +614,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // names differently — strip the portable-hostile set here (keeps the CJK
  // slugs newDocId produces; a broader \w-class strip would mangle them).
  const safeName=(name:string)=>name.replace(/[\\/:*?"<>|]/g,'_');
- const download=(name:string,blob:Blob)=>{
-  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=safeName(name);a.click();URL.revokeObjectURL(a.href);
- };
+ const download=(name:string,blob:Blob)=>webPlatform.download(safeName(name),blob);
  const exportPackage=async()=>{
   setExporting(true);
   try{
@@ -638,7 +637,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    // and swapped materials, so exporting it would bake editor state into the
    // file (node TRS, extra meshes). GLTFExporter itself stays out of the
    // bundle: exportGlb dynamic-imports it on demand.
-   const resp=await fetch('/models/human.glb');
+   const resp=await webPlatform.fetchAsset('/models/human.glb');
    if(!resp.ok)throw new Error(`模型请求失败：${resp.status}`);
    const gltf=await new GLTFLoader().parseAsync(await resp.arrayBuffer(),'');
    const glb=await exportGlb(gltf.scene,posePackageToClip(pkg));
@@ -714,8 +713,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const feedbackText=()=>JSON.stringify({kind:'h3d-review-feedback',version:1,doc:{id:d.id,name:d.name,duration:d.duration},notes:docNotes.map(({docId:_,...n})=>n)},null,2);
  const copyFeedback=async()=>{
   const text=feedbackText();
-  try{await navigator.clipboard.writeText(text);setHint(`已复制 ${docNotes.length} 条审阅反馈（JSON）。`);}
-  catch{download(`${d.id}.review.json`,new Blob([text],{type:'application/json'}));setHint('剪贴板不可用，已改为下载审阅反馈 JSON。');}
+  if(await webPlatform.clipboardWrite(text)){setHint(`已复制 ${docNotes.length} 条审阅反馈（JSON）。`);}else{download(`${d.id}.review.json`,new Blob([text],{type:'application/json'}));setHint('剪贴板不可用，已改为下载审阅反馈 JSON。');}
  };
  const videoEl=videoUrl?<video ref={video} src={videoUrl} muted loop playsInline onPlay={()=>setVideoPlaying(true)} onPause={()=>setVideoPlaying(false)}/>:null;
  const sheetHead=(title:string)=><div className="ws-sheet-head"><strong>{title}</strong><button type="button" aria-label="关闭面板" onClick={()=>setSheet(null)}><X size={18}/></button></div>;

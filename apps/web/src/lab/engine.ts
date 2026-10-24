@@ -1,3 +1,4 @@
+import {webPlatform,type AppPlatform} from '../platform/platform';
 import {AmbientLight,AnimationClip,AnimationMixer,AxesHelper,BufferGeometry,Color,DirectionalLight,Float32BufferAttribute,GridHelper,Group,HemisphereLight,Line,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,PerspectiveCamera,PlaneGeometry,Quaternion,Scene,SkinnedMesh,SphereGeometry,Vector3,WebGLRenderer,PCFSoftShadowMap,SRGBColorSpace,ACESFilmicToneMapping,Clock} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
@@ -58,7 +59,7 @@ export class HumanEngine{
  get physicsCase(){return this.dynamicsSource()?.profile??'baseline';}
  get loop(){return this._loop;}
  set loop(value:boolean){this._loop=value;for(const s of this.sources.values())if(s instanceof ClipSource)s.setLoop(value);}
- constructor(public host:HTMLElement){
+ constructor(public host:HTMLElement,private platform:AppPlatform=webPlatform){
   this.renderer=new WebGLRenderer({antialias:true,alpha:false,preserveDrawingBuffer:true});
   this.renderer.setPixelRatio(Math.min(window.devicePixelRatio,2));this.renderer.outputColorSpace=SRGBColorSpace;this.renderer.toneMapping=ACESFilmicToneMapping;this.renderer.toneMappingExposure=1.12;
   this.renderer.shadowMap.enabled=true;this.renderer.shadowMap.type=PCFSoftShadowMap;
@@ -77,10 +78,10 @@ export class HumanEngine{
  async load(){
   try{
    const clipSpecs=MOTIONS.filter(m=>m.source?.kind==='clip');
-   const [gltf,rigText,atlas,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync('/models/human.glb'),fetch('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),loadAnatomyAtlas(),...clipSpecs.map(async m=>{
+   const [gltf,rigText,atlas,...clipAssets]=await Promise.all([new GLTFLoader().loadAsync(this.platform.assetUrl('/models/human.glb')),this.platform.fetchAsset('/models/rig.json').then(r=>{if(!r.ok)throw new Error('人体骨架加载失败');return r.text()}),loadAnatomyAtlas(),...clipSpecs.map(async m=>{
     const s=m.source as {kind:'clip';clip:string;meta?:string};
-    const data=await fetch(s.clip).then(r=>{if(!r.ok)throw new Error('动作片段加载失败');return r.json()});
-    const meta=s.meta?await fetch(s.meta).then(r=>r.json()):undefined;
+    const data=await this.platform.fetchAsset(s.clip).then(r=>{if(!r.ok)throw new Error('动作片段加载失败');return r.json()});
+    const meta=s.meta?await this.platform.fetchAsset(s.meta).then(r=>r.json()):undefined;
     return {id:m.id as MotionId,clip:AnimationClip.parse(data),stride:new Vector3().fromArray(meta?.stride??[0,0,0])};
    })]);
    if(this.disposed){atlas.dispose();gltf.scene.traverse(o=>{if(o instanceof Mesh)o.geometry.dispose()});return;}

@@ -1,3 +1,4 @@
+import {webPlatform} from '../platform/platform';
 import {ArrowHelper,AxesHelper,BufferGeometry,Color,DoubleSide,Euler,Float32BufferAttribute,Group,LineBasicMaterial,LineSegments,Mesh,MeshStandardMaterial,Quaternion,Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import type {DebugOptions} from '@human3d/motion-core';
@@ -33,7 +34,7 @@ const skinHandTargets=new Set([
  'mcp5_flexion_r','mcp5_abduction_r','pm5_flexion_r','md5_flexion_r',
 ]);
 const v=new Vector3(),q=new Quaternion(),q2=new Quaternion();
-async function json<T>(url:string):Promise<T>{const r=await fetch(url);if(!r.ok)throw new Error(`仿真资源加载失败：${r.status}`);return r.json() as Promise<T>;}
+async function json<T>(url:string):Promise<T>{const r=await webPlatform.fetchAsset(url);if(!r.ok)throw new Error(`仿真资源加载失败：${r.status}`);return r.json() as Promise<T>;}
 export function muscleName(name:string){
  const names:Record<string,string>={DELT1:'三角肌前束',DELT2:'三角肌中束',DELT3:'三角肌后束',BIClong:'肱二头肌长头',BICshort:'肱二头肌短头',BRA:'肱肌',TRIlong:'肱三头肌长头',TRIlat:'肱三头肌外侧头',TRImed:'肱三头肌内侧头',SUPSP:'冈上肌',INFSP:'冈下肌',SUBSC:'肩胛下肌',TMAJ:'大圆肌',TMIN:'小圆肌'};
  if(names[name])return names[name];
@@ -71,7 +72,7 @@ export class DynamicsReplay {
   this.root.visible=false;
  }
  static async create(surfaceRig?:HumanRig){
-  const [model,gltf]=await Promise.all([json<ModelData>('/dynamics/model.json'),new GLTFLoader().loadAsync('/dynamics/anatomy.glb')]);
+  const [model,gltf]=await Promise.all([json<ModelData>('/dynamics/model.json'),new GLTFLoader().loadAsync(webPlatform.assetUrl('/dynamics/anatomy.glb'))]);
   return new DynamicsReplay(model,gltf.scene,surfaceRig);
  }
  get ready(){return !!this.record;}
@@ -82,7 +83,7 @@ export class DynamicsReplay {
    // Envelope record URLs are authoritative when the spec carries them; a
    // bare spec falls back to the per-action layout `/dynamics/<id>/<case>`.
    const ref=records?.[profile],metaUrl=ref?.meta??`/dynamics/${id}/${profile}.json`,dataUrl=ref?.data??`/dynamics/${id}/${profile}.bin`;
-   const [meta,response]=await Promise.all([json<RecordData>(metaUrl),fetch(dataUrl)]);if(!response.ok)throw new Error('仿真记录未找到');
+   const [meta,response]=await Promise.all([json<RecordData>(metaUrl),webPlatform.fetchAsset(dataUrl)]);if(!response.ok)throw new Error('仿真记录未找到');
    // Same identity gate scripts/test-dynamics-records.py applies: whichever
    // URL served the record, its payload must be the requested id+case — a
    // records table pointing at the wrong action's files is a hard error,

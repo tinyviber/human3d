@@ -1,3 +1,4 @@
+import {webPlatform} from '../platform/platform';
 import {Color,DataTexture,MeshStandardMaterial,NearestFilter,NoColorSpace,RGBAFormat,UnsignedByteType,type SkinnedMesh,type Vector2} from 'three';
 
 export interface MuscleRegion{id:number;key:string;name:string;englishName:string;surfaceTexels:number;surfaceExclusion?:string;sourceObjects:{name:string;node:string;group:string}[]}
@@ -20,8 +21,8 @@ export function createAnatomyAtlas(metadata:AnatomyMetadata,pixels:Uint8Array):A
 }
 
 export async function loadAnatomyAtlas():Promise<AnatomyAtlas>{
- const [response,image]=await Promise.all([fetch('/models/anatomy-regions.json'),new Promise<HTMLImageElement>((resolve,reject)=>{
-  const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('肌肉分区贴图加载失败'));image.src='/models/anatomy-mask.png';
+ const [response,image]=await Promise.all([webPlatform.fetchAsset('/models/anatomy-regions.json'),new Promise<HTMLImageElement>((resolve,reject)=>{
+  const image=new Image();image.onload=()=>resolve(image);image.onerror=()=>reject(new Error('肌肉分区贴图加载失败'));image.src=webPlatform.assetUrl('/models/anatomy-mask.png');
  })]);
  if(!response.ok)throw new Error('肌肉分区定义加载失败');
  const metadata=await response.json() as AnatomyMetadata;

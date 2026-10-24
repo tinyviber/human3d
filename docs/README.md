@@ -10,6 +10,7 @@
 | 改协议/姿态包/导出/服务端 | [domain/pose-package.md](domain/pose-package.md) → [validation.md](validation.md) → `spec/` | 字节对等、身份哈希、密度上限、两道校验门 |
 | 改工作台 UI/交互/持久化 | [domain/workshop.md](domain/workshop.md) → [WORKSHOP.md](WORKSHOP.md) → [QA.md](QA.md) | 真实 UI 写路径、显示/编辑分离、隔离区、撤销语义 |
 | 改包结构/依赖方向/构建 | [ARCHITECTURE.md](ARCHITECTURE.md) → `tests/architecture.test.ts` | 单向依赖、core 纯度、边界自动强制 |
+| 改宿主耦合/移植小程序 | [engineering/miniapp-port.md](engineering/miniapp-port.md) → `apps/web/src/platform/platform.ts` | 宿主 API 全走 `AppPlatform`，单点替换 |
 | 新增/改肌肉驱动动作 | [ACTION-TEMPLATE.md](ACTION-TEMPLATE.md) → [DYNAMICS.md](DYNAMICS.md) | 信封注册表、dynamics-motion kind、Python 工具链 |
 | 接任务/提交流程本身 | [engineering/review-protocol.md](engineering/review-protocol.md) → [engineering/task-protocol.md](engineering/task-protocol.md) → [engineering/review-gates.md](engineering/review-gates.md) | task brief、Fast/Final Review、Level 0–3 |
 | 选最小验证集 | [engineering/test-matrix.md](engineering/test-matrix.md) | 改动面 → 定向测试映射 |
