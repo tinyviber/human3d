@@ -25,6 +25,14 @@ const EPS=1e-9;
 const sub=(a:V3,b:V3):V3=>({x:a.x-b.x,y:a.y-b.y,z:a.z-b.z});
 const add=(a:V3,b:V3):V3=>({x:a.x+b.x,y:a.y+b.y,z:a.z+b.z});
 const isZero=(v:V3)=>Math.abs(v.x)<EPS&&Math.abs(v.y)<EPS&&Math.abs(v.z)<EPS;
+/** Rotate a horizontal offset into the body frame: the same quaternion the
+ * solver applies as root yaw (qY(θ)) turns the template's world-axis offsets
+ * into body-relative ones, so a forward step stays forward when the playhead
+ * state faces +x. Vertical components pass through untouched. */
+const rotY=(v:V3,yaw:number):V3=>{
+  const c=Math.cos(yaw*Math.PI/180),s=Math.sin(yaw*Math.PI/180);
+  return {x:v.x*c+v.z*s,y:v.y,z:-v.x*s+v.z*c};
+};
 function footDelta(from:FootTarget,to:FootTarget):FootDelta{
   return {target:sub(to.target,from.target),pole:sub(to.pole,from.pole),yaw:to.yaw-from.yaw,pitch:to.pitch-from.pitch};
 }
@@ -35,14 +43,15 @@ function poseDelta(from:PoseParams,to:PoseParams):PoseDelta{
    footL:footDelta(from.footL,to.footL),footR:footDelta(from.footR,to.footR),
    handL:hand(from.handL,to.handL),handR:hand(from.handR,to.handR)};
 }
-/** The state's pose with the action's offsets added. Hands are offset only
- * when the template declares carryHands — plain basic actions leave the arms
- * exactly where the playhead found them. */
+/** The state's pose with the action's offsets added, rotated into the state's
+ * body frame (horizontal components turn with base.yaw). Hands are offset
+ * only when the template declares carryHands — plain basic actions leave the
+ * arms exactly where the playhead found them. */
 function applyDelta(base:PoseParams,d:PoseDelta,carryHands=false):PoseParams{
-  const foot=(f:FootTarget,e:FootDelta):FootTarget=>({target:add(f.target,e.target),pole:add(f.pole,e.pole),yaw:f.yaw+e.yaw,pitch:f.pitch+e.pitch});
-  const hand=(f:{target:V3;pole:V3;forward:V3;normal:V3},e:HandDelta)=>({target:add(f.target,e.target),pole:add(f.pole,e.pole),forward:f.forward,normal:f.normal});
+  const foot=(f:FootTarget,e:FootDelta):FootTarget=>({target:add(f.target,rotY(e.target,base.yaw)),pole:add(f.pole,rotY(e.pole,base.yaw)),yaw:f.yaw+e.yaw,pitch:f.pitch+e.pitch});
+  const hand=(f:{target:V3;pole:V3;forward:V3;normal:V3},e:HandDelta)=>({target:add(f.target,rotY(e.target,base.yaw)),pole:add(f.pole,rotY(e.pole,base.yaw)),forward:f.forward,normal:f.normal});
   const pose=structuredClone(base);
-  pose.root=add(base.root,d.root);pose.yaw=base.yaw+d.yaw;pose.lean=base.lean+d.lean;pose.chest=base.chest+d.chest;pose.side=base.side+d.side;
+  pose.root=add(base.root,rotY(d.root,base.yaw));pose.yaw=base.yaw+d.yaw;pose.lean=base.lean+d.lean;pose.chest=base.chest+d.chest;pose.side=base.side+d.side;
   pose.footL=foot(base.footL,d.footL);pose.footR=foot(base.footR,d.footR);
   if(carryHands){pose.handL=hand(base.handL,d.handL);pose.handR=hand(base.handR,d.handR);}
   return pose;

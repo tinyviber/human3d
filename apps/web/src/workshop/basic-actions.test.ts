@@ -6,6 +6,12 @@ import {basicInsertRefusal,insertBasicAction} from './basic-actions';
 import {BASIC_PRESETS,OTHER_PRESETS,RACKET_PRESETS} from './library';
 
 let rig:HumanRig;
+/** Mirror of basic-actions' body-frame rotation: horizontal components turn
+ * with the anchor state's yaw, vertical passes through. */
+const rotY=(v:{x:number;y:number;z:number},yawDeg:number)=>{
+  const yaw=yawDeg*Math.PI/180,c=Math.cos(yaw),s=Math.sin(yaw);
+  return {x:v.x*c+v.z*s,y:v.y,z:-v.x*s+v.z*c};
+};
 // Same origin the engine passes: pelvis-frame hands resolve through the rest root.
 const origin=()=>rig.rest.get('root')!;
 const docOf=(id:string)=>structuredClone(motionFileById(id)!.document!) as WorkshopDoc;
@@ -100,22 +106,48 @@ describe('insertBasicAction',()=>{
   expect(validateDocShape(doc)).toEqual([]);
  });
 
- it('lunge: the lead foot steps forward, holds, and is released at the last key',()=>{
+ it('lunge: the lead foot steps forward in the BODY frame, holds, and is released at the last key',()=>{
   const doc=docOf('roger-federer-forehand');
+  const yaw=frameAt(doc,.5,origin()).pose.yaw;
   const rightBefore=frameAt(doc,.5,origin()).constraints.plantR;
   const ins=insertBasicAction(doc,basicOf('basic-lunge'),.5,origin())!;
   const [k0,k1,k2]=ins.keyIds.map(id=>keyAt(doc,id)!);
   expect(k0.constraints.plantL).toBe(false);
   expect(k1.constraints.plantL).toBe(true);
   expect(k2.constraints.plantL).toBe(false);
-  expect(k2.pose.footL.target.z).toBeCloseTo(k0.pose.footL.target.z+.24,9);
-  // The lunge drops the pelvis and shifts it forward by the amount in the asset (.02 m).
-  const lungeRoot=basicOf('basic-lunge').keys;
-  expect(k2.pose.root.z-k0.pose.root.z).toBeCloseTo(lungeRoot[2].pose.root.z-lungeRoot[0].pose.root.z,9);
+  // The world-axis template offsets (.24 m forward step, .02 m pelvis shift)
+  // turn with the playhead state's yaw: a forehand stance at −14.7° steps
+  // along its own facing.
+  const step=rotY({x:0,y:0,z:.24},yaw);
+  expect(k2.pose.footL.target.x-k0.pose.footL.target.x).toBeCloseTo(step.x,9);
+  expect(k2.pose.footL.target.z-k0.pose.footL.target.z).toBeCloseTo(step.z,9);
+  const shift=rotY({x:0,y:-.002,z:.02},yaw);
+  expect(k2.pose.root.x-k0.pose.root.x).toBeCloseTo(shift.x,9);
+  expect(k2.pose.root.z-k0.pose.root.z).toBeCloseTo(shift.z,9);
+  expect(k2.pose.root.y-k0.pose.root.y).toBeCloseTo(-.09,9);
   // The trailing foot is not moved by the action: it keeps the state's contact.
   expect(k0.constraints.plantR).toBe(rightBefore);
   expect(k2.constraints.plantR).toBe(rightBefore);
   expect(validateDocShape(doc)).toEqual([]);
+ });
+
+ it('wide squat: the solved feet really stand wide at the half-squat key',()=>{
+  // contactPlan pins a planted run to its first key's contact, so the wide
+  // targets are only honest if the release boundary breaks the run. This is
+  // the regression for exactly that: solved ankle positions, not targets.
+  const doc=docOf('idle');
+  insertBasicAction(doc,basicOf('basic-wide-squat'),0,origin())!;
+  const solve=(t:number)=>{
+   rig.reset();solveEffectiveFrame(rig,frameAt(doc,t,origin()));
+   return {L:rig.point('foot_L').clone(),R:rig.point('foot_R').clone()};
+  };
+  const standing=solve(.01),wide=solve(.8),hold=solve(1.59);
+  expect(standing.L.x-standing.R.x).toBeCloseTo(.27,1);
+  // The authored stance (x ±.33) is reached once the new support run anchors.
+  expect(wide.L.x).toBeCloseTo(.33,2);
+  expect(wide.R.x).toBeCloseTo(-.33,2);
+  expect(hold.L.x).toBeCloseTo(.33,2);
+  expect(wide.L.x-wide.R.x).toBeGreaterThan(.6);
  });
 
  it('preserves a planted reused anchor when inserting a lunge',()=>{
@@ -147,17 +179,47 @@ describe('insertBasicAction',()=>{
   }
  });
 
+ it('carry-hands offsets are body-relative: the same insert reaches forward at yaw 0/90/180',()=>{
+  const tpl=basicOf('basic-forward-fold').keys;
+  const d={x:tpl[1].pose.handL.target.x-tpl[0].pose.handL.target.x,
+   y:tpl[1].pose.handL.target.y-tpl[0].pose.handL.target.y,
+   z:tpl[1].pose.handL.target.z-tpl[0].pose.handL.target.z};
+  for(const yawDeg of [0,90,180]){
+   const doc=docOf('idle');
+   doc.keys[0].pose.yaw=yawDeg; // the playhead anchor faces another way
+   const before=frameAt(doc,0,origin());
+   const ins=insertBasicAction(doc,basicOf('basic-forward-fold'),0,origin(),{carryHands:true})!;
+   const k1=keyAt(doc,ins.keyIds[1])!;
+   const turned=rotY(d,yawDeg);
+   // The template's world +z reach turns with the body: forward stays forward.
+   expect(k1.pose.handL.target.x-before.pose.handL.target.x).toBeCloseTo(turned.x,9);
+   expect(k1.pose.handL.target.y-before.pose.handL.target.y).toBeCloseTo(turned.y,9);
+   expect(k1.pose.handL.target.z-before.pose.handL.target.z).toBeCloseTo(turned.z,9);
+   expect(validateDocShape(doc)).toEqual([]);
+  }
+ });
+
  it('carry-hands templates translate the hand target/pole and keep the wrist orientation',()=>{
   const doc=docOf('roger-federer-forehand');
   const t=.37;
   const before=frameAt(structuredClone(doc),t,origin());
   const ins=insertBasicAction(doc,basicOf('basic-arms-up'),t,origin(),{carryHands:true})!;
   const [k0,k1]=ins.keyIds.map(id=>keyAt(doc,id)!);
-  // The authored offset from the template's standing start: wrist up ~.82 m, slightly inward.
+  // The authored offset from the template's standing start, turned into the
+  // playhead state's body frame (the roger stance faces yaw ≈ −14.7°).
   const tpl=basicOf('basic-arms-up').keys;
-  expect(k1.pose.handL.target.y-k0.pose.handL.target.y).toBeCloseTo(tpl[1].pose.handL.target.y-tpl[0].pose.handL.target.y,9);
-  expect(k1.pose.handR.target.x-k0.pose.handR.target.x).toBeCloseTo(tpl[1].pose.handR.target.x-tpl[0].pose.handR.target.x,9);
-  expect(k1.pose.handL.pole.z-k0.pose.handL.pole.z).toBeCloseTo(tpl[1].pose.handL.pole.z-tpl[0].pose.handL.pole.z,9);
+  const handDelta=(side:'L'|'R',part:'target'|'pole')=>{
+   const a=tpl[0].pose[side==='L'?'handL':'handR'][part],b=tpl[1].pose[side==='L'?'handL':'handR'][part];
+   return rotY({x:b.x-a.x,y:b.y-a.y,z:b.z-a.z},before.pose.yaw);
+  };
+  for(const side of ['L','R'] as const){
+   const dT=handDelta(side,'target'),dP=handDelta(side,'pole');
+   const h0=k0.pose[side==='L'?'handL':'handR'],h1=k1.pose[side==='L'?'handL':'handR'];
+   expect(h1.target.x-h0.target.x).toBeCloseTo(dT.x,9);
+   expect(h1.target.y-h0.target.y).toBeCloseTo(dT.y,9);
+   expect(h1.target.z-h0.target.z).toBeCloseTo(dT.z,9);
+   expect(h1.pole.x-h0.pole.x).toBeCloseTo(dP.x,9);
+  }
   // Orientation is preserved verbatim, not differenced.
   expect(k1.pose.handL.forward).toEqual(k0.pose.handL.forward);
   expect(k1.pose.handR.normal).toEqual(k0.pose.handR.normal);

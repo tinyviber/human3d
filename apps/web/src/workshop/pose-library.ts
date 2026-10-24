@@ -1,5 +1,5 @@
-import type {PoseParams,V3,WorkshopDoc} from '@human3d/motion-core';
-import {ensureKey,nearestKey,WORKSHOP_LIMITS} from '@human3d/motion-core';
+import type {PoseParams,V3,WorkshopDoc,WorkshopKey} from '@human3d/motion-core';
+import {ensureKey,nearestKey,sortedKeys,WORKSHOP_LIMITS} from '@human3d/motion-core';
 import type {Vector3} from 'three';
 
 /** The user's own quick poses: captured from any authored key with one click,
@@ -61,21 +61,55 @@ export class PoseLibrary{
 }
 
 /** What applying a pose at `time` did: the playhead key was overwritten in
- * place ('replaced') or a new key carrying the pose was inserted ('inserted'). */
-export type PoseApplyResult='replaced'|'inserted';
+ * place ('replaced') or a new key carrying the pose was inserted ('inserted').
+ * `heldFoot` lists the sides whose foot targets were NOT written: on a
+ * non-anchor planted key (previous key planted too) contactPlan pins the foot
+ * channels to the support run's anchor, so writing them would promise a pose
+ * the solver silently keeps at the old contact. The rest of the pose (spine,
+ * hands, root) still applies; the hint says which foot was held. */
+export interface PoseApplyReport{result:'replaced'|'inserted';heldFoot:('L'|'R')[]}
 /** Write `pose` onto the key at the playhead: an existing key within the
  * insert tolerance is overwritten; otherwise a new key is inserted (undefined
  * when the time is invalid or the key limit refuses the insert). Constraints
- * and label stay the key's own — only the pose is stamped. */
-export function applyPoseAt(doc:WorkshopDoc,pose:PoseParams,time:number,origin:V3|Vector3,tolerance=.02):PoseApplyResult|undefined{
+ * and label stay the key's own — only the pose is stamped, minus the foot
+ * channels contactPlan would ignore. */
+export function applyPoseAt(doc:WorkshopDoc,pose:PoseParams,time:number,origin:V3|Vector3,tolerance=.02):PoseApplyReport|undefined{
   if(!Number.isFinite(time))return undefined;
   const ceiling=doc.duration-(doc.loop?WORKSHOP_LIMITS.loopGap:0);
   const t=Math.max(0,Math.min(ceiling,time));
   const existing=nearestKey(doc,t,tolerance);
-  if(existing){existing.pose=JSON.parse(JSON.stringify(pose));return 'replaced';}
-  const inserted=doc.keys.length;
-  const key=ensureKey(doc,t,origin,tolerance);
+  const insertedLen=doc.keys.length;
+  const key=existing??ensureKey(doc,t,origin,tolerance);
   if(!key)return undefined;
-  key.pose=JSON.parse(JSON.stringify(pose));
-  return doc.keys.length>inserted?'inserted':'replaced';
+  const stamped=JSON.parse(JSON.stringify(pose)) as PoseParams;
+  const heldFoot=(['L','R'] as const).filter(side=>{
+    if(!footHeldByRun(doc,key,side))return false;
+    const f=side==='L'?key.pose.footL:key.pose.footR;
+    const next=side==='L'?stamped.footL:stamped.footR;
+    // Only worth reporting (and only dishonest to write) when the pose
+    // actually tries to move that foot somewhere else.
+    if(Math.abs(next.target.x-f.target.x)<1e-3&&Math.abs(next.target.y-f.target.y)<1e-3
+     &&Math.abs(next.target.z-f.target.z)<1e-3&&Math.abs(next.yaw-f.yaw)<1e-3)return false;
+    delete (stamped as Partial<Record<'footL'|'footR',unknown>>)[side==='L'?'footL':'footR'];
+    return true;
+  });
+  // A held foot keeps its current target object: merge the stamped pose over
+  // the key's own feet instead of assigning the (possibly foot-less) stamp.
+  const merged=JSON.parse(JSON.stringify(key.pose)) as PoseParams;
+  Object.assign(merged,stamped);
+  key.pose=merged;
+  return {result:existing?'replaced':doc.keys.length>insertedLen?'inserted':'replaced',heldFoot};
+}
+
+/** True when contactPlan pins `key`'s `side` foot channels to the support
+ * run's anchor (the key is planted and the adjacent key before it is planted
+ * too — cyclically across the loop seam). An anchor key (first planted after
+ * a free one) is exempt: writing its target re-anchors the run, which is the
+ * same visible semantics as dragging the foot handle on that key. */
+function footHeldByRun(doc:WorkshopDoc,key:WorkshopKey,side:'L'|'R'):boolean{
+  if(!key.constraints[side==='L'?'plantL':'plantR'])return false;
+  const keys=sortedKeys(doc),i=keys.indexOf(key);
+  if(i<0)return false;
+  const prev=doc.loop&&i===0?keys[keys.length-1]:keys[i-1];
+  return !!prev&&prev.constraints[side==='L'?'plantL':'plantR'];
 }

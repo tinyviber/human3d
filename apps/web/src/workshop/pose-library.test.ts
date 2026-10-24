@@ -1,6 +1,8 @@
-import {describe,expect,it} from 'vitest';
+import {beforeAll,describe,expect,it} from 'vitest';
+import fs from 'node:fs';
+import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import type {WorkshopDoc} from '@human3d/motion-core';
-import {motionFileById} from '@human3d/motion-core';
+import {HumanRig,frameAt,motionFileById,solveEffectiveFrame} from '@human3d/motion-core';
 import {applyPoseAt,isPoseShape,PoseLibrary,type StorageLike} from './pose-library';
 
 const docOf=(id:string)=>structuredClone(motionFileById(id)!.document!) as WorkshopDoc;
@@ -13,6 +15,13 @@ const memoryStore=()=>{
   const store:StorageLike={getItem:k=>map.get(k)??null,setItem:(k,v)=>{map.set(k,v);writes.push(v);}};
   return {store,writes,map};
 };
+
+let rig:HumanRig;
+beforeAll(async()=>{
+ const bytes=fs.readFileSync('public/models/human.glb');
+ const gltf=await new GLTFLoader().parseAsync(bytes.buffer.slice(bytes.byteOffset,bytes.byteOffset+bytes.byteLength),'');
+ rig=new HumanRig(gltf.scene,JSON.parse(fs.readFileSync('public/models/rig.json','utf8')));
+},30000);
 
 describe('PoseLibrary',()=>{
  it('captures a pose, persists it and reloads it across instances',()=>{
@@ -58,7 +67,7 @@ describe('applyPoseAt',()=>{
   const target=doc.keys[1];
   const before=structuredClone(target);
   const result=applyPoseAt(doc,structuredClone(idle.keys[2].pose),target.time,origin);
-  expect(result).toBe('replaced');
+  expect(result?.result).toBe('replaced');
   expect(doc.keys).toHaveLength(n0);
   expect(target.pose).toEqual(idle.keys[2].pose);
   expect(target.constraints).toEqual(before.constraints);
@@ -68,7 +77,7 @@ describe('applyPoseAt',()=>{
   const doc=docOf('idle');
   const n0=doc.keys.length;
   const result=applyPoseAt(doc,structuredClone(idle.keys[0].pose),.55,origin);
-  expect(result).toBe('inserted');
+  expect(result?.result).toBe('inserted');
   expect(doc.keys).toHaveLength(n0+1);
   const added=doc.keys.find(k=>Math.abs(k.time-.55)<1e-9)!;
   expect(added.pose).toEqual(idle.keys[0].pose);
@@ -86,8 +95,47 @@ describe('applyPoseAt',()=>{
   const doc=docOf('idle');
   const n0=doc.keys.length;
   const result=applyPoseAt(doc,structuredClone(idle.keys[1].pose),doc.keys[0].time,origin);
-  expect(result).toBe('replaced');
+  expect(result?.result).toBe('replaced');
   expect(doc.keys).toHaveLength(n0);
   expect(doc.keys[0].pose).toEqual(idle.keys[1].pose);
+ });
+
+ it('holds foot targets on a planted non-anchor key: the solver really keeps the support contact',()=>{
+  // Regression for the contactPlan trap: idle is planted throughout, so its
+  // middle keys' foot channels are pinned to the run anchor. Writing a wide
+  // stance there must NOT claim the feet moved — the channels are skipped
+  // and the solved ankles stay at the anchor contact.
+  const doc=docOf('idle');
+  const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
+  const t=doc.keys[1].time;
+  const solved=(time:number)=>{
+   rig.reset();solveEffectiveFrame(rig,frameAt(doc,time,origin));
+   return {L:rig.point('foot_L').clone(),R:rig.point('foot_R').clone()};
+  };
+  const before=solved(t);
+  const report=applyPoseAt(doc,wide,t,origin);
+  expect(report?.result).toBe('replaced');
+  expect(report?.heldFoot).toEqual(['L','R']);
+  // Foot targets untouched, upper body applied.
+  expect(doc.keys[1].pose.footL.target).toEqual(docOf('idle').keys[1].pose.footL.target);
+  expect(doc.keys[1].pose.root.y).toBeCloseTo(wide.root.y,9);
+  // And the SOLVED feet confirm the hold: no stance change on the real rig.
+  const after=solved(t);
+  expect(after.L.distanceTo(before.L)).toBeLessThan(1e-4);
+  expect(after.R.distanceTo(before.R)).toBeLessThan(1e-4);
+ });
+ it('writes foot targets on free feet: the solved feet take the new stance',()=>{
+  // Both keys released: no support run anywhere, so the written targets are
+  // the effective ones (a released key directly AFTER a planted run would
+  // still inherit that run's contact — the liftoff semantics).
+  const doc=docOf('idle');
+  for(const k of doc.keys){k.constraints.plantL=false;k.constraints.plantR=false;}
+  const wide=structuredClone(docOf('basic-wide-squat').keys[1].pose);
+  const t=doc.keys[1].time;
+  const report=applyPoseAt(doc,wide,t,origin);
+  expect(report?.heldFoot).toEqual([]);
+  rig.reset();solveEffectiveFrame(rig,frameAt(doc,t,origin));
+  expect(rig.point('foot_L').x).toBeCloseTo(.33,2);
+  expect(rig.point('foot_R').x).toBeCloseTo(-.33,2);
  });
 });

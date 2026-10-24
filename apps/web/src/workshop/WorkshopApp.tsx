@@ -11,7 +11,7 @@ import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human
 import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
 import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
-import {applyPoseAt,PoseLibrary,type PoseApplyResult,type UserPosePreset} from './pose-library';
+import {applyPoseAt,PoseLibrary,type PoseApplyReport,type UserPosePreset} from './pose-library';
 import {HistoryBook,RecordGate} from './history';
 import {SemanticPanel,type SemanticHost} from './semantic-panel';
 import {copyKeyframe,keyframeInsertSlot,keyframeTimeProblem,moveKeyframe,removeKeyframe} from './keyframes';
@@ -431,14 +431,21 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    :`已保存姿态「${preset.name}」，之后在任何动作里一键应用。`);
  };
  /** Apply a captured pose at the playhead: an existing key there is
-  * overwritten; otherwise a new key carries the pose. One structural undo. */
+  * overwritten; otherwise a new key carries the pose. One structural undo.
+  * The limit is prechecked BEFORE the history snapshot so a refused apply
+  * never consumes an undo step. */
  const applyUserPose=(p:UserPosePreset)=>{
   const e=engine.current;
   if(generationLocked.current||!e)return;
-  let result:PoseApplyResult|undefined;
-  editKeyStructure(doc=>{result=applyPoseAt(doc,p.pose,e.time,e.restRoot());});
-  if(!result){setHint('应用失败：已达关键帧数量上限，请先删除不需要的帧。');return;}
-  setHint(result==='replaced'?`已把当前帧姿态替换为「${p.name}」（约束不变，可撤销）。`:`已在播放头插入「${p.name}」姿态帧（可撤销）。`);
+  const time=e.time;
+  if(!nearestKey(d,time,.02)&&d.keys.length>=WORKSHOP_LIMITS.maxKeys){
+   setHint(`已达 ${WORKSHOP_LIMITS.maxKeys} 个关键帧上限，且播放头处没有可覆盖的关键帧；请先删除不需要的帧。`);return;
+  }
+  let report:PoseApplyReport|undefined;
+  editKeyStructure(doc=>{report=applyPoseAt(doc,p.pose,time,e.restRoot());});
+  if(!report){setHint('应用失败：请调整时刻后重试。');return;}
+  const held=report.heldFoot.length?`；${report.heldFoot.map(s=>s==='L'?'左':'右').join('、')}脚在支撑锁定区间内，脚部目标保持支撑锚点（要移动支撑脚请先释放该帧支撑）`:'';
+  setHint(`${report.result==='replaced'?`已把当前帧姿态替换为「${p.name}」（约束不变）`:`已在播放头插入「${p.name}」姿态帧`}，可撤销${held}。`);
  };
  const removeUserPose=(id:string)=>{
   const p=poseLib.current!.presets.find(x=>x.id===id);if(!p)return;
@@ -460,7 +467,9 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  /** In-place mirror of the selected key's pose (left/right hands, feet and
   * plant flags swap) — the per-key half of 镜像动作, one undo step. Refused
   * when the two hands use different coordinate systems (the mirror would
-  * reinterpret the other keys' hand targets). */
+  * reinterpret the other keys' hand targets). gripSide is a document-level
+  * property: the racket stays on its current hand, because flipping it here
+  * would silently re-interpret every OTHER key's grip too. */
  const mirrorSelectedPose=()=>{
   const k=sel;if(!k)return;
   if(d.handFrames.L!==d.handFrames.R){setHint('左右手坐标系不同，无法原位镜像该帧姿态；可先用「镜像动作」生成整档镜像。');return;}
@@ -469,9 +478,8 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    const key=keyAt(doc,k.id)!;
    key.pose=mirrored.pose;
    key.constraints=mirrored.constraints;
-   doc.gripSide=doc.gripSide==='L'?undefined:'L';
   });
-  setHint('已镜像当前帧姿态：左右互换、支撑与握拍侧随之换边（可撤销）。');
+  setHint('已镜像当前帧姿态：左右手脚与支撑互换（可撤销）。球拍仍挂在原握拍侧的手上；要整档换握拍侧请用「镜像动作」。');
  };
  const duplicateKey=(id:string)=>{
   if(generationLocked.current)return;

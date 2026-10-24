@@ -7,7 +7,7 @@
   "name": "侧开腿半蹲",
   "english": "WIDE STANCE SQUAT",
   "duration": 1.6,
-  "description": "双脚原地向两侧分开（脚尖略外展），骨盆下沉约 12 cm 成半蹲；躯干与手臂完全保持原状。",
+  "description": "双脚原地向两侧分开（脚尖略外展）成半蹲，骨盆下沉约 9 cm；躯干与手臂完全保持原状。移动脚在插入时先释放支撑再落位（与弓步同模式），避免支撑锚定吞掉站距变化。",
   "method": "基础动作模板 · 站立姿态上的骨盆/腿部偏移（至多 3 关键帧，手臂保持中立）",
   "focus": [
     "双脚分开",
@@ -31,7 +31,8 @@
   ],
   "notes": [
     "基础动作库：每个动作不超过 3 个关键帧；插入到手捏动作时只复制骨盆与腿部的相对偏移，手部保留当前姿态。",
-    "骨盆下沉 12 cm 时踝背屈守卫修正约 6.6 cm（未饱和），双脚为原地小滑步，支撑标志保持落下。"
+    "首帧双脚为自由脚：插入到已支撑的播放头时，insertBasicAction 会自动补一个释放边界帧打断 contactPlan 的支撑锚定，随后半蹲帧（planted）以宽站距成为新支撑锚点。",
+    "骨盆下沉 9 cm：深度按 80 帧插值采样钉在踝背屈 20° 工程上限内（0.12 下沉会在插值中段到 20.3°）；双脚在 0–0.8s 间滑步到位，宽站距于半蹲帧完全生效（有效求解帧断言见 basic-actions.test.ts）。"
   ],
   "license": "Project-authored basic movement template.",
   "document": {
@@ -135,8 +136,8 @@
           }
         },
         "constraints": {
-          "plantL": true,
-          "plantR": true,
+          "plantL": false,
+          "plantR": false,
           "grip": false,
           "contact": false
         }
@@ -148,7 +149,7 @@
         "pose": {
           "root": {
             "x": 0,
-            "y": -0.12,
+            "y": -0.09,
             "z": 0
           },
           "yaw": 0,
@@ -242,7 +243,7 @@
         "pose": {
           "root": {
             "x": 0,
-            "y": -0.12,
+            "y": -0.09,
             "z": 0
           },
           "yaw": 0,
