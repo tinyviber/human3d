@@ -1,136 +1,102 @@
-import {Bone,DoubleSide,Float32BufferAttribute,Group,Mesh,MeshStandardMaterial,SkinnedMesh,Vector3,BufferGeometry,type Object3D} from 'three';
-
-/**
- * skin-swap.ts — 一键换肤（画板 ui-restyle round 6）：'default' 现有蒙皮，
- * 'ssj' 超赛风格（上身裸 + 蓝色短裤 + 靴子 + 金发尖刺）。
- *
- * 实现：HumanSurface 顶点色分带（绑定空间 y 带，与 shape-preset 同一局部
- * 空间）+ 挂在 head 骨上的程序化金发锥簇（世界空间设计→头骨局部）。
- * 与 shape-preset 顶点塑形正交（先塑形后换肤，或反之均可）；material 仅
- * 翻 vertexColors/color，不与解剖系统抢材质（surface 开关只做显隐）。
- * 默认皮肤 = 移除顶点色并还原 GLB 材质原色；两态幂等，可反复切换。
- */
+import {Group,Matrix4,Mesh,MeshStandardMaterial,SkinnedMesh,SphereGeometry,SRGBColorSpace,TextureLoader,Vector3,type BufferGeometry,type Object3D,type Texture} from 'three';
+import {webPlatform,type AppPlatform} from '../platform/platform';
+import {createSsjHair} from './ssj-hair';
+import {HairSpring} from './hair-spring';
 
 export type SkinId='default'|'ssj';
 
-const SKIN=[0.914,0.733,0.549], SHORTS=[0.196,0.392,0.639], BOOT=[0.078,0.216,0.278],
-  SOLE=[0.910,0.886,0.816], BELT=[0.137,0.196,0.298], TRIM=[0.898,0.286,0.208];
-
-/** 站姿皮肤网格判据：局部 bbox 顶 ≈1.78m。 */
-const SKIN_TOP=1.7;
-/** 分带（绑定空间 y）：靴沿 0.315、短裤下摆 0.62、腰带 0.94——按 55k 顶点
- * 密度在 ~1-2cm 过渡，手机/桌面均不明显锯齿。 */
-const BANDS={sole:0.035,boot:0.28,trim:0.315,hem:0.62,belt:0.94,beltTop:0.995};
-
-const materialState=new WeakMap<MeshStandardMaterial,{color:number}>();
-const hairByRoot=new WeakMap<Object3D,Group>();
-
-function skinMeshes(root:Object3D):SkinnedMesh[]{
-  const list:SkinnedMesh[]=[];
-  root.traverse(o=>{
-    if(!(o instanceof SkinnedMesh))return;
-    o.geometry.computeBoundingBox();
-    const bb=o.geometry.boundingBox;
-    if(bb&&bb.max.y>=SKIN_TOP)list.push(o);
-  });
-  return list;
+/** Colour the original surface under the scene lights, retaining its muscle-mask shader. */
+function skinMaterial(map:Texture,source?:MeshStandardMaterial){
+ const material=source?.clone()??new MeshStandardMaterial();
+ material.map=map;material.color.set(0xffffff);material.roughness=.88;material.metalness=0;
+ if(source){material.onBeforeCompile=source.onBeforeCompile;material.customProgramCacheKey=()=>source.customProgramCacheKey();}
+ return material;
 }
 
-function paintSkin(ss:SkinnedMesh[]):void{
-  const mat=ss[0].material as MeshStandardMaterial;
-  if(!materialState.has(mat))materialState.set(mat,{color:mat.color.getHex()});
-  for(const sm of ss){
-    const pos=sm.geometry.attributes.position;
-    const n=pos.count;
-    const col=new Float32Array(n*3);
-    for(let i=0;i<n;i++){
-      const y=pos.getY(i);
-      let cc=SKIN;
-      if(y<BANDS.sole)cc=SOLE;else if(y<BANDS.boot)cc=BOOT;else if(y<BANDS.trim)cc=TRIM;
-      else if(y>=BANDS.hem&&y<BANDS.belt)cc=SHORTS;else if(y>=BANDS.belt&&y<BANDS.beltTop)cc=BELT;
-      col[i*3]=cc[0];col[i*3+1]=cc[1];col[i*3+2]=cc[2];
-    }
-    sm.geometry.setAttribute('color',new Float32BufferAttribute(col,3));
-    const mm=sm.material as MeshStandardMaterial;
-    mm.vertexColors=true;mm.color.set(0xffffff);mm.needsUpdate=true;
+/** The scalp mesh and solid locks belong to the head bone, independently of the skin texture. */
+function makeHair(root:Object3D,texture:Texture,local:Matrix4,body:BufferGeometry){
+ const head=root.getObjectByName('head');if(!head)throw new Error('人体模型缺少头骨');
+ const {geometry,locks,collider}=createSsjHair(body);geometry.applyMatrix4(local);
+ for(const lock of locks){lock.root.applyMatrix4(local);lock.tip.applyMatrix4(local);}collider.premultiply(local);
+ const hair=new Group();hair.name='ssj-hair';
+ const mesh=new Mesh(geometry,skinMaterial(texture));mesh.castShadow=true;mesh.frustumCulled=false;hair.add(mesh);head.add(hair);return {hair,physics:new HairSpring(geometry,locks,collider)};
+}
+
+/** Project the generated face detail onto eyeballs in the same rest-space registration. */
+function makeEyes(root:Object3D,texture:Texture,bindPose:Map<string,Matrix4>){
+ return ['L','R'].map(side=>{
+  const bone=root.getObjectByName(`eye_${side}`);if(!bone)throw new Error('人体模型缺少眼骨');
+  const geometry=new SphereGeometry(.0106,24,16),position=geometry.getAttribute('position'),uv=geometry.getAttribute('uv');
+  const local=bindPose.get(`eye_${side}`)!;
+  for(let i=0;i<position.count;i++){
+   const p=new Vector3().fromBufferAttribute(position,i).applyMatrix4(local);
+   uv.setXY(i,(p.x+.07)/.14,(1.71-p.y)/.08);
   }
+  const eye=new Mesh(geometry,skinMaterial(texture));bone.add(eye);return eye;
+ });
 }
 
-function clearPaint(ss:SkinnedMesh[]):void{
-  const mat=ss[0].material as MeshStandardMaterial;
-  const orig=materialState.get(mat);
-  for(const sm of ss){
-    const mm=sm.material as MeshStandardMaterial;
-    sm.geometry.deleteAttribute('color');
-    mm.vertexColors=false;
-    if(orig)mm.color.setHex(orig.color);
-    mm.needsUpdate=true;
+/** Replaces surface materials only; the original body geometry and rig stay in use. */
+export class SkinSwap{
+ private readonly entries:{mesh:SkinnedMesh;original:MeshStandardMaterial;replacement?:MeshStandardMaterial}[]=[];
+ private readonly bindPose=new Map<string,Matrix4>();
+ private assets?:Promise<Texture[]>;private textures?:Texture[];private hair?:Group;private eyes:Mesh[]=[];private originalEyes:Mesh[]=[];
+ private hairPhysics?:HairSpring;
+ private requested:SkinId='default';private active:SkinId='default';private surface=true;private disposed=false;
+ constructor(private readonly root:Object3D,private platform:AppPlatform=webPlatform){
+  root.updateWorldMatrix(true,true);
+  const toRoot=new Matrix4().copy(root.matrixWorld).invert();
+  for(const name of ['head','eye_L','eye_R']){
+   const bone=root.getObjectByName(name);if(!bone)throw new Error(`人体模型缺少骨骼 ${name}`);
+   this.bindPose.set(name,new Matrix4().multiplyMatrices(toRoot,bone.matrixWorld));
   }
-}
-
-/** 金发锥簇：在头骨局部空间（y 以头骨原点起算，baseY≈头顶上方）。 */
-function buildHair(baseY:number):Group{
-  const gold=new MeshStandardMaterial({color:0xffd54a,emissive:0xcc7a00,emissiveIntensity:0.34,roughness:0.45,metalness:0.05,side:DoubleSide});
-  const verts:number[]=[];
-  const cone=(bx:number,by:number,bz:number,dx:number,dy:number,dz:number,len:number,r:number)=>{
-    const dl=Math.sqrt(dx*dx+dy*dy+dz*dz);dx/=dl;dy/=dl;dz/=dl;
-    let ux=0,uy=0,uz=1;if(Math.abs(dz)>0.9){ux=1;uy=0;uz=0;}
-    let ax=dy*uz-dz*uy,ay=dz*ux-dx*uz,az=dx*uy-dy*ux;
-    const al=Math.sqrt(ax*ax+ay*ay+az*az);ax/=al;ay/=al;az/=al;
-    const cx=dy*az-dz*ay,cy=dz*ax-dx*az,cz2=dx*ay-dy*ax;
-    const sides=5,ring=verts.length/3;
-    for(let s=0;s<sides;s++){const ang=s/sides*Math.PI*2;
-      verts.push(bx+(ax*Math.cos(ang)+cx*Math.sin(ang))*r,by+(ay*Math.cos(ang)+cy*Math.sin(ang))*r,bz+(az*Math.cos(ang)+cz2*Math.sin(ang))*r);}
-    const apex=verts.length/3;verts.push(bx+dx*len,by+dy*len,bz+dz*len);
-    for(let t=0;t<sides;t++){const i0=ring+t,i1=ring+(t+1)%sides;
-      verts.push(verts[i0*3],verts[i0*3+1],verts[i0*3+2],verts[i1*3],verts[i1*3+1],verts[i1*3+2],verts[apex*3],verts[apex*3+1],verts[apex*3+2]);}
-  };
-  const R=0.075,CY=baseY+0.015;
-  for(let k=0;k<10;k++){
-    const ang=k/10*Math.PI*2;
-    const ox=Math.cos(ang)*R*0.85,oz=Math.sin(ang)*R*0.75;
-    cone(ox,CY+(k%2)*0.015,oz,ox*1.3,0.95,oz*1.3-0.22,0.12+0.04*(k%3),0.028);
-  }
-  cone(0,CY+0.02,0.02,0,1,0.12,0.20,0.045);
-  cone(0.028,CY+0.012,-0.02,0.09,0.95,-0.38,0.15,0.036);
-  cone(-0.028,CY+0.012,-0.02,-0.09,0.95,-0.38,0.15,0.036);
-  const g=new BufferGeometry();
-  g.setAttribute('position',new Float32BufferAttribute(verts,3));
-  g.computeVertexNormals();g.computeBoundingSphere();
-  const group=new Group();group.name='ssj-hair';
-  const mesh=new Mesh(g,gold);mesh.frustumCulled=false;
-  group.add(mesh);
-  return group;
-}
-
-function BufferGeometryOf(verts:number[]):BufferGeometry{
-  const g=new BufferGeometry();
-  g.setAttribute('position',new Float32BufferAttribute(verts,3));
-  return g;
-}
-
-export function applySkin(root:Object3D,skin:SkinId):void{
-  const ss=skinMeshes(root);
-  if(!ss.length)return;
-  const head=(()=>{
-    let h:Bone|null=null;
-    for(const b of ss[0].skeleton.bones){if(b.name==='head'&&!h)h=b;}
-    return h;
-  })();
-  const existing=hairByRoot.get(root);
+  root.traverse(o=>{if(o instanceof Mesh&&o.name==='human-eye')this.originalEyes.push(o);if(o instanceof SkinnedMesh){
+   if(!o.geometry.getAttribute('uv')||!(o.material instanceof MeshStandardMaterial))throw new Error('人体蒙皮材质或 UV 不受支持');
+   this.entries.push({mesh:o,original:o.material});
+  }});
+  if(!this.entries.length)throw new Error('人体模型缺少蒙皮');
+ }
+ get skin(){return this.active;}
+ async set(skin:SkinId){
+  if(this.disposed)return;
+  this.requested=skin;
   if(skin==='ssj'){
-    paintSkin(ss);
-    if(head&&(!existing)){
-      root.updateWorldMatrix(true,true);
-      const crown=ss[0].geometry.boundingBox!.max.y;
-      const originY=head.getWorldPosition(new Vector3()).y;
-      const hair=buildHair(crown-originY+0.005);
-      head.add(hair);
-      hairByRoot.set(root,hair);
-    }
-    if(existing)existing.visible=true;
-  }else{
-    clearPaint(ss);
-    if(existing)existing.visible=false;
+   const textures=await(this.assets??=this.load());
+   if(this.disposed||this.requested!==skin)return;
+   for(const entry of this.entries)if(!entry.replacement){
+    entry.replacement=skinMaterial(textures[0],entry.original);
+   }
+   if(!this.hair){const created=makeHair(this.root,textures[1],this.bindPose.get('head')!.clone().invert(),this.entries[0].mesh.geometry);this.hair=created.hair;this.hairPhysics=created.physics;}
+   if(!this.eyes.length)this.eyes=makeEyes(this.root,textures[2],this.bindPose);
   }
+  for(const entry of this.entries)entry.mesh.material=skin==='ssj'?entry.replacement!:entry.original;
+  this.active=skin;this.setSurfaceVisible(this.surface);this.resetHair();
+ }
+ update(dt:number){if(this.hair?.visible&&this.root.visible){this.hair.updateWorldMatrix(true,false);this.hairPhysics?.update(dt,this.hair.matrixWorld);}}
+ resetHair(){if(this.hair){this.hair.updateWorldMatrix(true,false);this.hairPhysics?.reset(this.hair.matrixWorld);}}
+ settleHair(){if(this.hair?.visible){this.hair.updateWorldMatrix(true,false);this.hairPhysics?.settle(this.hair.matrixWorld);}}
+ private async load(){
+  const loader=new TextureLoader();
+  const results=await Promise.allSettled(['/models/skins/ssj-body.png','/models/skins/ssj-hair.png','/models/skins/ssj-eyes.png'].map(path=>loader.loadAsync(this.platform.assetUrl(path))));
+  const textures=results.flatMap(r=>r.status==='fulfilled'?[r.value]:[]);
+  if(results.some(r=>r.status==='rejected')){
+   textures.forEach(t=>t.dispose());this.assets=undefined;throw new Error('超赛贴图加载失败，请重试');
+  }
+  for(const texture of textures){texture.colorSpace=SRGBColorSpace;texture.flipY=false;texture.anisotropy=4;}
+  textures[1].flipY=true;this.textures=textures;if(this.disposed)textures.forEach(t=>t.dispose());return textures;
+ }
+ setSurfaceVisible(visible:boolean){
+  const wasVisible=this.hair?.visible;
+  this.surface=visible;const dressed=this.active==='ssj';
+  if(this.hair)this.hair.visible=dressed&&visible;
+  this.eyes.forEach(eye=>{eye.visible=dressed&&visible;});this.originalEyes.forEach(eye=>{eye.visible=!dressed&&visible;});
+  if(this.hair?.visible&&!wasVisible)this.resetHair();
+ }
+ dispose(){
+  if(this.disposed)return;this.disposed=true;
+  for(const entry of this.entries){entry.mesh.material=entry.original;entry.replacement?.dispose();}
+  this.hair?.traverse(o=>{if(o instanceof Mesh){o.geometry.dispose();(o.material as MeshStandardMaterial).dispose();}});this.hair?.removeFromParent();
+  this.eyes.forEach(eye=>{eye.removeFromParent();eye.geometry.dispose();(eye.material as MeshStandardMaterial).dispose();});
+  this.originalEyes.forEach(eye=>{eye.visible=true;});this.textures?.forEach(t=>t.dispose());
+ }
 }

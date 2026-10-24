@@ -1,5 +1,5 @@
-import type {WorkshopDoc} from '@human3d/motion-core';
-import {blankDocument,canonicalizeHands,defaultDocument,MOTION_FILES,newDocId,normalizeDoc,parseDoc} from '@human3d/motion-core';
+import type {MotionSpec,WorkshopDoc} from '@human3d/motion-core';
+import {blankDocument,canonicalizeHands,defaultDocument,MOTION_FILES,newDocId,normalizeDoc,parseDoc,sortedKeys} from '@human3d/motion-core';
 import type {Vector3} from 'three';
 
 /** Motion library: the workshop's persistent store. Multiple named documents
@@ -15,6 +15,13 @@ export interface QuarantineEntry{id:string;name:string;reason:string;raw:unknown
 export interface LibraryFile{schemaVersion:2;activeId:string;docs:WorkshopDoc[];quarantine:QuarantineEntry[]}
 export interface StorageLike{getItem(k:string):string|null;setItem(k:string,v:string):void;removeItem?(k:string):void}
 export const LIBRARY_KEY='kinesis-workshop-library';
+export const SAVED_MOTION_PREFIX='local:';
+/** Both pages play the saved document itself through the normal document source. */
+export function savedMotionSpec(doc:WorkshopDoc):MotionSpec{
+ return {id:SAVED_MOTION_PREFIX+doc.id,name:doc.name,english:'我的动作',duration:doc.duration,description:'在动作工作台中创建并保存的动作，可继续编辑或删除。',method:'工作台关键帧 · 本机保存',focus:['手工编辑'],oneShot:!doc.loop,
+  phases:sortedKeys(doc).map(k=>({time:k.time,label:k.label||'关键帧'})),source:{kind:'document',document:doc},
+  capabilities:doc.keys.some(k=>k.constraints.grip)?{prop:{kind:'racket',trail:true,handView:true,side:doc.gripSide??'R'}}:undefined};
+}
 /** Only bundled trajectories have editable workshop keys. */
 export const WORKSHOP_PRESETS=MOTION_FILES.filter(f=>f.kind==='workshop-motion'&&f.document);
 /** The library's lead group: reusable basic actions (≤3 keys each) that the
@@ -38,9 +45,9 @@ export class MotionLibrary{
    * into) the deleted doc's snapshots. */
   onRemoved?:(id:string)=>void;
   constructor(private rest:ReadonlyMap<string,Vector3>,private store?:StorageLike|null){}
-  load(){
+  load({readOnly=false}:{readOnly?:boolean}={}){
     let parsed:Partial<LibraryFile>|undefined,rawText:string|null=null,corrupt=false;
-    try{rawText=this.store?.getItem(LIBRARY_KEY)??null;if(rawText!=null)parsed=JSON.parse(rawText) as Partial<LibraryFile>;}catch{corrupt=true;}
+    try{rawText=this.store?.getItem(LIBRARY_KEY)??null;if(rawText!=null)parsed=JSON.parse(rawText) as Partial<LibraryFile>;}catch(err){corrupt=true;if(rawText===null)this.lastError=err instanceof Error?err.message:String(err);}
     const version=(parsed as {schemaVersion?:number}|undefined)?.schemaVersion;
     const file=(!corrupt&&version===2&&parsed&&Array.isArray(parsed.docs))?parsed:undefined;
     if(file){
@@ -58,15 +65,15 @@ export class MotionLibrary{
       // rehydrate so sampled poses reproduce stored keys exactly.
       for(const d of this.docs)for(const k of d.keys)canonicalizeHands(k.pose);
       this.activeId=this.docs.some(d=>d.id===file.activeId)?file.activeId!:this.docs[0]?.id??'';
-    }else if(rawText){
+    }else if(rawText!==null){
       // The stored file isn't a readable v2 library (corrupt JSON or an
       // unknown/future schemaVersion). Keep the raw string in quarantine and
       // skip the auto-save below — overwriting storage would destroy the only
       // copy of the user's data. It is rewritten only by an explicit save.
       this.quarantine=[{id:'library-file',name:'动作库文件',reason:corrupt?'动作库文件 JSON 无法解析':'无法识别的动作库格式（schemaVersion 不受支持）',raw:rawText}];
     }
-    if(!this.docs.length){this.docs=[defaultDocument(this.rest)];this.activeId=this.docs[0].id;}
-    if(file||!rawText)this.save();
+    if(!this.docs.length&&!readOnly){this.docs=[file?blankDocument(this.rest,'新动作',newDocId('新动作')):defaultDocument(this.rest)];this.activeId=this.docs[0].id;}
+    if(!readOnly&&!corrupt&&(file||rawText===null))this.save();
     return this;
   }
   save(){
@@ -104,13 +111,13 @@ export class MotionLibrary{
     copy.id=nid;copy.name=`${src.name} 副本`;copy.keys.forEach((k,i)=>{k.id=`${nid}-k${i}`;});
     this.docs.push(copy);this.activeId=nid;this.save();return copy;
   }
-  remove(id:string){
+  remove(id:string,keepOne=true){
     const idx=this.docs.findIndex(d=>d.id===id);if(idx<0)return;
     const wasActive=this.activeId===id;
     this.docs.splice(idx,1);
     this.onRemoved?.(id);
     if(wasActive)this.activeId=this.docs[Math.min(idx,this.docs.length-1)]?.id??'';
-    if(!this.docs.length)this.create('新动作');
+    if(!this.docs.length&&keepOne)this.create('新动作');
     this.save();
   }
   rename(id:string,name:string){const d=this.docs.find(x=>x.id===id);if(d){d.name=name;this.save();}}

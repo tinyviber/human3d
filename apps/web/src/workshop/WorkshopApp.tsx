@@ -1,19 +1,21 @@
+import {SkinSwitch} from '../theme/SkinSwitch';
 import {webPlatform} from '../platform/platform';
 import {useMediaMatches} from '../lib/use-media';
 import {useEffect,useRef,useState} from 'react';
 import {Vector3} from 'three';
 import {GLTFLoader} from 'three/addons/loaders/GLTFLoader.js';
 import {Group,Panel,Separator} from 'react-resizable-panels';
-import {Activity,ArrowDown,ArrowLeft,ArrowUp,Camera,Check,ChevronLeft,ChevronRight,ClipboardCopy,Copy,Download,Eye,FileBox,Film,FlipHorizontal2,Hand,LayoutGrid,ListVideo,MessageSquareWarning,Package,Pause,Play,Plus,Redo2,RotateCcw,SlidersHorizontal,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
+import {Activity,ArrowDown,ArrowLeft,ArrowUp,Camera,Check,ChevronLeft,ChevronRight,ClipboardCopy,Copy,Download,Eye,FileBox,Film,FlipHorizontal2,Hand,LayoutGrid,ListVideo,MessageSquareWarning,Package,Pause,Play,Plus,Redo2,RotateCcw,Save,SlidersHorizontal,Sparkles,Trash2,Undo2,Upload,Video,X} from 'lucide-react';
 import {LibraryList} from './chrome';
 import {useWorkshopUi} from './ui-store';
 import {WorkshopEngine} from './engine';
 import type {WorkshopFrame} from './engine';
 import type {HandFrame,KeyInterpolation,WorkshopDoc,WorkshopKey,V3} from '@human3d/motion-core';
-import {contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
-import {BASIC_PRESETS,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS} from './library';
+import {blankDocument,contactStartKey,defaultDocument,ensureKey,isReleaseKey,keyAt,loopBlockers,mirrorDoc,mirrorKey,nearestKey,newDocId,normalizeDoc,retimeKeys,serializeDoc,sortedKeys} from '@human3d/motion-core';
+import {BASIC_PRESETS,LIBRARY_KEY,MotionLibrary,OTHER_PRESETS,RACKET_PRESETS,WORKSHOP_PRESETS} from './library';
 import {clearLabHandoff,handoffConsumedByCreate,handoffHasCard,resolveLabHandoff} from './lab-handoff';
 import type {LabHandoff} from './lab-handoff';
+import {combineMotions} from './combine-motions';
 import {basicInsertRefusal,insertBasicAction,type BasicInsertion} from './basic-actions';
 import {applyPoseAt,PoseLibrary,stampPoseIntoKey,type PoseApplyReport,type PoseStampReport,type UserPosePreset} from './pose-library';
 import {HistoryBook,RecordGate} from './history';
@@ -138,9 +140,14 @@ function Timeline({doc,time,selected,retime,onSelect,onSeek,onRetime,onBeginReti
 export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const mount=useRef<HTMLDivElement>(null),engine=useRef<WorkshopEngine|null>(null),video=useRef<HTMLVideoElement>(null),fileRef=useRef<HTMLInputElement>(null),importRef=useRef<HTMLInputElement>(null);
  const lib=useRef<MotionLibrary|null>(null);
+ const syncLibrary=useRef<()=>void>(()=>{});
  const poseLib=useRef<PoseLibrary|null>(null),poseClipboard=useRef<WorkshopDoc['keys'][number]['pose']|null>(null);
  const generationPreview=useRef<WorkshopDoc|null>(null),generationWorker=useRef<Worker|null>(null),generationLocked=useRef(false);
- if(!lib.current)lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),webPlatform.storage).load();
+ if(!lib.current){
+  lib.current=new MotionLibrary(new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)])),webPlatform.storage).load();
+  const id=new URLSearchParams(globalThis.location?.search??'').get('doc');
+  if(id&&lib.current.docs.some(d=>d.id===id))lib.current.select(id);
+ }
  if(!poseLib.current)poseLib.current=new PoseLibrary(webPlatform.storage).load();
  const [,bump]=useState(0);
  const selected=useWorkshopUi(s=>s.selected),setSelected=useWorkshopUi(s=>s.setSelected);
@@ -151,13 +158,16 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // visit doesn't re-offer. Creation is always explicit — never auto-copied.
  const [handoff,setHandoff]=useState<LabHandoff|null>(()=>resolveLabHandoff(globalThis.location?.search??''));
  const [presetId,setPresetId]=useState(()=>handoff?.kind==='preset'?handoff.file.id:BASIC_PRESETS[0]?.id??'');
+ const [combineTarget,setCombineTarget]=useState('preset:idle');
+ const [combineKind,setCombineKind]=useState<'append'|'blend'>('append');
+ const [combineTransition,setCombineTransition]=useState(.3),[combineWeight,setCombineWeight]=useState(50),[combineName,setCombineName]=useState('');
  const [basicId,setBasicId]=useState(()=>BASIC_PRESETS[0]?.id??'');
  const [adjustmentTab,setAdjustmentTab]=useState<'left'|'right'|'common'|'semantic'>(()=>globalThis.matchMedia?.(COMPACT_QUERY).matches?'semantic':'common');
  const [info,setInfo]=useState<RigInfo|null>(null),[error,setError]=useState('');
  const [frame,setFrame]=useState<WorkshopFrame>({time:0,duration:.8,playing:true,label:''});
  const [view,setView]=useState<ViewId>('threeQuarter');
  const books=useRef(new HistoryBook()),gate=useRef(new RecordGate()),wristEpoch=useRef(0),shortcuts=useRef<{undo:()=>void;redo:()=>void}>({undo:()=>{},redo:()=>{}});
- const [hint,setHint]=useState('');
+ const [hint,setHint]=useState(()=>{const id=new URLSearchParams(globalThis.location?.search??'').get('doc');return id&&!lib.current!.docs.some(d=>d.id===id)?'所选动作已删除或不在本机动作库中，已打开当前工作区。':'';});
  useEffect(()=>{if(!hint)return;const t=setTimeout(()=>setHint(''),6000);return()=>clearTimeout(t);},[hint]);
  // Pose-package export state: fps is user-visible because it moves the
  // artifact id; the manifest is a session constant built once; pkgProblems is
@@ -178,7 +188,6 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  // Session-only display toggles (never persisted) — same convention as the
  // engine's WorkshopOptions defaults.
  const [opts,setOpts]=useState({handles:true,trajectories:true,balance:true,onion:false,onionCount:2,onionMode:'keys' as 'keys'|'step',onionStep:.1});
- const [skinS,setSkinS]=useState<'default'|'ssj'>('default');
  // Issue #23: phone layout = viewport + bottom sheets; Review mode blocks every
  // viewport write. Same query as the CSS breakpoint in workshop.css.
  const compact=useMedia(COMPACT_QUERY);
@@ -353,6 +362,28 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
  const selectDoc=(id:string)=>{if(generationLocked.current)return;const doc=L.select(id);setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.setPlaying(false);engine.current?.markDirty();bump(v=>v+1);};
  const createDoc=()=>{if(generationLocked.current)return;const doc=L.create(newName);setNewName('');setSelected(sortedKeys(doc)[0].id);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);};
  const duplicateDoc=(id:string)=>{if(generationLocked.current)return;const doc=L.duplicate(id);if(doc)selectDoc(doc.id);};
+ const saveToLibrary=()=>{
+  if(generationLocked.current)return;
+  if(!webPlatform.storage){setError('浏览器存储不可用，动作尚未保存，请导出 JSON 备份。');return;}
+  L.save();bump(v=>v+1);
+  if(L.lastError){setError(`保存失败：${L.lastError}。请导出 JSON 备份。`);return;}
+  setError('');setHint(`已保存「${L.active().name}」，返回实验室即可在动作库中播放或删除。`);
+ };
+ const saveCombined=()=>{
+  if(generationLocked.current)return;
+  const e=engine.current;if(!e?.ready){setHint('请等待模型加载完成。');return;}
+  const target=combineTarget.startsWith('local:')?L.docs.find(doc=>doc.id===combineTarget.slice(6)):WORKSHOP_PRESETS.find(p=>`preset:${p.id}`===combineTarget)?.document;
+  if(!target){setHint('请选择要组合的动作。');return;}
+  if(!webPlatform.storage){setError('浏览器存储不可用，请先导出源动作 JSON 备份。');return;}
+  try{
+   const source=L.active();
+   const combined=combineMotions(source,target,combineKind==='append'?{kind:'append',transition:combineTransition}:{kind:'blend',weight:combineWeight/100},e.restRoot(),combineName);
+   const added=L.add(combined);books.current.of(added.id).record(source);
+   gate.current.reset();wristEpoch.current++;setCombineName('');selectDoc(added.id);
+   if(L.lastError){setError(`保存失败：${L.lastError}。组合结果仅存于内存，请导出 JSON 备份。`);return;}
+   setError('');setHint(`已${combineKind==='append'?'拼接':'混合'}并保存「${added.name}」，可在动作库播放；两份源动作已保留。`);
+  }catch(err){setHint(err instanceof Error?err.message:String(err));}
+ };
  // Handoff actions: dismissing only clears the offer and the URL parameter.
  // Creation — from the card button OR the regular 从预设开始 — goes through
  // the flow below, which reconciles the offer when it creates the offered
@@ -571,6 +602,26 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
   generationPreview.current=null;setCandidateSession(null);setGenerationReport(null);setGenerationBusy(false);setGenerationProgress(null);setGenerationError('');
   unlockGeneration();setHint('已取消候选生成或预览；源动作仍保持原样。');
  };
+ syncLibrary.current=()=>{
+  const rest=new Map(rigInfo.bones.map(b=>[b.name,new Vector3().fromArray(b.head)]));
+  const incoming=new MotionLibrary(rest,webPlatform.storage).load({readOnly:true});
+  if(incoming.lastError||incoming.quarantine.some(q=>q.id==='library-file'))return;
+  if(JSON.stringify(L.docs)===JSON.stringify(incoming.docs)&&JSON.stringify(L.quarantine)===JSON.stringify(incoming.quarantine))return;
+  const active=L.activeId;
+  if(generationLocked.current)stopGeneration();
+  for(const doc of L.docs){const next=incoming.docs.find(d=>d.id===doc.id);if(!next||serializeDoc(next)!==serializeDoc(doc))L.onRemoved?.(doc.id);}
+  L.docs=incoming.docs;L.quarantine=incoming.quarantine;
+  // Receiving a storage event must never write an older library back over its sender.
+  if(!L.docs.length)L.docs=[blankDocument(rest,'新动作',newDocId('新动作'))];
+  L.activeId=L.docs.some(doc=>doc.id===active)?active:L.docs[0].id;
+  gate.current.reset();wristEpoch.current++;setSelected(sortedKeys(L.active())[0].id);
+  engine.current?.setPlaying(false);engine.current?.seek(0);engine.current?.markDirty();bump(v=>v+1);
+  setHint('已同步其他页面保存或删除的动作。');
+ };
+ useEffect(()=>{
+  const sync=(event:StorageEvent)=>{if(event.key===LIBRARY_KEY||event.key===null)syncLibrary.current();};
+  window.addEventListener('storage',sync);return()=>window.removeEventListener('storage',sync);
+ },[]);
  const failGeneration=(message:string)=>{
   const worker=generationWorker.current;
   if(worker){worker.onmessage=null;worker.onerror=null;worker.onmessageerror=null;worker.terminate();generationWorker.current=null;}
@@ -784,6 +835,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       <button className="ws-preset-start" onClick={()=>createFromPreset()}><Plus size={14}/>从预设开始</button>
      </div>
      <LibraryList docs={L.docs} activeId={d.id} onSelect={selectDoc} onDuplicate={duplicateDoc} onRemove={removeDoc} onReorder={(active,over)=>{L.reorder(active,over);bump(v=>v+1);}}/>
+     <div className="ws-row"><button type="button" data-testid="save-to-library" onClick={saveToLibrary}><Save size={13}/>保存到动作库</button></div>
      <div className="ws-row">
       <input className="ws-newname" aria-label="新动作名称" value={newName} placeholder="新动作名称（可选）…" onChange={e=>setNewName(e.target.value)} onKeyDown={e=>{if(e.key==='Enter')createDoc();}}/>
       <button onClick={createDoc}><Plus size={13}/>新建</button>
@@ -793,6 +845,21 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      {L.quarantine.length?<div className="ws-quarantine"><p className="ws-note" style={{color:'var(--red)'}}>{L.quarantine.length} 个动作未通过校验，已隔离保存，不参与播放。导出后可修复再导入。</p>
       {L.quarantine.map((q,i)=><div key={`${q.id}-${i}`} className="ws-row"><small>{q.name||q.id||'未命名'}：{q.reason}</small><button onClick={()=>exportQuarantine(i)}><Download size={12}/>导出</button><button aria-label={`丢弃 ${q.name||q.id}`} onClick={()=>{if(confirm('丢弃这个隔离动作？此操作不可撤销。'))L.discardQuarantine(i);bump(v=>v+1);}}><Trash2 size={12}/></button></div>)}
      </div>:null}
+    </section>
+    <section className="ws-card" inert={generationLockedUi}><h2>组合动作 <small>保存为新动作</small></h2>
+     <p className="ws-note">当前「{d.name}」作为第一段，选择另一段动作进行拼接或混合。</p>
+     <label className="ws-field"><span>另一段</span><select aria-label="组合目标动作" value={combineTarget} onChange={e=>setCombineTarget(e.target.value)}>
+      <optgroup label="我的动作">{L.docs.map(doc=><option key={doc.id} value={`local:${doc.id}`}>{doc.name}</option>)}</optgroup>
+      <optgroup label="内置动作">{WORKSHOP_PRESETS.map(p=><option key={p.id} value={`preset:${p.id}`}>{p.name}</option>)}</optgroup>
+     </select></label>
+     <label className="ws-field"><span>组合方式</span><select aria-label="组合方式" value={combineKind} onChange={e=>setCombineKind(e.target.value as 'append'|'blend')}>
+      <option value="append">前后拼接</option><option value="blend">按比例混合</option>
+     </select></label>
+     {combineKind==='append'?<label className="ws-field"><span>过渡时长（秒）</span><input aria-label="拼接过渡时长" type="number" min={.1} max={2} step={.1} value={combineTransition} onChange={e=>setCombineTransition(e.target.valueAsNumber)}/></label>
+      :<Slider label="另一段动作占比" value={combineWeight} min={0} max={100} step={1} unit="%" testId="combine-weight" onChange={setCombineWeight}/>}
+     <p className="ws-note">{combineKind==='append'?'当前动作 → 过渡 → 另一段动作，总时长不超过 10 秒。':'按开始 / 结束对齐进度，时长取较长动作；双足支撑取交集，持拍和触球取占比高的动作（50% 时取另一段）。'}</p>
+     <label className="ws-field"><span>新名称</span><input aria-label="组合动作名称" placeholder="留空自动命名" value={combineName} onChange={e=>setCombineName(e.target.value)}/></label>
+     <div className="ws-row"><button type="button" data-testid="save-combined-motion" disabled={!info} onClick={saveCombined}><Save size={13}/>{combineKind==='append'?'拼接并保存':'混合并保存'}</button></div>
     </section>
     <section className="ws-card ws-keyframes" inert={generationLockedUi} aria-label="关键帧管理">
      <h2>关键帧 <small>{orderedKeys.length} / {WORKSHOP_LIMITS.maxKeys}</small></h2>
@@ -1015,7 +1082,6 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
       {adjustmentTab==='common'?<>
       <label className="ws-field"><span>动作名称</span><input data-testid="active-motion-name" aria-label="动作名称" value={d.name} onChange={e=>edit(doc=>{doc.name=e.target.value;})}/></label>
       <Row label="自由手臂（全方向）" detail="允许肩、肘、腕超出人体参考范围；肘屈曲超过 145° 的姿态无法导出姿态包" testId="free-arms" checked={d.freeArms===true} onChange={v=>edit(doc=>{if(v)doc.freeArms=true;else delete doc.freeArms;})}/>
-      <Row label="超赛皮肤" detail="SSJ 风格换肤：短裤 · 靴 · 金发" testId="ssj-skin" checked={skinS==='ssj'} onChange={v=>{setSkinS(v?'ssj':'default');engine.current?.setSkin(v?'ssj':'default');}}/>
       <div className="ws-sub"><h3>帧间过渡 <small>从当前关键帧到下一帧</small></h3>
        {nextTransitionKey&&transitionEndTime!==undefined?<>
         <p className="ws-note">{sel.time.toFixed(2)}s → {transitionEndTime.toFixed(2)}s{transitionIsLoop?' · 循环接缝':''}</p>
@@ -1119,6 +1185,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
      </li>)}</ul>:<p className="ws-note">尚无反馈；结构化 JSON 可直接交给 agent 修复。</p>}
     </section>
     <section className="ws-card"><h2>显示</h2>
+     <SkinSwitch disabled={!info} change={s=>engine.current!.setSkin(s)}/>
      <Row label="编辑手柄" checked={opts.handles} onChange={v=>{setOpts(o=>({...o,handles:v}));engine.current?.setOptions({handles:v});}}/>
      <Row label="运动轨迹线" checked={opts.trajectories} onChange={v=>{setOpts(o=>({...o,trajectories:v}));engine.current?.setOptions({trajectories:v});}}/>
      <Row label="重心 / 支撑" checked={opts.balance} onChange={v=>{setOpts(o=>({...o,balance:v}));engine.current?.setOptions({balance:v});}}/>
@@ -1131,6 +1198,7 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
     </section>
    </aside></Panel>
   </Group>
+  {info&&(error||hint)?<div className={`ws-feedback${error?' ws-feedback-error':''}`} role={error?'alert':'status'}><span>{error||hint}</span><button type="button" aria-label="关闭提示" onClick={()=>{setError('');setHint('');}}><X size={16}/></button></div>:null}
   {compact&&sheet?<button type="button" className="ws-scrim" aria-label="关闭面板，返回三维视图" onClick={()=>setSheet(null)}/>:null}
   <footer className="ws-footer" inert={generationLockedUi}>
    <div className="ws-transport">
@@ -1146,7 +1214,6 @@ export function WorkshopApp({info:rigInfo}:{info:RigInfo}){
    <div className="ws-actions" inert={review}>
     <button onClick={addKey} disabled={!info||d.keys.length>=WORKSHOP_LIMITS.maxKeys}><Plus size={13}/>添加关键帧</button>
     <button aria-pressed={d.inbetweens} className={d.inbetweens?'on':''} onClick={()=>edit(dd=>{dd.inbetweens=!dd.inbetweens;})}><Sparkles size={13}/>{d.inbetweens?'中间帧已生成':'生成中间帧'}</button>
-    {hint?<p className="ws-note" role="status" style={{color:'var(--red)'}}>{hint}</p>:null}
    </div>
   </footer>
  </div>;
