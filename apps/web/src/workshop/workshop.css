@@ -290,3 +290,8 @@
 .ws-semantic-ground button{align-self:flex-start;display:inline-flex;align-items:center;gap:6px;min-height:36px;padding:7px 14px;border-radius:999px;background:var(--accent-soft);color:var(--blue);font-size:12px;font-weight:600}
 .ws-semantic-ground small{font-size:10px;line-height:1.6;color:var(--green)}
 .ws-semantic-ground small.warn{color:var(--amber)}
+/* Lab → workshop handoff offer (?from=<motion id>; see lab/App.tsx). Same
+ * accent-tinted notice language as .ws-verdict / .ws-semantic-ground. */
+.ws-handoff{background:var(--accent-soft);border-color:color-mix(in srgb,var(--blue) 32%,var(--line))}
+.ws-handoff .ws-handoff-name{font-size:13px;font-weight:600;margin-top:2px}
+.ws-handoff .ws-row{margin-top:10px}
